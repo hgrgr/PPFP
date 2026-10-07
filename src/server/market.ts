@@ -1,15 +1,17 @@
 /**
  * Market data: current quotes, FX, and stored daily closes.
  *
- * Live quotes come from the user's own Toss credentials and are cached in
- * memory for a few seconds so many page loads share one API call. When the
- * API fails, the last known value is returned with `stale: true`.
+ * Live quotes come from the user's linked brokers, asked in MARKET_DATA_ORDER
+ * until each symbol has a price, and are cached in memory for a few seconds so
+ * many page loads share one API call. When every broker fails, the last known
+ * value is returned with `stale: true`.
  */
 import type { Asset } from '@prisma/client';
 import { Dec } from '@/domain/decimal';
+import { isKrSymbol, usMarketOf } from '@/domain/broker-format';
 import { dbDate, dec, kstDate, out, prisma } from './db';
-import { decryptSecret } from './crypto';
-import { TossApiError, TossClient } from './toss/client';
+import { BrokerApiError, type InstrumentRef } from './brokers';
+import { marketProviders } from './services/brokers';
 
 const QUOTE_TTL_MS = 10_000;
 const FX_TTL_MS = 60_000;
@@ -25,10 +27,13 @@ export interface Quote {
 const quoteCache = new Map<string, { quote: Quote; fetchedAt: number }>();
 const fxCache = new Map<string, { rate: Dec; fetchedAt: number }>();
 
-export async function tossClientFor(userId: string): Promise<TossClient | null> {
-  const cred = await prisma.tossCredential.findUnique({ where: { userId } });
-  if (!cred) return null;
-  return new TossClient({ clientId: cred.clientId, clientSecret: decryptSecret(cred.secretEncrypted) });
+function logFailure(what: string, e: unknown) {
+  if (!(e instanceof BrokerApiError)) console.error(`[market] ${what} failed`, e);
+}
+
+export function refOf(a: { symbol: string | null; market: string | null }): InstrumentRef {
+  const symbol = a.symbol!.toUpperCase();
+  return { symbol, market: isKrSymbol(symbol) ? a.market : usMarketOf(a.market) };
 }
 
 async function lastClose(symbol: string): Promise<Quote | null> {
@@ -49,32 +54,39 @@ async function lastLedgerPrice(assetId: string): Promise<Quote | null> {
 /** Quotes keyed by asset id. Manual assets use their manual price. */
 export async function getQuotes(userId: string, assets: Asset[]): Promise<Map<string, Quote>> {
   const result = new Map<string, Quote>();
-  const listed = assets.filter((a) => a.priceSource === 'TOSS' && a.symbol);
+  const listed = assets.filter((a) => a.priceSource === 'BROKER' && a.symbol);
   const now = Date.now();
-  const missing = [...new Set(listed.map((a) => a.symbol!.toUpperCase()))].filter((s) => {
+  const missing = new Map<string, Asset>();
+  for (const a of listed) {
+    const s = a.symbol!.toUpperCase();
     const c = quoteCache.get(s);
-    return !c || now - c.fetchedAt > QUOTE_TTL_MS;
-  });
+    if (!c || now - c.fetchedAt > QUOTE_TTL_MS) missing.set(s, a);
+  }
 
-  if (missing.length) {
-    try {
-      const client = await tossClientFor(userId);
-      if (client) {
-        const prices = await client.prices(missing);
-        for (const p of prices) {
-          quoteCache.set(p.symbol.toUpperCase(), {
-            quote: { price: Dec.of(p.lastPrice), currency: p.currency, asOf: p.timestamp, stale: false },
-            fetchedAt: now,
-          });
+  if (missing.size) {
+    for (const { adapter } of await marketProviders(userId)) {
+      if (!adapter.quotes || !missing.size) continue;
+      try {
+        const quotes = await adapter.quotes([...missing.values()].map(refOf));
+        for (const q of quotes) {
+          const s = q.symbol.toUpperCase();
+          const asset = missing.get(s);
+          if (!asset) continue;
+          quoteCache.set(s, { quote: { price: Dec.of(q.price), currency: q.currency, asOf: q.asOf, stale: false }, fetchedAt: now });
+          // Remember a US exchange we had to discover, so the next lookup goes straight there.
+          if (q.market && !isKrSymbol(s) && usMarketOf(asset.market) !== q.market) {
+            await prisma.asset.updateMany({ where: { userId, symbol: asset.symbol }, data: { market: q.market } });
+          }
+          missing.delete(s);
         }
+      } catch (e) {
+        logFailure(`${adapter.broker} quotes`, e);
       }
-    } catch (e) {
-      if (!(e instanceof TossApiError)) console.error('[market] quote fetch failed', e);
     }
   }
 
   for (const a of assets) {
-    if (a.priceSource === 'TOSS' && a.symbol) {
+    if (a.priceSource === 'BROKER' && a.symbol) {
       const cached = quoteCache.get(a.symbol.toUpperCase());
       const fresh = cached && now - cached.fetchedAt <= QUOTE_TTL_MS * 6;
       const q = fresh ? cached!.quote : cached ? { ...cached.quote, stale: true } : (await lastClose(a.symbol)) ?? (await lastLedgerPrice(a.id));
@@ -96,16 +108,18 @@ export async function fxRate(userId: string, currency: string): Promise<Dec> {
   const c = fxCache.get(key);
   if (c && Date.now() - c.fetchedAt < FX_TTL_MS) return c.rate;
   if (currency === 'USD') {
-    try {
-      const client = await tossClientFor(userId);
-      if (client) {
-        const r = await client.exchangeRate('USD', 'KRW');
-        const rate = Dec.of(r.midRate);
-        fxCache.set(key, { rate, fetchedAt: Date.now() });
-        return rate;
+    for (const { adapter } of await marketProviders(userId)) {
+      if (!adapter.usdKrw) continue;
+      try {
+        const r = await adapter.usdKrw();
+        if (r && Dec.of(r).isPos()) {
+          const rate = Dec.of(r);
+          fxCache.set(key, { rate, fetchedAt: Date.now() });
+          return rate;
+        }
+      } catch (e) {
+        logFailure(`${adapter.broker} fx`, e);
       }
-    } catch (e) {
-      if (!(e instanceof TossApiError)) console.error('[market] fx fetch failed', e);
     }
   }
   const row = await prisma.fxDaily.findFirst({ where: { pair: key }, orderBy: { date: 'desc' } });
@@ -113,7 +127,7 @@ export async function fxRate(userId: string, currency: string): Promise<Dec> {
   return Dec.of(process.env.FALLBACK_USDKRW ?? '1390');
 }
 
-export async function storeClose(symbol: string, date: string, close: Dec, currency: string, source = 'TOSS') {
+export async function storeClose(symbol: string, date: string, close: Dec, currency: string, source = 'BROKER') {
   await prisma.priceDaily.upsert({
     where: { symbol_date: { symbol, date: dbDate(date) } },
     create: { symbol, date: dbDate(date), close: out(close), currency, source },
@@ -130,32 +144,44 @@ export async function storeFx(pair: string, date: string, rate: Dec) {
 }
 
 /**
- * Make sure daily closes exist for the user's listed symbols back to `since`.
- * Uses the candles endpoint; safe to call repeatedly (upserts).
+ * Make sure daily closes exist for the given listed assets back to `since`.
+ * Asks each linked broker in turn until one answers; safe to call repeatedly (upserts).
  */
-export async function backfillCloses(userId: string, symbols: string[], since: string): Promise<number> {
-  const client = await tossClientFor(userId);
-  if (!client) return 0;
+export async function backfillCloses(
+  userId: string,
+  assets: { symbol: string | null; market: string | null; currency: string }[],
+  since: string,
+): Promise<number> {
+  const providers = (await marketProviders(userId)).filter((p) => p.adapter.dailyCloses);
+  if (!providers.length) return 0;
   let n = 0;
-  for (const symbol of [...new Set(symbols.map((s) => s.toUpperCase()))]) {
-    const have = await prisma.priceDaily.findFirst({ where: { symbol }, orderBy: { date: 'asc' }, select: { date: true } });
-    const from = have && kstDate(have.date) <= since ? null : since;
+  const seen = new Set<string>();
+  for (const a of assets) {
+    if (!a.symbol) continue;
+    const ref = refOf(a);
+    if (seen.has(ref.symbol)) continue;
+    seen.add(ref.symbol);
+    const have = await prisma.priceDaily.findFirst({ where: { symbol: ref.symbol }, orderBy: { date: 'asc' }, select: { date: true } });
     // Already covered back to `since`: only refresh the last two weeks.
-    const fetchFrom = from ?? kstDate(new Date(Date.now() - 14 * 86_400_000));
-    try {
-      const candles = await client.dailyCandles(symbol, fetchFrom);
-      for (const c of candles) {
-        await storeClose(symbol, kstDate(new Date(c.timestamp)), Dec.of(c.closePrice), c.currency);
-        n++;
+    const fetchFrom = have && kstDate(have.date) <= since ? kstDate(new Date(Date.now() - 14 * 86_400_000)) : since;
+    for (const { adapter } of providers) {
+      try {
+        const closes = await adapter.dailyCloses!(ref, fetchFrom);
+        if (!closes.length) continue;
+        for (const c of closes) {
+          await storeClose(ref.symbol, c.date, Dec.of(c.close), a.currency, adapter.broker);
+          n++;
+        }
+        break;
+      } catch (e) {
+        console.error(`[market] ${adapter.broker} closes failed for ${ref.symbol}`, e instanceof Error ? e.message : e);
       }
-    } catch (e) {
-      console.error(`[market] candles failed for ${symbol}`, e instanceof Error ? e.message : e);
     }
   }
   return n;
 }
 
-/** Record today's USD/KRW mid rate (called by the daily job). */
+/** Record today's USD/KRW rate (called by the daily job). */
 export async function recordTodayFx(userId: string): Promise<void> {
   const rate = await fxRate(userId, 'USD');
   await storeFx('USDKRW', kstDate(), rate);

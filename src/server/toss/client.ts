@@ -2,9 +2,12 @@
  * Toss Securities OpenAPI client (spec 1.1.1, https://developers.tossinvest.com/docs).
  *
  * Server-only: the client secret must never reach a browser. One instance per
- * credential; tokens are cached until shortly before they expire. Requests are
- * throttled per client and 429/5xx responses are retried with backoff.
+ * credential; tokens are reused until shortly before they expire (memory, then
+ * the optional store). Requests are throttled per client and 429/5xx responses
+ * are retried with backoff.
  */
+import { memoryTokenStore, type TokenStore } from '../brokers/types';
+import { TokenManager } from '../brokers/http';
 
 export interface TossCredentials {
   clientId: string;
@@ -86,7 +89,6 @@ const SYMBOL_RE = /^[A-Za-z0-9.-]{1,20}$/;
 const MAX_RETRIES = 3;
 const MIN_INTERVAL_MS = 120; // ~8 requests/second per client; conservative until limits are confirmed
 
-const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 const lastCallAt = new Map<string, number>();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -97,7 +99,14 @@ export function assertSymbol(symbol: string): string {
 }
 
 export class TossClient {
-  constructor(private readonly creds: TossCredentials) {}
+  private readonly tokens: TokenManager;
+
+  constructor(
+    private readonly creds: TossCredentials,
+    store: TokenStore = memoryTokenStore(),
+  ) {
+    this.tokens = new TokenManager(`TOSS:${creds.clientId}`, store, () => this.issueToken());
+  }
 
   private async throttle() {
     const key = this.creds.clientId;
@@ -107,8 +116,11 @@ export class TossClient {
   }
 
   async token(force = false): Promise<string> {
-    const cached = tokenCache.get(this.creds.clientId);
-    if (!force && cached && cached.expiresAt - 60_000 > Date.now()) return cached.token;
+    if (force) this.tokens.forget();
+    return this.tokens.get(force);
+  }
+
+  private async issueToken() {
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: this.creds.clientId,
@@ -129,8 +141,7 @@ export class TossClient {
       );
     }
     const json = (await res.json()) as { access_token: string; expires_in: number };
-    tokenCache.set(this.creds.clientId, { token: json.access_token, expiresAt: Date.now() + json.expires_in * 1000 });
-    return json.access_token;
+    return { token: json.access_token, expiresAt: Date.now() + json.expires_in * 1000 };
   }
 
   private async request<T>(

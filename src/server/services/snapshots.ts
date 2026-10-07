@@ -103,7 +103,7 @@ export async function rebuildSnapshots(userId: string, fromDate?: string): Promi
         id: h.id,
         currency: a.currency,
         priceOn: (date) => {
-          const v = (a.priceSource === 'TOSS' ? lastOnOrBefore(closesS, date) : null) ?? lastOnOrBefore(ledgerS, date);
+          const v = (a.priceSource === 'BROKER' ? lastOnOrBefore(closesS, date) : null) ?? lastOnOrBefore(ledgerS, date);
           return v ? v.mul(sign) : null;
         },
       };

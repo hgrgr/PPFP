@@ -49,6 +49,8 @@ export interface BuyInput {
   fromCash: boolean;
   memo?: string;
   externalRef?: string;
+  /** Account or pasted table an opening lot was imported from (see services/imports). */
+  importSource?: string;
 }
 
 export async function recordBuy(userId: string, input: BuyInput) {
@@ -87,6 +89,7 @@ export async function recordBuy(userId: string, input: BuyInput) {
         flow: out(flow),
         memo: input.memo?.trim() || null,
         externalRef: input.externalRef || null,
+        importSource: input.importSource || null,
       },
     });
     await tx.lot.create({
