@@ -41,18 +41,45 @@ export function ValueChart({ data }: { data: { date: string; value: number; inve
   );
 }
 
-export function Donut({ slices, centerLabel, centerValue }: { slices: { key: string; label: string; color: string; value: number; share: number }[]; centerLabel: string; centerValue: string }) {
+interface DonutSlice {
+  key: string;
+  label: string;
+  sub?: string;
+  color: string;
+  value: number;
+  share: number;
+}
+
+function DonutTip({ active, payload }: { active?: boolean; payload?: { payload?: DonutSlice }[] }) {
+  const s = active ? payload?.[0]?.payload : undefined;
+  if (!s) return null;
+  return (
+    <div style={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', padding: '8px 10px', fontSize: 13, boxShadow: '0 4px 14px rgba(0,0,0,.08)' }}>
+      <div className="inline" style={{ gap: 6, flexWrap: 'nowrap' }}>
+        <span className="dot" style={{ background: s.color }} />
+        <span className="strong">{s.label}</span>
+      </div>
+      {s.sub && <div className="sub">{s.sub}</div>}
+      <div className="money" style={{ marginTop: 4 }}>
+        {pct(s.share, 1, false)} · {krw(s.value)}
+      </div>
+    </div>
+  );
+}
+
+export function Donut({ slices, centerLabel, centerValue }: { slices: DonutSlice[]; centerLabel: string; centerValue: string }) {
   if (!slices.length) return <p className="empty">보유 자산이 없습니다.</p>;
   return (
     <div className="inline" style={{ alignItems: 'center', gap: 20 }}>
       <div style={{ position: 'relative', width: 180, height: 180, flex: 'none' }}>
         <ResponsiveContainer>
           <PieChart>
-            <Pie data={slices} dataKey="value" nameKey="label" innerRadius={56} outerRadius={84} paddingAngle={1} stroke="none" isAnimationActive={false}>
+            <Pie data={slices} dataKey="value" nameKey="label" innerRadius={56} outerRadius={84} paddingAngle={0} stroke="var(--surface)" strokeWidth={2} isAnimationActive={false}>
               {slices.map((s) => (
                 <Cell key={s.key} fill={s.color} />
               ))}
             </Pie>
+            <Tooltip content={<DonutTip />} wrapperStyle={{ zIndex: 2 }} />
           </PieChart>
         </ResponsiveContainer>
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', pointerEvents: 'none' }}>
@@ -62,11 +89,14 @@ export function Donut({ slices, centerLabel, centerValue }: { slices: { key: str
           </div>
         </div>
       </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0, flex: '1 1 160px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, flex: '1 1 180px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
         {slices.map((s) => (
-          <li key={s.key} className="inline" style={{ fontSize: 13, flexWrap: 'nowrap' }}>
-            <span className="dot" style={{ background: s.color }} />
-            <span style={{ flex: 1 }}>{s.label}</span>
+          <li key={s.key} className="inline" style={{ fontSize: 13, flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+            <span className="dot" style={{ background: s.color, marginTop: 5 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.label}>{s.label}</span>
+              {s.sub && <span className="sub" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.sub}>{s.sub}</span>}
+            </span>
             <span className="strong">{pct(s.share, 1, false)}</span>
             <span className="muted money" style={{ width: 70, textAlign: 'right' }}>{krwShort(s.value)}</span>
           </li>

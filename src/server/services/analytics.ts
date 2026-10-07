@@ -170,7 +170,7 @@ export interface Dashboard {
   realized: Dec;
   income: Dec;
   chart: { date: string; value: number; invested: number }[];
-  allocation: { byType: Slice[]; byCurrency: Slice[] };
+  allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[] };
   weightChange: { keys: { key: string; label: string; color: string }[]; points: Record<string, number | string>[]; start: Record<string, number>; end: Record<string, number> };
   children: ChildRow[];
   holdings: HoldingRow[];
@@ -182,10 +182,15 @@ export interface Dashboard {
 export interface Slice {
   key: string;
   label: string;
+  /** Secondary line in the legend, e.g. the ticker */
+  sub?: string;
   color: string;
   value: number;
   share: number;
 }
+
+/** Categorical chart slots (CSS tokens in globals.css); a stock past the last slot folds into "기타". */
+const SERIES_SLOTS = 8;
 
 export async function dashboard(
   userId: string,
@@ -253,7 +258,28 @@ export async function dashboard(
       .sort((a, b) => b[1].cmp(a[1]))
       .map(([k, v], i) => ({ key: k, label: label(k), color: color(k, i), value: v.toNumber(), share: gross.isZero() ? 0 : v.div(gross).toNumber() }));
   const typeLabel = (k: string) => (k === 'CASH_BAL' ? '포트폴리오 현금' : ASSET_TYPE_LABEL[k as AssetType]);
+  // By stock: one slice per asset across the portfolios in scope; past the palette's slots the tail folds into "기타".
+  const assetTotals = new Map<string, { label: string; sub: string; value: Dec }>();
+  for (const h of holdings) {
+    if (!h.value.isPos()) continue;
+    const cur = assetTotals.get(h.assetId);
+    if (cur) cur.value = cur.value.add(h.value);
+    else assetTotals.set(h.assetId, { label: h.name, sub: h.symbol ?? ASSET_TYPE_LABEL[h.type], value: h.value });
+  }
+  const shareOf = (v: Dec) => (gross.isZero() ? 0 : v.div(gross).toNumber());
+  const ranked = [...assetTotals].sort((a, b) => b[1].value.cmp(a[1].value));
+  const shown = ranked.length > SERIES_SLOTS ? ranked.slice(0, SERIES_SLOTS - 1) : ranked;
+  const rest = ranked.slice(shown.length);
+  const byHolding: Slice[] = shown.map(([id, a], i) => ({ key: id, label: a.label, sub: a.sub, color: `var(--series-${i + 1})`, value: a.value.toNumber(), share: shareOf(a.value) }));
+  if (rest.length) {
+    const v = Dec.sum(rest.map(([, a]) => a.value));
+    byHolding.push({ key: 'OTHER', label: `기타 ${rest.length}종목`, sub: rest.slice(0, 3).map(([, a]) => a.label).join(', ') + (rest.length > 3 ? ' …' : ''), color: 'var(--series-other)', value: v.toNumber(), share: shareOf(v) });
+  }
+  const cashTotal = typeTotals.get('CASH_BAL') ?? Dec.ZERO;
+  if (cashTotal.isPos()) byHolding.push({ key: 'CASH_BAL', label: '포트폴리오 현금', color: 'var(--series-cash)', value: cashTotal.toNumber(), share: shareOf(cashTotal) });
+
   const allocation = {
+    byHolding,
     byType: slices(typeTotals, typeLabel, (k) => TYPE_COLOR[k as AssetType] ?? '#999'),
     byCurrency: slices(ccyTotals, (k) => k, (_k, i) => ['#2F4FC9', '#8FA8F5', '#14A38B'][i] ?? '#999'),
   };
