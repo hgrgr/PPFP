@@ -24,10 +24,10 @@ export const dynamic = 'force-dynamic';
 export default async function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [{ portfolios, edges }, state, toss] = await Promise.all([
+  const [{ portfolios, edges }, state, linked] = await Promise.all([
     userGraph(user.id),
     currentState(user.id),
-    prisma.tossCredential.findUnique({ where: { userId: user.id }, select: { userId: true } }),
+    prisma.brokerConnection.count({ where: { userId: user.id } }),
   ]);
   const p = portfolios.find((x) => x.id === id);
   if (!p) notFound();
@@ -62,6 +62,7 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
         <div className="inline">
           <a className="btn" href={`/dashboard?p=${id}`}>기간 분석</a>
           <a className="btn" href={`/transactions?p=${id}`}>거래 내역</a>
+          <a className="btn" href={`/import?p=${id}`}>보유종목 가져오기</a>
           <a className="btn primary" href="#add">+ 거래 추가</a>
         </div>
       </header>
@@ -114,14 +115,16 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
             </table>
           </div>
         ) : (
-          <p className="empty">아직 직접 보유한 자산이 없습니다. 아래에서 매수를 기록하세요.</p>
+          <p className="empty">
+            아직 직접 보유한 자산이 없습니다. 아래에서 매수를 기록하거나 <a href={`/import?p=${id}`}>증권사 보유종목을 가져오세요</a>.
+          </p>
         )}
       </section>
 
       <section className="row" id="add">
         <div className="card wide">
           <h2>자산 추가 · 매수</h2>
-          <AddAssetForm action={addAssetAndBuyAction} portfolioId={id} tossLinked={!!toss} usdkrw={state.usdkrw.toFixed(2)} />
+          <AddAssetForm action={addAssetAndBuyAction} portfolioId={id} marketLinked={linked > 0} usdkrw={state.usdkrw.toFixed(2)} />
           <p className="sub">이미 가진 종목을 더 사려면 종목 화면에서 매수하세요. 같은 종목 코드는 하나의 보유로 합쳐지고 매수마다 Lot이 따로 생깁니다.</p>
         </div>
         <div className="card">

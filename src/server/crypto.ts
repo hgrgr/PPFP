@@ -2,7 +2,7 @@
  * Crypto helpers built only on node:crypto.
  * - passwords: scrypt with per-user salt
  * - session tokens: random 32 bytes, stored as SHA-256 hash
- * - Toss client secrets: AES-256-GCM with APP_ENCRYPTION_KEY
+ * - brokerage app secrets and access tokens: AES-256-GCM with APP_ENCRYPTION_KEY
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 

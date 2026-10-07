@@ -33,10 +33,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     return (
       <div className="card">
         <h1>시작하기</h1>
-        <p>먼저 포트폴리오를 만들고 자산을 추가하세요. 토스증권 계좌가 있다면 설정에서 API를 연결해 보유 종목을 가져올 수 있습니다.</p>
+        <p>
+          먼저 포트폴리오를 만들고 자산을 추가하세요. 증권사 Open API를 연결하면 계좌의 보유종목을 한 번에 가져올 수 있고, API가 없는 증권사는 잔고 화면을 붙여넣어 가져올 수
+          있습니다.
+        </p>
         <div className="inline">
           <a className="btn primary" href="/portfolios">포트폴리오 만들기</a>
-          <a className="btn" href="/settings">토스증권 연결</a>
+          <a className="btn" href="/settings">증권사 연결</a>
+          <a className="btn" href="/import">보유종목 가져오기</a>
         </div>
       </div>
     );

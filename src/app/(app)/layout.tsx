@@ -6,7 +6,9 @@ import { kstDateTime } from '@/lib/format';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const toss = await prisma.tossCredential.findUnique({ where: { userId: user.id }, select: { lastSyncAt: true, lastError: true } });
+  const links = await prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { label: true, lastSyncAt: true, lastError: true } });
+  const failing = links.filter((l) => l.lastError);
+  const lastSync = links.map((l) => l.lastSyncAt).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="주 메뉴">
@@ -19,17 +21,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
         <NavLink href="/dashboard">대시보드</NavLink>
         <NavLink href="/portfolios">포트폴리오</NavLink>
+        <NavLink href="/import">보유종목 가져오기</NavLink>
         <NavLink href="/transactions">거래 내역</NavLink>
         <NavLink href="/export">Export</NavLink>
         <NavLink href="/settings">연동 · 설정</NavLink>
         <div className="side-foot">
           <div>
-            <div className="strong" style={{ color: 'var(--ink)' }}>토스증권</div>
-            {toss ? (
-              toss.lastError ? (
-                <span className="down">오류: {toss.lastError}</span>
+            <div className="strong" style={{ color: 'var(--ink)' }}>증권사 연동</div>
+            {links.length ? (
+              failing.length ? (
+                <a className="down" href="/settings">
+                  {failing.map((l) => l.label).join(', ')} 오류
+                </a>
               ) : (
-                <span>연결됨{toss.lastSyncAt ? ` · 확인 ${kstDateTime(toss.lastSyncAt).slice(5)}` : ''}</span>
+                <span>
+                  {links.length}곳 연결됨{lastSync ? ` · 확인 ${kstDateTime(lastSync).slice(5)}` : ''}
+                </span>
               )
             ) : (
               <a href="/settings">연결 안 됨 — 설정하기</a>

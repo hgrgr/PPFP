@@ -30,9 +30,22 @@ enum AssetType {
   LIABILITY
 }
 
+/// MANUAL: entered by hand. BROKER: from a linked brokerage API (quotes, or quantities imported from an account).
+/// IMPORT: quantities imported from pasted/CSV balances.
 enum DataSource {
   MANUAL
+  BROKER
+  IMPORT
+}
+
+/// Brokerages with a documented REST OpenAPI for individual accounts.
+enum Broker {
   TOSS
+  KIS
+  KIWOOM
+  LS
+  DB
+  MERITZ
 }
 
 enum TxnType {
@@ -58,7 +71,7 @@ model User {
   createdAt    DateTime @default(now())
 
   sessions        Session[]
-  tossCredential  TossCredential?
+  brokers         BrokerConnection[]
   portfolios      Portfolio[]
   assets          Asset[]
   auditLogs       AuditLog[]
@@ -74,16 +87,27 @@ model Session {
   @@index([userId])
 }
 
-/// Per-user Toss Securities OpenAPI credentials. Secret is AES-256-GCM encrypted.
-model TossCredential {
-  userId          String    @id
-  clientId        String
+/// A user's brokerage OpenAPI link. Secret and cached access token are AES-256-GCM encrypted.
+model BrokerConnection {
+  id              String    @id @default(cuid())
+  userId          String
+  broker          Broker
+  label           String
+  appKey          String
   secretEncrypted String
-  accountSeq      BigInt?
+  /// KIS: "12345678-01". Toss: account sequence. Others bind the account to the app key.
+  accountNo       String?
+  /// Mock-trading environment (KIS, Kiwoom).
+  paper           Boolean   @default(false)
+  tokenEncrypted  String?
+  tokenExpiresAt  DateTime?
   lastSyncAt      DateTime?
   lastError       String?
+  createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Portfolio {
@@ -194,7 +218,9 @@ model Transaction {
   flow        Decimal   @default(0) @db.Decimal(24, 6)
   lotMethod   LotMethod?
   memo        String?
-  externalRef String?   // e.g. Toss order id, for idempotency
+  externalRef String?   // e.g. broker order id, for idempotency
+  /// Where an imported opening lot came from, e.g. "KIS:12345678-01" or "paste:하나증권".
+  importSource String?
   createdAt   DateTime  @default(now())
 
   portfolio    Portfolio        @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
@@ -205,6 +231,7 @@ model Transaction {
   @@unique([portfolioId, externalRef])
   @@index([portfolioId, tradeAt])
   @@index([holdingId])
+  @@index([importSource])
 }
 
 /// How much of which lot a SELL consumed, and the profit realized on it.
@@ -242,7 +269,7 @@ model PriceDaily {
   date     DateTime @db.Date
   close    Decimal  @db.Decimal(24, 6)
   currency String
-  source   String   @default("TOSS")
+  source   String   @default("BROKER")
 
   @@id([symbol, date])
 }

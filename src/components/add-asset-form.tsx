@@ -18,15 +18,15 @@ const MANUAL_TYPES: [string, string][] = [
 export function AddAssetForm({
   action,
   portfolioId,
-  tossLinked,
+  marketLinked,
   usdkrw,
 }: {
   action: (s: ActionState, f: FormData) => Promise<ActionState>;
   portfolioId: string;
-  tossLinked: boolean;
+  marketLinked: boolean;
   usdkrw: string;
 }) {
-  const [kind, setKind] = useState<'listed' | 'manual'>(tossLinked ? 'listed' : 'manual');
+  const [kind, setKind] = useState<'listed' | 'manual'>(marketLinked ? 'listed' : 'manual');
   const [type, setType] = useState('REAL_ESTATE');
   const [currency, setCurrency] = useState('KRW');
   const liability = kind === 'manual' && type === 'LIABILITY';
@@ -36,7 +36,7 @@ export function AddAssetForm({
       <input type="hidden" name="kind" value={kind} />
       <div className="seg full" role="group" aria-label="자산 종류" style={{ justifySelf: 'start' }}>
         <button type="button" aria-pressed={kind === 'listed'} onClick={() => setKind('listed')}>
-          상장 종목 (토스 시세)
+          상장 종목 (증권사 시세)
         </button>
         <button type="button" aria-pressed={kind === 'manual'} onClick={() => setKind('manual')}>
           수기 자산
@@ -44,7 +44,7 @@ export function AddAssetForm({
       </div>
       {kind === 'listed' ? (
         <>
-          {!tossLinked && <p className="msg err full">상장 종목 시세를 받으려면 설정에서 토스증권 API를 먼저 연결하세요.</p>}
+          {!marketLinked && <p className="msg err full">상장 종목 시세를 받으려면 설정에서 증권사 API를 먼저 연결하세요.</p>}
           <label className="field">
             종목 코드
             <input name="symbol" required placeholder="005930 또는 AAPL" pattern="[A-Za-z0-9.\-]{1,20}" autoCapitalize="characters" />

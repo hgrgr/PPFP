@@ -50,7 +50,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </nav>
           <h1>{h.asset.name}</h1>
           <p className="sub">
-            {[h.asset.symbol, h.asset.market, ASSET_TYPE_LABEL[h.asset.type], h.asset.currency, manual ? '수기 시세' : '토스증권 시세'].filter(Boolean).join(' · ')}
+            {[h.asset.symbol, h.asset.market, ASSET_TYPE_LABEL[h.asset.type], h.asset.currency, manual ? '수기 시세' : '증권사 시세'].filter(Boolean).join(' · ')}
           </p>
         </div>
       </header>

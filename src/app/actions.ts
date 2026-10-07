@@ -18,7 +18,8 @@ import {
   UserError,
 } from '@/server/services/portfolios';
 import { rebuildSnapshots } from '@/server/services/snapshots';
-import { importOpeningLots, removeTossCredentials, saveTossCredentials } from '@/server/services/sync';
+import { removeConnection, saveConnection, testConnection } from '@/server/services/brokers';
+import { importHoldings, readPastedHoldings, uploadedTableText, type ImportSelection, type ImportSource } from '@/server/services/imports';
 import { deleteTransaction, recordBuy, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
 
 export interface ActionState {
@@ -255,30 +256,79 @@ export async function deleteTransactionAction(_: ActionState, f: FormData) {
   });
 }
 
-// ── Toss link & jobs ────────────────────────────────
+// ── Broker links, imports & jobs ────────────────────
 
-export async function saveTossAction(_: ActionState, f: FormData) {
+export async function saveBrokerAction(_: ActionState, f: FormData) {
   const user = await requireUser();
   return run(async () => {
-    const r = await saveTossCredentials(user.id, s(f, 'clientId'), s(f, 'clientSecret'));
-    return r.accountSeq === null ? '연결했습니다. 다만 증권 계좌를 찾지 못했습니다.' : '토스증권과 연결했습니다.';
+    const c = await saveConnection(user.id, {
+      broker: s(f, 'broker'),
+      label: s(f, 'label'),
+      appKey: s(f, 'appKey'),
+      appSecret: s(f, 'appSecret'),
+      accountNo: s(f, 'accountNo'),
+      paper: s(f, 'paper') === '1',
+    });
+    return `${c.label} 연결을 확인하고 저장했습니다.`;
+  }, ['/settings', '/import']);
+}
+
+export async function removeBrokerAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const c = await removeConnection(user.id, s(f, 'id'));
+    return `${c.label} 연결을 해제했습니다. 저장된 키와 토큰을 지웠습니다.`;
+  }, ['/settings', '/import']);
+}
+
+export async function testBrokerAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const c = await testConnection(user.id, s(f, 'id'));
+    return `${c.label}: 정상적으로 연결되어 있습니다.`;
   }, ['/settings']);
 }
 
-export async function removeTossAction(_: ActionState) {
+export async function importHoldingsAction(_: ActionState, f: FormData) {
   const user = await requireUser();
   return run(async () => {
-    await removeTossCredentials(user.id);
-    return '연결을 해제했습니다.';
-  }, ['/settings']);
+    let rows: ImportSelection[];
+    try {
+      rows = JSON.parse(s(f, 'rows') || '[]') as ImportSelection[];
+    } catch {
+      throw new UserError('선택한 종목을 읽지 못했습니다. 화면을 새로 고치세요.');
+    }
+    if (!Array.isArray(rows)) throw new UserError('선택한 종목을 읽지 못했습니다.');
+    const tradeAt = parseKstLocal(s(f, 'tradeAt'));
+    const n = await importHoldings(user.id, { sourceKey: s(f, 'sourceKey'), sourceLabel: s(f, 'sourceLabel'), tradeAt, rows });
+    await refreshFrom(user.id, tradeAt);
+    return `${n}개 종목을 가져와 시작 Lot을 만들었습니다.`;
+  }, ['/import', '/dashboard', '/portfolios']);
 }
 
-export async function importLotsAction(_: ActionState, f: FormData) {
+export interface PasteState {
+  source?: ImportSource;
+  errors?: string[];
+  error?: string;
+  at?: number;
+}
+
+export async function readPasteAction(_: PasteState, f: FormData): Promise<PasteState> {
   const user = await requireUser();
-  return run(async () => {
-    const n = await importOpeningLots(user.id, s(f, 'portfolioId'), f.getAll('symbols').map(String));
-    return n ? `${n}개 종목의 시작 Lot을 만들었습니다.` : '가져올 차이가 없습니다.';
-  }, ['/settings', '/dashboard']);
+  try {
+    const file = f.get('file');
+    let text = s(f, 'text');
+    if (file instanceof File && file.size > 0) {
+      if (file.size > 2_000_000) throw new UserError('파일은 2MB까지 올릴 수 있습니다.');
+      text = await uploadedTableText(file);
+    }
+    const { source, errors } = await readPastedHoldings(user.id, s(f, 'label'), text);
+    return { source, errors, at: Date.now() };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message, at: Date.now() };
+    console.error('[action] paste', e);
+    return { error: '붙여넣은 잔고를 읽지 못했습니다.', at: Date.now() };
+  }
 }
 
 export async function refreshDataAction(_: ActionState) {

@@ -1,7 +1,8 @@
 import type { AssetType } from '@prisma/client';
+import { cleanSymbol } from '@/domain/broker-format';
 import { prisma } from '../db';
-import { tossClientFor } from '../market';
-import { assertSymbol, TossApiError } from '../toss/client';
+import { BrokerApiError, type Instrument } from '../brokers';
+import { marketProviders } from './brokers';
 import { audit, UserError } from './portfolios';
 
 export const ASSET_TYPE_LABEL: Record<AssetType, string> = {
@@ -17,37 +18,70 @@ export const ASSET_TYPE_LABEL: Record<AssetType, string> = {
 
 export const MANUAL_TYPES: AssetType[] = ['BOND', 'CASH', 'REAL_ESTATE', 'FUND', 'ALTERNATIVE', 'LIABILITY', 'KR_STOCK', 'US_STOCK'];
 
-/** Find or create a listed asset by symbol, validated against Toss Securities. */
-export async function ensureListedAsset(userId: string, rawSymbol: string) {
-  let symbol: string;
-  try {
-    symbol = assertSymbol(rawSymbol.trim());
-  } catch {
-    throw new UserError('종목 코드는 6자리 숫자(국내) 또는 티커(해외)로 입력하세요.');
-  }
+/** What an account balance or pasted table already tells us about a symbol. */
+export interface InstrumentHint {
+  name: string;
+  currency: 'KRW' | 'USD';
+  market: string | null;
+}
+
+/**
+ * Find or create a listed asset by symbol. A named hint from an account
+ * balance is taken as is; otherwise the linked brokers are asked for the name
+ * and market, falling back to the hint or to any broker that can price it.
+ */
+export async function ensureListedAsset(userId: string, rawSymbol: string, hint?: InstrumentHint) {
+  const symbol = cleanSymbol(rawSymbol);
+  if (!symbol) throw new UserError('종목 코드는 6자리 코드(국내) 또는 티커(해외)로 입력하세요.');
   const existing = await prisma.asset.findUnique({ where: { userId_symbol: { userId, symbol } } });
   if (existing) return existing;
 
-  const client = await tossClientFor(userId);
-  if (!client) throw new UserError('상장 종목을 추가하려면 먼저 설정에서 토스증권 API를 연결하세요. 연결 없이 쓰려면 수기 자산으로 등록하세요.');
-  let info;
-  try {
-    [info] = await client.stocks([symbol]);
-  } catch (e) {
-    throw new UserError(e instanceof TossApiError ? e.message : '종목 정보를 가져오지 못했습니다.');
+  const providers = await marketProviders(userId);
+  // An account balance already names the stock: no lookup needed.
+  let info: Instrument | null = hint && hint.name && hint.name !== symbol ? { symbol, ...hint } : null;
+  let lastError: string | null = null;
+  for (const { adapter } of providers) {
+    if (info) break;
+    if (!adapter.instrument) continue;
+    try {
+      info = await adapter.instrument(symbol);
+      if (info) break;
+    } catch (e) {
+      lastError = e instanceof BrokerApiError ? e.message : lastError;
+    }
   }
-  if (!info) throw new UserError(`토스증권에서 '${symbol}' 종목을 찾지 못했습니다.`);
-  if (info.status === 'DELISTED') throw new UserError('상장 폐지된 종목입니다. 수기 자산으로 등록하세요.');
+  if (!info && hint) info = { symbol, ...hint };
+  if (!info) {
+    // Brokers that only quote prices (no instrument lookup): accept the symbol if one of them prices it.
+    for (const { adapter } of providers) {
+      if (!adapter.quotes) continue;
+      try {
+        const [q] = await adapter.quotes([{ symbol, market: null }]);
+        if (q) {
+          info = { symbol, name: symbol, currency: q.currency, market: q.market };
+          break;
+        }
+      } catch (e) {
+        lastError = e instanceof BrokerApiError ? e.message : lastError;
+      }
+    }
+  }
+  if (!info) {
+    if (!providers.length) throw new UserError('상장 종목을 추가하려면 먼저 설정에서 증권사 API를 연결하세요. 연결 없이 쓰려면 수기 자산으로 등록하거나 보유종목 가져오기를 쓰세요.');
+    throw new UserError(lastError ? `종목 정보를 가져오지 못했습니다: ${lastError}` : `연결된 증권사에서 '${symbol}' 종목을 찾지 못했습니다.`);
+  }
+  if (info.delisted) throw new UserError('상장 폐지된 종목입니다. 수기 자산으로 등록하세요.');
+  const currency = info.currency;
   const asset = await prisma.asset.create({
     data: {
       userId,
-      type: info.currency === 'USD' ? 'US_STOCK' : 'KR_STOCK',
-      name: info.name,
+      type: currency === 'USD' ? 'US_STOCK' : 'KR_STOCK',
+      name: info.name.slice(0, 80) || symbol,
       symbol,
       market: info.market,
-      currency: info.currency,
-      priceSource: 'TOSS',
-      meta: { englishName: info.englishName, securityType: info.securityType },
+      currency,
+      priceSource: 'BROKER',
+      meta: info.englishName ? { englishName: info.englishName } : undefined,
     },
   });
   await audit(prisma, userId, 'asset', asset.id, 'create', undefined, asset);
