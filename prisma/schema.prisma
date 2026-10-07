@@ -1,0 +1,287 @@
+// PPFP — personal portfolio data model (PostgreSQL).
+// Money: Decimal(24,6). Quantities: Decimal(28,8). Rates/FX: Decimal(20,10).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LotMethod {
+  SPECIFIC
+  FIFO
+  LIFO
+  HIFO
+  LOFO
+  AVERAGE
+}
+
+enum AssetType {
+  KR_STOCK
+  US_STOCK
+  BOND
+  CASH
+  REAL_ESTATE
+  FUND
+  ALTERNATIVE
+  LIABILITY
+}
+
+enum DataSource {
+  MANUAL
+  TOSS
+}
+
+enum TxnType {
+  BUY
+  SELL
+  DEPOSIT
+  WITHDRAW
+  DIVIDEND
+  INTEREST
+  FEE
+  TAX
+  SPLIT
+  VALUATION
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  baseCurrency String   @default("KRW")
+  redUp        Boolean  @default(true) // 상승 빨강 / 하락 파랑
+  createdAt    DateTime @default(now())
+
+  sessions        Session[]
+  tossCredential  TossCredential?
+  portfolios      Portfolio[]
+  assets          Asset[]
+  auditLogs       AuditLog[]
+}
+
+model Session {
+  id        String   @id // sha256 of the cookie token, never the token itself
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Per-user Toss Securities OpenAPI credentials. Secret is AES-256-GCM encrypted.
+model TossCredential {
+  userId          String    @id
+  clientId        String
+  secretEncrypted String
+  accountSeq      BigInt?
+  lastSyncAt      DateTime?
+  lastError       String?
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Portfolio {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  description  String?
+  color        String    @default("#2F4FC9")
+  baseCurrency String    @default("KRW")
+  lotMethod    LotMethod @default(FIFO)
+  archived     Boolean   @default(false)
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentEdges  PortfolioEdge[] @relation("child")
+  childEdges   PortfolioEdge[] @relation("parent")
+  holdings     Holding[]
+  cash         CashBalance[]
+  transactions Transaction[]
+  snapshots    Snapshot[]
+
+  @@index([userId])
+}
+
+/// parent contains `allocation` (0 < a <= 1) of child. Cycles and over-allocation are rejected in code.
+model PortfolioEdge {
+  parentId   String
+  childId    String
+  allocation Decimal  @db.Decimal(20, 10)
+  createdAt  DateTime @default(now())
+  parent     Portfolio @relation("parent", fields: [parentId], references: [id], onDelete: Cascade)
+  child      Portfolio @relation("child", fields: [childId], references: [id], onDelete: Cascade)
+
+  @@id([parentId, childId])
+  @@index([childId])
+}
+
+model Asset {
+  id          String     @id @default(cuid())
+  userId      String
+  type        AssetType
+  name        String
+  symbol      String?    // KRX 6 digits or US ticker, for listed assets
+  market      String?    // KOSPI, KOSDAQ, NASDAQ ...
+  currency    String     @default("KRW")
+  priceSource DataSource @default(MANUAL)
+  manualPrice Decimal?   @db.Decimal(24, 6)
+  manualPriceAt DateTime?
+  meta        Json?      // type specific: coupon, maturity, address, area ...
+  createdAt   DateTime   @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings Holding[]
+
+  @@unique([userId, symbol])
+  @@index([userId])
+}
+
+model Holding {
+  id          String     @id @default(cuid())
+  portfolioId String
+  assetId     String
+  qtySource   DataSource @default(MANUAL)
+  createdAt   DateTime   @default(now())
+
+  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  lots         Lot[]
+  transactions Transaction[]
+
+  @@unique([portfolioId, assetId])
+}
+
+model Lot {
+  id           String   @id @default(cuid())
+  holdingId    String
+  acquiredAt   DateTime
+  qtyOriginal  Decimal  @db.Decimal(28, 8)
+  qtyRemaining Decimal  @db.Decimal(28, 8)
+  unitCost     Decimal  @db.Decimal(24, 6) // trade currency, fees included
+  fxRate       Decimal  @db.Decimal(20, 10) // base per 1 trade currency
+  sourceTxnId  String   @unique
+  memo         String?
+
+  holding      Holding          @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  sourceTxn    Transaction      @relation("lotSource", fields: [sourceTxnId], references: [id], onDelete: Cascade)
+  consumptions LotConsumption[]
+
+  @@index([holdingId, acquiredAt])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  portfolioId String
+  holdingId   String?
+  type        TxnType
+  tradeAt     DateTime
+  qty         Decimal?  @db.Decimal(28, 8)
+  price       Decimal?  @db.Decimal(24, 6)
+  fee         Decimal   @default(0) @db.Decimal(24, 6)
+  tax         Decimal   @default(0) @db.Decimal(24, 6)
+  fxRate      Decimal   @default(1) @db.Decimal(20, 10)
+  splitRatio  Decimal?  @db.Decimal(20, 10)
+  currency    String
+  cashDelta   Decimal   @default(0) @db.Decimal(24, 6)
+  flow        Decimal   @default(0) @db.Decimal(24, 6)
+  lotMethod   LotMethod?
+  memo        String?
+  externalRef String?   // e.g. Toss order id, for idempotency
+  createdAt   DateTime  @default(now())
+
+  portfolio    Portfolio        @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  holding      Holding?         @relation(fields: [holdingId], references: [id], onDelete: SetNull)
+  createdLot   Lot?             @relation("lotSource")
+  consumptions LotConsumption[]
+
+  @@unique([portfolioId, externalRef])
+  @@index([portfolioId, tradeAt])
+  @@index([holdingId])
+}
+
+/// How much of which lot a SELL consumed, and the profit realized on it.
+model LotConsumption {
+  id          String   @id @default(cuid())
+  txnId       String
+  lotId       String
+  qty         Decimal  @db.Decimal(28, 8)
+  cost        Decimal  @db.Decimal(24, 6)
+  proceeds    Decimal  @db.Decimal(24, 6)
+  pnl         Decimal  @db.Decimal(24, 6)
+  pnlBase     Decimal  @db.Decimal(24, 6)
+  holdingDays Int
+
+  txn Transaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
+  lot Lot         @relation(fields: [lotId], references: [id], onDelete: Cascade)
+
+  @@index([lotId])
+  @@index([txnId])
+}
+
+model CashBalance {
+  portfolioId String
+  currency    String
+  amount      Decimal @db.Decimal(24, 6)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, currency])
+}
+
+/// Daily close per listed symbol (shared across users; market data, not user data).
+model PriceDaily {
+  symbol   String
+  date     DateTime @db.Date
+  close    Decimal  @db.Decimal(24, 6)
+  currency String
+  source   String   @default("TOSS")
+
+  @@id([symbol, date])
+}
+
+model FxDaily {
+  pair String   // e.g. USDKRW
+  date DateTime @db.Date
+  rate Decimal  @db.Decimal(20, 10)
+
+  @@id([pair, date])
+}
+
+/// Value of what a portfolio holds directly, per day, in the user's base currency.
+/// Hierarchy roll-ups are computed on read from these rows and the edges.
+model Snapshot {
+  portfolioId String
+  date        DateTime @db.Date
+  value       Decimal  @db.Decimal(24, 6)
+  flow        Decimal  @db.Decimal(24, 6)
+  cash        Decimal  @db.Decimal(24, 6)
+  holdings    Json     // { [holdingId]: valueBase }
+  createdAt   DateTime @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, date])
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String
+  entity   String
+  entityId String
+  action   String
+  before   Json?
+  after    Json?
+  at       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, at])
+}
