@@ -11,6 +11,8 @@ import { dec, kstIso, prisma } from '@/server/db';
 import { fxRate, getQuotes } from '@/server/market';
 import { ASSET_TYPE_LABEL } from '@/server/services/assets';
 import { journalsByTxn, listJournals } from '@/server/services/journal';
+import { relatedView } from '@/server/services/knowledge';
+import { RelatedPanel } from '@/components/knowledge/links';
 import { TargetBar } from '@/components/journal/viewer';
 import { STATUS_LABEL } from '@/domain/journal';
 
@@ -35,6 +37,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     listJournals(user.id, { assetId: h.assetId }),
     journalsByTxn(user.id, h.transactions.map((t) => t.id)),
   ]);
+  const knowledge = await relatedView(user.id, { type: 'asset', id: h.assetId });
   const quote = quotes.get(h.assetId);
   const fxNow = h.asset.currency === 'KRW' ? Dec.ONE : usd;
   const open = h.lots.filter((l) => dec(l.qtyRemaining).isPos());
@@ -206,6 +209,18 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             </ActionForm>
           </div>
         )}
+      </section>
+
+      <section className="card" id="knowledge">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>관련 투자 거장 · 책 · 메모</h2>
+          <p className="sub">이 종목에 직접 연결한 기록과, 이 종목의 자산 성질(예: 가치주)·키워드로 이어지는 기록입니다.</p>
+        </div>
+        <RelatedPanel
+          data={knowledge}
+          order={['sage', 'book', 'note', 'topic']}
+          empty="아직 이어진 기록이 없습니다. 자산 성질에서 이 종목의 성질을 지정하거나, 투자 노트에서 종목을 속성으로 연결하세요."
+        />
       </section>
 
       <section className="card">

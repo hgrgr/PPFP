@@ -46,7 +46,7 @@ export default async function JournalListPage({ searchParams }: { searchParams: 
               ))}
             </div>
           </div>
-          <JournalTreeView key={t.current} tree={t.tree} />
+          <JournalTreeView key={t.current} tree={t.tree} traitGrouping={t.current !== 'type'} />
         </section>
       </>
     );

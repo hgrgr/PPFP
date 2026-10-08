@@ -62,6 +62,8 @@ interface Shot {
   /** Elements to crop to (their union, padded). Omit for the first screen. */
   clip?: Find[];
   pad?: number;
+  /** Keep the floating quick-memo button (hidden elsewhere so it does not cover content) */
+  memo?: boolean;
 }
 interface Ids {
   root: string;
@@ -73,6 +75,9 @@ interface Ids {
   allWeather: string;
   assetClass: string;
   equityStyle: string;
+  samsung: string;
+  buffett: string;
+  book: string;
 }
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
@@ -362,6 +367,68 @@ const SHOTS: Shot[] = [
     ],
     clip: [{ sel: '.bn-suggestion-menu' }, { sel: '.bn-editor [data-content-type="heading"]' }],
   },
+  {
+    file: 'notes',
+    path: () => '/notes',
+    wait: 2000,
+    clip: [{ sel: '.page-head' }, { sel: '.note-grid' }],
+    marks: [{ sel: '[aria-label="투자 노트"]' }, { sel: 'textarea', closest: '.card' }, { sel: '.hashtag' }, { sel: '.note-card .kchip', closest: '.inline' }, { sel: 'form[method="get"]' }],
+  },
+  {
+    file: 'quick-memo',
+    path: (ids) => `/holdings/${ids.samsung}`,
+    wait: 2000,
+    memo: true,
+    steps: [{ click: { sel: '.memo-fab' } }, { until: "!!document.querySelector('.memo-drawer textarea')" }, { set: { sel: '.memo-drawer textarea' }, value: '실적 발표 후 외국인 순매수 전환. 목표가 다시 점검 #가치투자' }, { wait: 600 }],
+    marks: [{ sel: '.memo-fab' }, { sel: '.memo-drawer textarea' }, { sel: '.memo-drawer .sub', text: 'Ctrl+Enter' }],
+  },
+  {
+    file: 'sages',
+    path: () => '/sages',
+    wait: 1500,
+    clip: [{ sel: 'h2', text: '내가 정리한 거장', closest: 'section' }, { sel: 'h2', text: '거장 추가', closest: 'section' }],
+    pad: 16,
+    marks: [{ sel: '.badge.ok' }, { sel: 'button.primary', text: '추가' }, { sel: 'button', text: '직접 추가' }],
+  },
+  {
+    file: 'sage-detail',
+    path: (ids) => `/sages/${ids.buffett}`,
+    wait: 4000,
+    width: 1280,
+    clip: [{ sel: '.doc-bar' }, { sel: 'details.card' }],
+    marks: [{ sel: '.props' }, { sel: 'span', text: '속성 —', closest: 'section' }, { sel: 'details.card .related' }],
+  },
+  {
+    file: 'book-detail',
+    path: (ids) => `/books/${ids.book}`,
+    wait: 4000,
+    width: 1280,
+    clip: [{ sel: '.doc-bar' }, { sel: '.doc-body' }],
+    marks: [{ sel: '[aria-label="읽은 상태"]' }, { sel: 'span', text: '속성 —', closest: 'section' }, { sel: 'details.card' }, { sel: '.doc-body' }],
+  },
+  {
+    file: 'topics',
+    path: () => '/topics',
+    wait: 2000,
+    width: 1280,
+    clip: [{ sel: '.topic-layout' }],
+    pad: 16,
+    marks: [{ sel: '[aria-label="키워드 목록"]' }, { sel: 'span', text: '연결 —', closest: 'div' }],
+  },
+  {
+    file: 'holding-knowledge',
+    path: (ids) => `/holdings/${ids.samsung}`,
+    wait: 2000,
+    width: 1280,
+    clip: [{ sel: '#knowledge' }],
+  },
+  {
+    file: 'journal-tree-related',
+    path: (ids) => `/journal?view=tree&by=${ids.equityStyle}`,
+    wait: 2500,
+    steps: [{ press: { sel: '.tree-node.k-category' } }, { until: "!!document.querySelector('.drawer.tree-detail .related')", timeout: 20_000 }, { wait: 800 }],
+    marks: [{ sel: '.tree-node.k-category' }, { sel: '.drawer.tree-detail .related' }],
+  },
   { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
 ];
@@ -400,7 +467,7 @@ window.__docs = {
   },
   set(f, value) {
     const el = this.find(f);
-    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -514,6 +581,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
       return r.result.value;
     };
     await run(PAGE_HELPERS);
+    if (!shot.memo) await run("document.head.insertAdjacentHTML('beforeend', '<style>.memo-fab{display:none!important}</style>')");
     for (const step of shot.steps ?? []) {
       if ('wait' in step) await sleep(step.wait);
       else if ('until' in step) {
@@ -611,6 +679,9 @@ async function main() {
       allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,
       assetClass: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'assetClass' } })).id,
       equityStyle: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'equityStyle' } })).id,
+      samsung: (await db.holding.findFirstOrThrow({ where: { asset: { symbol: '005930' } } })).id,
+      buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
+      book: (await db.book.findFirstOrThrow()).id,
     };
     await db.$disconnect();
 

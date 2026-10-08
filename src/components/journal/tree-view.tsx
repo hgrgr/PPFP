@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { layoutTree, type PlacedNode, type TreeNode } from '@/domain/journal-tree';
+import { layoutTree, UNCATEGORIZED, type PlacedNode, type TreeNode } from '@/domain/journal-tree';
 import { krwShort, pct } from '@/lib/format';
+import { RelatedLoader } from '@/components/knowledge/links';
 import { JournalDrawer } from './dashboard-panel';
 
 const COLS = [120, 210, 240, 280];
@@ -42,7 +43,7 @@ function defaultCollapsed(root: TreeNode): Set<string> {
  * Click a node to see it on the right; a journal opens in the side window. The circle on a
  * node folds or unfolds it.
  */
-export function JournalTreeView({ tree }: { tree: TreeNode }) {
+export function JournalTreeView({ tree, traitGrouping = false }: { tree: TreeNode; traitGrouping?: boolean }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => defaultCollapsed(tree));
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const [openJournal, setOpenJournal] = useState<string | null>(null);
@@ -113,6 +114,7 @@ export function JournalTreeView({ tree }: { tree: TreeNode }) {
           <div className="drawer-body">
             <Detail
               node={selected}
+              traitGrouping={traitGrouping}
               onOpen={(id) => {
                 setSelected(null);
                 setOpenJournal(id);
@@ -187,7 +189,7 @@ function Node({ p, selected, onPick, onToggle }: { p: PlacedNode; selected: bool
   );
 }
 
-function Detail({ node: n, onOpen }: { node: TreeNode; onOpen: (id: string) => void }) {
+function Detail({ node: n, onOpen, traitGrouping }: { node: TreeNode; onOpen: (id: string) => void; traitGrouping: boolean }) {
   const kids = n.children ?? [];
   if (n.kind === 'root' || n.kind === 'category') {
     return (
@@ -220,6 +222,12 @@ function Detail({ node: n, onOpen }: { node: TreeNode; onOpen: (id: string) => v
           ))}
         </ul>
         {n.kind === 'category' && <a className="sub" href="/traits">성질별 목표 비중 보기 ›</a>}
+        {n.kind === 'category' && traitGrouping && n.ref !== UNCATEGORIZED && (
+          <div className="stack" style={{ gap: 6 }}>
+            <span className="sub strong">이 성질과 이어진 투자 거장 · 책 · 메모</span>
+            <RelatedLoader target={{ type: 'trait', id: n.ref! }} order={['sage', 'book', 'note', 'topic']} empty="아직 없습니다. 투자 노트에서 키워드나 거장에 이 성질을 연결하세요." />
+          </div>
+        )}
       </div>
     );
   }
@@ -242,6 +250,10 @@ function Detail({ node: n, onOpen }: { node: TreeNode; onOpen: (id: string) => v
           <a className="btn small primary" href={`/journal/new?asset=${n.ref}`}>+ 새 일지</a>
           <a className="btn small" href={`/journal?asset=${n.ref}`}>일지 목록</a>
           <a className="btn small" href="/traits">성질 지정</a>
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="sub strong">관련 투자 거장 · 책 · 메모</span>
+          <RelatedLoader target={{ type: 'asset', id: n.ref! }} order={['sage', 'book', 'note', 'topic']} empty="아직 없습니다. 이 종목의 성질(예: 가치주)과 이어진 거장·책이 생기면 여기에 나옵니다." />
         </div>
         <ul className="detail-list">
           {kids.map((k) => (
