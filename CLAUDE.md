@@ -15,5 +15,5 @@
 
 ## 개발 메모
 
-- 검증: `npm test`, `npm run typecheck`, `npm run build`.
+- 검증: `npm test`, `npm run typecheck`, `npm run build`. PR과 main 푸시마다 [CI](.github/workflows/ci.yml)가 빈 Postgres에 마이그레이션을 적용한 뒤 같은 검증을 돌린다.
 - `.env`, `.claude/`는 커밋하지 않는다.

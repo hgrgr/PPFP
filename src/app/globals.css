@@ -201,6 +201,12 @@ details[open] > summary::before { content: '▾ '; }
 .ticker .tick .value { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .ticker .tick .chg { font-size: 12px; font-weight: 500; }
 tr.pick { cursor: pointer; }
+/* ranking card: drops below the board when it cannot get ~380px, keeps 등락률 in view */
+.row > .rank-card { flex: 1 1 380px; }
+table.rank th, table.rank td { padding-left: 6px; padding-right: 6px; }
+table.rank th:first-child, table.rank td:first-child { padding-left: 0; }
+table.rank th:last-child, table.rank td:last-child { padding-right: 0; }
+.rank-name { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 128px; }
 tr.pick:hover td { background: var(--surface-2); }
 tr.pick[aria-selected='true'] td { background: var(--line-soft); }
 @keyframes flash-up { from { background: color-mix(in srgb, var(--up) 22%, transparent); } to { background: transparent; } }
