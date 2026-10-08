@@ -128,6 +128,8 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/dai
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | (없음) | 서버 기본 키. 사용자가 연동 · 설정에 자기 키를 넣으면 그 키를 씁니다(`APP_ENCRYPTION_KEY`로 암호화해 저장). 둘 다 없으면 AI 어드바이저는 꺼져 있습니다. |
 
+아침 브리핑과 알림 자동 분석은 사용자가 연동 · 설정에서 켭니다. 서버 타이머가 5분마다 브리핑 시각이 된 사용자를 찾아 보내고(`ALERTS=off`면 `POST /api/cron/alerts`가 같은 일을 합니다), 가격·목표 비중 알림이 오면 그 자리에서 AI 분석을 붙입니다.
+
 휴대폰·PC 푸시 알림은 HTTPS로 서비스할 때만 켤 수 있습니다(`localhost` 제외). 아이폰은 iOS 16.4 이상에서 홈 화면에 추가한 앱에서만 됩니다.
 
 ## 테스트

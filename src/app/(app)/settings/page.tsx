@@ -8,6 +8,8 @@ import { requireUser } from '@/server/auth';
 import { mask } from '@/server/crypto';
 import { listConnections } from '@/server/services/brokers';
 import { aiStatus } from '@/server/services/ai/agent';
+import { AskAiButton } from '@/components/ai/launcher';
+import { BRIEFING_PROMPT } from '@/domain/ai';
 
 export const metadata = { title: '연동 · 설정' };
 export const dynamic = 'force-dynamic';
@@ -149,6 +151,32 @@ export default async function SettingsPage() {
               <input type="checkbox" name="clearKey" /> 저장한 키 지우기
             </label>
           )}
+          <fieldset className="full ai-schedule">
+            <legend className="sub strong">자동으로 받기</legend>
+            <label className="check">
+              <input type="checkbox" name="briefing" defaultChecked={ai.briefing} /> 아침 브리핑
+            </label>
+            <label className="check">
+              <select name="briefingHour" defaultValue={String(ai.briefingHour)} aria-label="브리핑 시각">
+                {[5, 6, 7, 8, 9, 10, 11, 12].map((h) => (
+                  <option key={h} value={h}>
+                    {h}시
+                  </option>
+                ))}
+              </select>
+              이후 첫 확인 때
+            </label>
+            <label className="check">
+              <input type="checkbox" name="briefingWeekdays" defaultChecked={ai.briefingWeekdays} /> 평일만
+            </label>
+            <label className="check">
+              <input type="checkbox" name="alertAnalysis" defaultChecked={ai.alertAnalysis} /> 가격·목표 비중 알림이 오면 AI가 바로 분석
+            </label>
+            <span className="sub">
+              브리핑은 알림함과 푸시로 오고, 누르면 AI 대화로 이어집니다. 한 번에 보통 수십~수백 원이 들며 월 사용 한도에 포함됩니다.{' '}
+              <AskAiButton className="btn small" label="지금 브리핑 받아 보기" prompt={BRIEFING_PROMPT} />
+            </span>
+          </fieldset>
           <div className="full">
             <Submit>저장</Submit>
           </div>

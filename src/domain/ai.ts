@@ -15,6 +15,7 @@ export const AGENTS: Record<AgentKind, { name: string; description: string; star
     name: '포트폴리오 매니저',
     description: '보유 종목·목표 비중·자산 성질·매매일지를 보고 점검과 리밸런싱을 제안합니다. 필요하면 웹에서 최신 소식을 찾아봅니다.',
     starters: [
+      '오늘 아침 브리핑을 해 줘',
       '내 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지는?',
       '목표 비중에서 벗어난 곳이 있으면 어떻게 맞추면 좋을지 알려 줘',
       '매매일지의 목표가와 지금 가격을 비교해서 다시 볼 종목을 골라 줘',
@@ -190,4 +191,38 @@ export function toChat(messages: { role: string; content: unknown }[]): ChatTurn
     }
   }
   return turns;
+}
+
+// ---------------------------------------------------------------- briefing and alerts
+
+export const BRIEFING_PROMPT =
+  '오늘 아침 브리핑을 해 줘. 최근 1주 포트폴리오 변화와 그 이유, 목표 비중에서 벗어난 곳, 목표가·손절가나 가격 알림에 가까워진 종목, 내 주요 보유 종목의 최근 뉴스와 이번 주 일정(실적 발표 등)을 짧게 정리하고, 오늘 할 일을 3가지 이내로 알려 줘.';
+
+/** The question the advisor gets when it looks into an alert by itself. */
+export function alertPrompt(n: { title: string; body: string }): string {
+  return `알림이 왔어: "${n.title}" — ${n.body.replace(/\s+/g, ' ').trim()}\n왜 이런 일이 생겼는지(최근 뉴스 포함), 내 포트폴리오와 매매일지에 비춰 지금 무엇을 검토해야 하는지 짧게 정리해 줘. 필요하면 제안 카드를 만들어 줘.`;
+}
+
+/** Which agent looks into an alert: the journal coach for journal target/stop alerts. */
+export const alertAgent = (url: string | null): AgentKind => (url?.startsWith('/journal/') ? 'COACH' : 'MANAGER');
+
+/** Is a briefing due now? Times are in Korea; one briefing per day at or after the chosen hour. */
+export function briefingDue(now: Date, s: { briefing: boolean; briefingHour: number; briefingWeekdays: boolean; briefingLastDate: string | null }): string | null {
+  if (!s.briefing) return null;
+  const k = new Date(now.getTime() + 9 * 3_600_000);
+  const date = k.toISOString().slice(0, 10);
+  const weekday = k.getUTCDay();
+  if (s.briefingWeekdays && (weekday === 0 || weekday === 6)) return null;
+  if (k.getUTCHours() < s.briefingHour || s.briefingLastDate === date) return null;
+  return date;
+}
+
+/** First lines of an answer as plain text, for a notification or push. */
+export function plainSummary(markdown: string, max = 280): string {
+  const text = markdown
+    .split('\n')
+    .map((l) => l.replace(/^#{1,6}\s+/, '').replace(/^\s*[-*]\s+/, '· ').replace(/\*\*(.+?)\*\*/g, '$1').trim())
+    .filter((l) => l && !/^\|?\s*-{3}/.test(l) && !l.startsWith('|'))
+    .join('\n');
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

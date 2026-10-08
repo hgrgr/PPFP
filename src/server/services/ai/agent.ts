@@ -34,6 +34,10 @@ export async function aiStatus(userId: string) {
     keyHint: s?.apiKeyHint ?? null,
     monthlyLimit: s?.monthlyLimit ? Number(s.monthlyLimit) : null,
     webSearch: s?.webSearch ?? true,
+    briefing: s?.briefing ?? false,
+    briefingHour: s?.briefingHour ?? 8,
+    briefingWeekdays: s?.briefingWeekdays ?? true,
+    alertAnalysis: s?.alertAnalysis ?? false,
     spent,
   };
 }

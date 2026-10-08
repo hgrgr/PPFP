@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { conversationTitle, costUsd, monthStartKst, toChat, userContent } from '../ai';
+import { alertAgent, alertPrompt, briefingDue, conversationTitle, costUsd, monthStartKst, plainSummary, toChat, userContent } from '../ai';
 
 describe('ai cost', () => {
   it('prices tokens, cache and web searches', () => {
@@ -61,5 +61,33 @@ describe('ai chat view', () => {
   it('titles a conversation from the first line', () => {
     assert.equal(conversationTitle('  목표 비중 점검\n자세히'), '목표 비중 점검');
     assert.equal(conversationTitle('가'.repeat(50)).length, 40);
+  });
+});
+
+describe('ai briefing', () => {
+  const s = { briefing: true, briefingHour: 8, briefingWeekdays: true, briefingLastDate: null as string | null };
+  it('is due once a day from the chosen hour in Korea', () => {
+    // 2026-10-08 (Thu) 07:59 and 08:00 KST
+    assert.equal(briefingDue(new Date('2026-10-07T22:59:00Z'), s), null);
+    assert.equal(briefingDue(new Date('2026-10-07T23:00:00Z'), s), '2026-10-08');
+    assert.equal(briefingDue(new Date('2026-10-08T05:00:00Z'), { ...s, briefingLastDate: '2026-10-08' }), null);
+    assert.equal(briefingDue(new Date('2026-10-08T05:00:00Z'), { ...s, briefing: false }), null);
+  });
+
+  it('skips weekends unless asked', () => {
+    // 2026-10-10 is a Saturday
+    assert.equal(briefingDue(new Date('2026-10-10T01:00:00Z'), s), null);
+    assert.equal(briefingDue(new Date('2026-10-10T01:00:00Z'), { ...s, briefingWeekdays: false }), '2026-10-10');
+  });
+
+  it('summarizes an answer as plain text', () => {
+    assert.equal(plainSummary('## 요약\n**순자산** 1억\n| a | b |\n| --- | --- |\n- 할 일'), '요약\n순자산 1억\n· 할 일');
+    assert.equal(plainSummary('가'.repeat(400)).length, 280);
+  });
+
+  it('sends journal alerts to the coach', () => {
+    assert.equal(alertAgent('/journal/abc'), 'COACH');
+    assert.equal(alertAgent('/portfolios/x#targets'), 'MANAGER');
+    assert.match(alertPrompt({ title: '삼성전자 목표가 도달', body: '84,600원\n일지' }), /알림이 왔어: "삼성전자 목표가 도달" — 84,600원 일지/);
   });
 });
