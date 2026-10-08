@@ -1,7 +1,8 @@
 /**
  * Fills an empty database with the fictional demo account used for the user
  * guide's screenshots: a portfolio tree, a year of stock trades, an imported
- * brokerage account, a replayed 업비트 history and a manual deposit.
+ * brokerage account, a replayed 업비트 history, a manual deposit, a few
+ * trade journal entries and asset trait groups.
  *
  * Run by scripts/docs/capture.ts against its own throwaway database; never
  * against real data. Broker calls go to the fake servers in fake-market.cjs.
@@ -17,7 +18,10 @@ import { saveConnection, sourceKey } from '@/server/services/brokers';
 import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings } from '@/server/services/imports';
 import { runDailyForUser } from '@/server/services/jobs';
+import { saveJournal, saveTemplate } from '@/server/services/journal';
+import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
+import { BUILTIN_FORMATS } from '@/domain/journal';
 import { recordBuy, recordCash, recordSell, recordValuation } from '@/server/services/trading';
 
 const D = 86_400_000;
@@ -125,12 +129,183 @@ async function main() {
   });
 
   await runDailyForUser(uid, { fullRebuild: true });
+  await seedJournals(uid);
+  await seedTraits(uid);
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D) } });
   const cashLeft = await prisma.cashBalance.findMany({ where: { portfolio: { userId: uid } }, include: { portfolio: { select: { name: true } } } });
   console.error('[seed] cash', cashLeft.map((c) => `${c.portfolio.name} ${c.currency} ${c.amount}`).join(' | '));
   console.log(token);
+}
+
+// ---------------------------------------------------------------- trade journal
+const h2 = (text: string) => ({ type: 'heading', props: { level: 2 }, content: text });
+const para = (text: string) => ({ type: 'paragraph', content: text });
+const li = (text: string) => ({ type: 'bulletListItem', content: text });
+const todo = (text: string, checked = false) => ({ type: 'checkListItem', props: { checked }, content: text });
+const grid = (rows: string[][]) => ({ type: 'table', content: { type: 'tableContent', headerRows: 1, rows: rows.map((cells) => ({ cells })) } });
+const formatOf = (id: string) => BUILTIN_FORMATS.find((f) => f.id === id)!;
+const won = (v: number) => Math.round(v / 100) * 100;
+
+async function seedJournals(uid: string) {
+  const asset = (symbol: string) => prisma.asset.findFirstOrThrow({ where: { userId: uid, symbol } });
+  const txnOf = (symbol: string, type: 'BUY' | 'SELL', nth = 0) =>
+    prisma.transaction.findMany({ where: { type, holding: { asset: { userId: uid, symbol } } }, orderBy: { tradeAt: 'desc' } }).then((r) => r[nth]);
+  const now = (symbol: string) => Number(sessionTrade(symbol, 0).price);
+  const ymd = (d: Date) => new Date(d.getTime() + 9 * H).toISOString().slice(0, 10);
+
+  const nvda = await asset('NVDA');
+  const nvdaSale = (await txnOf('NVDA', 'SELL'))!;
+  const sold = Number(nvdaSale.price);
+  await saveJournal(uid, {
+    assetId: nvda.id,
+    title: '엔비디아 일부 매도 — 비중 조절',
+    entryDate: ymd(nvdaSale.tradeAt),
+    status: 'OPEN',
+    targetPrice: (sold * 1.18).toFixed(2),
+    basePrice: sold.toFixed(2),
+    stopPrice: (sold * 0.85).toFixed(2),
+    template: 'builtin:sell',
+    fields: formatOf('builtin:sell').fields,
+    values: { reason: '리밸런싱', followed: '예', emotion: '차분', score: '4' },
+    txnIds: [nvdaSale.id],
+    content: [
+      h2('매도 사유'),
+      para('미국 주식 포트폴리오에서 엔비디아 비중이 35%를 넘어 25주를 정리했습니다. 남은 물량은 목표가까지 들고 갑니다.'),
+      {
+        type: 'chart',
+        props: { kind: 'bar', title: '포트폴리오 내 비중 (%)', data: '종목,매도 전,매도 후\n엔비디아,36,27\n애플,34,39\nS&P 500 ETF,30,34' },
+      },
+      h2('처음 계획과 비교'),
+      grid([
+        ['항목', '계획', '실제'],
+        ['가격', '목표가 근처에서 일부 익절', `$${sold.toFixed(2)}에 25주`],
+        ['비중', '30% 이하', '27%'],
+      ]),
+      h2('잘한 점'),
+      li('정해 둔 비중 한도를 지켰습니다.'),
+      h2('아쉬운 점'),
+      li('실적 발표 직후 변동성이 커서 분할로 나눠 팔았으면 더 좋았습니다.'),
+      h2('다음 매매에 바꿀 것'),
+      todo('실적 발표 주간에는 3번에 나눠서 매도', true),
+      todo('남은 물량 목표가 도달 시 다시 비중 점검'),
+    ],
+  });
+
+  const aapl = await asset('AAPL');
+  const aaplBuy = (await txnOf('AAPL', 'BUY'))!;
+  const bought = Number(aaplBuy.price);
+  await saveJournal(uid, {
+    assetId: aapl.id,
+    title: '애플 추가 매수 계획',
+    entryDate: ymd(aaplBuy.tradeAt),
+    targetPrice: (bought * 1.25).toFixed(2),
+    basePrice: bought.toFixed(2),
+    stopPrice: (bought * 0.9).toFixed(2),
+    targetDate: ymd(new Date(Date.now() + 120 * D)),
+    template: 'builtin:buy',
+    fields: formatOf('builtin:buy').fields,
+    values: { entry: '추가 매수(물타기·불타기)', horizon: '중기 (몇 달)', weight: '35', conviction: '4' },
+    txnIds: [aaplBuy.id],
+    content: [
+      h2('매수 근거'),
+      li('펀더멘털: 서비스 매출 비중이 꾸준히 늘어 이익률이 좋아지는 중'),
+      li('차트·수급: 200일선 위에서 눌림 후 반등'),
+      li('촉매(이벤트·일정): 가을 신제품 발표'),
+      h2('차트'),
+      { type: 'stockChart', props: { symbol: '' } },
+      h2('시나리오'),
+      grid([
+        ['시나리오', '예상 가격', '대응'],
+        ['좋을 때', `$${(bought * 1.25).toFixed(0)}`, '목표가에서 절반 익절'],
+        ['보통', `$${(bought * 1.08).toFixed(0)}`, '보유, 분기 실적 확인'],
+        ['나쁠 때', `$${(bought * 0.9).toFixed(0)}`, '손절가에서 전량 정리'],
+      ]),
+      h2('매수 전 체크리스트'),
+      todo('실적 발표일·배당락일 확인', true),
+      todo('포트폴리오 비중 한도 안인지 확인', true),
+      todo('손절가를 정하고 기록', true),
+    ],
+  });
+
+  const samsung = await asset('005930');
+  const sNow = now('005930');
+  await saveJournal(uid, {
+    assetId: samsung.id,
+    title: '삼성전자 장기 보유 점검',
+    entryDate: ymd(new Date(Date.now() - 30 * D)),
+    targetPrice: String(won(sNow * 1.3)),
+    basePrice: String(won(sNow * 0.97)),
+    template: 'builtin:thesis',
+    fields: formatOf('builtin:thesis').fields,
+    values: { horizon: '장기 (1년 이상)', fair: String(won(sNow * 1.25)), review: '분기', conviction: '3' },
+    txnIds: [],
+    content: [
+      { type: 'quote', content: '메모리 업황 회복과 파운드리 수주가 함께 오면 재평가될 회사' },
+      h2('핵심 지표'),
+      grid([
+        ['지표', '지금', '기대'],
+        ['매출 성장률', '8%', '15%'],
+        ['영업이익률', '11%', '18%'],
+        ['PER', '14배', '12배'],
+      ]),
+      h2('생각이 틀렸다고 볼 조건'),
+      li('두 분기 연속 메모리 가격 하락'),
+      li('주요 고객사 수주 이탈'),
+    ],
+  });
+
+  await saveTemplate(uid, {
+    name: '실적 시즌 매매',
+    description: '실적 발표 전후로 짧게 들어가는 매매',
+    fields: [
+      { key: 'earnings', label: '실적 발표일', type: 'date' },
+      { key: 'consensus', label: '컨센서스 대비', type: 'select', options: ['상회', '부합', '하회'] },
+      { key: 'ir', label: 'IR 자료', type: 'url' },
+      { key: 'conviction', label: '확신도', type: 'rating' },
+    ],
+    content: [h2('발표 전 기대'), li(''), h2('발표 후 반응'), li(''), h2('대응'), todo('')],
+  });
+}
+
+// ---------------------------------------------------------------- asset traits
+async function seedTraits(uid: string) {
+  await createGroupFromPreset(uid, 'allWeather', true);
+  const cls = await createGroupFromPreset(uid, 'assetClass', true);
+  await applyExampleTargets(uid, cls);
+  const style = await createGroupFromPreset(uid, 'equityStyle', false);
+  const role = await createGroupFromPreset(uid, 'role', false);
+  await applyExampleTargets(uid, role);
+  const traitsOf = async (groupId: string) => new Map((await prisma.trait.findMany({ where: { groupId } })).map((t) => [t.name, t]));
+  const styles = await traitsOf(style);
+  await saveGroup(uid, style, {
+    name: '주식 스타일',
+    cashTrait: '',
+    traits: [...styles.values()]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((t) => ({ id: t.id, name: t.name, color: t.color, description: t.description ?? '', target: { 성장주: '40', 가치주: '30', 배당주: '20', 혼합: '10' }[t.name] ?? '' })),
+  });
+  const roles = await traitsOf(role);
+  const tesla = await trackWatchItem(uid, 'TSLA');
+  const bySymbol = async (symbol: string) => (await prisma.asset.findFirstOrThrow({ where: { userId: uid, symbol } })).id;
+  const tag = async (symbol: string, groupId: string, names: string[], map: Map<string, { id: string }>) =>
+    setAssetTraits(uid, symbol === 'TSLA' ? tesla : await bySymbol(symbol), groupId, names.map((n) => map.get(n)!.id));
+  for (const [sym, st, ro] of [
+    ['AAPL', '성장주', '핵심'],
+    ['NVDA', '성장주', '위성'],
+    ['VOO', '혼합', '핵심'],
+    ['005930', '가치주', '핵심'],
+    ['000660', '성장주', '위성'],
+    ['069500', '혼합', '핵심'],
+    ['TSLA', '성장주', '위성'],
+  ] as const) {
+    await tag(sym, style, [st], styles);
+    await tag(sym, role, [ro], roles);
+  }
+  for (const sym of ['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-SOL']) {
+    if (await prisma.asset.findFirst({ where: { userId: uid, symbol: sym } })) await tag(sym, role, ['위성'], roles);
+  }
 }
 
 main()

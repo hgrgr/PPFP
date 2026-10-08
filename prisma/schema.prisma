@@ -81,6 +81,10 @@ model User {
   portfolios      Portfolio[]
   assets          Asset[]
   auditLogs       AuditLog[]
+  journals         JournalEntry[]
+  journalTemplates JournalTemplate[]
+  journalImages    JournalImage[]
+  traitGroups      TraitGroup[]
 }
 
 model Session {
@@ -187,6 +191,8 @@ model Asset {
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   holdings Holding[]
+  journals JournalEntry[]
+  traits   AssetTrait[]
 
   @@unique([userId, symbol])
   @@index([userId])
@@ -251,6 +257,7 @@ model Transaction {
   holding      Holding?         @relation(fields: [holdingId], references: [id], onDelete: SetNull)
   createdLot   Lot?             @relation("lotSource")
   consumptions LotConsumption[]
+  journals     JournalTxn[]
 
   @@unique([portfolioId, externalRef])
   @@index([portfolioId, tradeAt])
@@ -335,4 +342,136 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, at])
+}
+
+enum JournalStatus {
+  OPEN
+  CLOSED
+}
+
+/// A trade journal entry about one asset. The target price is required: price alerts and
+/// the AI advisor read it, so it is a typed column rather than part of the free-form body.
+model JournalEntry {
+  id          String        @id @default(cuid())
+  userId      String
+  assetId     String
+  title       String
+  /// The day the entry is about (KST date of the trade or the plan).
+  entryDate   DateTime      @db.Date
+  status      JournalStatus @default(OPEN)
+  /// Prices are in `currency`, the asset's trading currency.
+  currency    String
+  targetPrice Decimal       @db.Decimal(24, 6)
+  /// Price when the entry was written; with the target it gives the direction and progress.
+  basePrice   Decimal?      @db.Decimal(24, 6)
+  stopPrice   Decimal?      @db.Decimal(24, 6)
+  targetDate  DateTime?     @db.Date
+  /// Template the entry started from: "builtin:<key>" or a JournalTemplate id. Informational only.
+  template    String?
+  /// Custom properties with their definitions copied in, so later template edits do not change old entries.
+  fields      Json          @default("[]")
+  /// BlockNote document (array of blocks).
+  content     Json          @default("[]")
+  /// Plain text of `content`, for search and for the AI advisor.
+  contentText String        @default("")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  txns  JournalTxn[]
+
+  @@index([userId, assetId])
+  @@index([userId, entryDate])
+}
+
+/// Transactions a journal entry is about.
+model JournalTxn {
+  entryId       String
+  transactionId String
+
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  transaction Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, transactionId])
+  @@index([transactionId])
+}
+
+/// A user's own journal format: custom properties plus a starting body.
+model JournalTemplate {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  fields      Json     @default("[]")
+  content     Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Images pasted or uploaded into journal entries. Served only to their owner.
+model JournalImage {
+  id        String   @id @default(cuid())
+  userId    String
+  mime      String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A way of classifying assets, e.g. 올웨더 경제 국면 or 주식 스타일. Its traits are the classes.
+model TraitGroup {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  /// Built-in preset it was created from ("allWeather", "equityStyle", ...), if any.
+  preset      String?
+  /// Trait that portfolio cash balances count as in this group's allocation.
+  cashTraitId String?
+  /// What shares are measured against: "all" (everything held) or "tagged" (only assets tagged in this group).
+  base        String   @default("all")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  traits Trait[]
+
+  @@index([userId])
+}
+
+/// One class within a group. `targetWeight` is the wanted share of the group (0..1).
+model Trait {
+  id           String   @id @default(cuid())
+  groupId      String
+  name         String
+  description  String?
+  color        String
+  targetWeight Decimal? @db.Decimal(20, 10)
+  sortOrder    Int      @default(0)
+
+  group  TraitGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  assets AssetTrait[]
+
+  @@unique([groupId, name])
+}
+
+/// An asset tagged with a trait. An asset with several traits in one group is split evenly between them.
+model AssetTrait {
+  assetId String
+  traitId String
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  trait Trait @relation(fields: [traitId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, traitId])
+  @@index([traitId])
 }

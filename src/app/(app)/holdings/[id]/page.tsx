@@ -10,6 +10,9 @@ import { requireUser } from '@/server/auth';
 import { dec, kstIso, prisma } from '@/server/db';
 import { fxRate, getQuotes } from '@/server/market';
 import { ASSET_TYPE_LABEL } from '@/server/services/assets';
+import { journalsByTxn, listJournals } from '@/server/services/journal';
+import { TargetBar } from '@/components/journal/viewer';
+import { STATUS_LABEL } from '@/domain/journal';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +29,12 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     },
   });
   if (!h) notFound();
-  const [quotes, usd] = await Promise.all([getQuotes(user.id, [h.asset]), fxRate(user.id, 'USD')]);
+  const [quotes, usd, journals, txnJournals] = await Promise.all([
+    getQuotes(user.id, [h.asset]),
+    fxRate(user.id, 'USD'),
+    listJournals(user.id, { assetId: h.assetId }),
+    journalsByTxn(user.id, h.transactions.map((t) => t.id)),
+  ]);
   const quote = quotes.get(h.assetId);
   const fxNow = h.asset.currency === 'KRW' ? Dec.ONE : usd;
   const open = h.lots.filter((l) => dec(l.qtyRemaining).isPos());
@@ -201,11 +209,42 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
       </section>
 
       <section className="card">
+        <div className="spread">
+          <h2>매매일지</h2>
+          <a className="btn small primary" href={`/journal/new?asset=${h.assetId}`}>+ 새 일지</a>
+        </div>
+        {journals.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th scope="col">작성일 · 제목</th><th scope="col">목표 예상 가격</th><th scope="col" className="l">진행</th><th scope="col">상태</th></tr>
+              </thead>
+              <tbody>
+                {journals.map((j) => (
+                  <tr key={j.id}>
+                    <td style={{ whiteSpace: 'normal' }}>
+                      <span className="sub">{j.entryDate}</span>
+                      <a className="strong" href={`/journal/${j.id}`}>{j.title}</a>
+                    </td>
+                    <td className="money strong">{money(j.targetPrice, j.currency)}</td>
+                    <td className="l"><TargetBar entry={j} /></td>
+                    <td>{STATUS_LABEL[j.status]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty">아직 이 종목의 매매일지가 없습니다. 아래 거래 옆의 ‘+ 일지’로 그 거래에 대한 일지를 시작할 수 있습니다.</p>
+        )}
+      </section>
+
+      <section className="card">
         <h2>거래 내역</h2>
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col">일시</th><th scope="col">유형</th><th scope="col">수량</th><th scope="col">단가</th><th scope="col">수수료·세금</th><th scope="col">실현손익</th><th scope="col">메모</th><th scope="col"><span className="sr-only">삭제</span></th></tr>
+              <tr><th scope="col">일시</th><th scope="col">유형</th><th scope="col">수량</th><th scope="col">단가</th><th scope="col">수수료·세금</th><th scope="col">실현손익</th><th scope="col">메모</th><th scope="col">매매일지</th><th scope="col"><span className="sr-only">삭제</span></th></tr>
             </thead>
             <tbody>
               {h.transactions.map((t) => {
@@ -222,6 +261,13 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
                     <td className="muted">{money(dec(t.fee).add(dec(t.tax)).toString(), t.currency)}</td>
                     <td className={pnl ? tone(pnl.toString()) : 'muted'}>{pnl ? money(pnl.toString(), t.currency) : '—'}</td>
                     <td className="l muted" style={{ whiteSpace: 'normal', maxWidth: 240 }}>{t.memo}</td>
+                    <td>
+                      {txnJournals.get(t.id)?.length ? (
+                        <a href={`/journal/${txnJournals.get(t.id)![0]}`}>일지</a>
+                      ) : (
+                        <a className="sub" href={`/journal/new?txn=${t.id}`}>+ 일지</a>
+                      )}
+                    </td>
                     <td>
                       <ActionForm action={deleteTransactionAction} confirm="이 거래를 삭제하고 Lot·현금을 되돌릴까요?">
                         <input type="hidden" name="id" value={t.id} />

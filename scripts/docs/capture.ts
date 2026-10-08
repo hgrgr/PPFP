@@ -39,8 +39,12 @@ interface Find {
   nth?: number;
   within?: Find;
 }
-/** click, set a form value, pause, or wait until a page expression is true */
-type Step = { click: Find } | { set: Find; value: string } | { wait: number } | { until: string; timeout?: number };
+/**
+ * click, set a form value, pause, or wait until a page expression is true;
+ * `press` is a real mouse click at the element's centre (it places the caret in an editor),
+ * `type` types text with real key input, `key` presses Enter or End.
+ */
+type Step = { click: Find } | { set: Find; value: string } | { wait: number } | { until: string; timeout?: number } | { press: Find } | { type: string } | { key: 'Enter' | 'End' };
 interface Shot {
   file: string;
   path: (ids: Ids) => string;
@@ -63,6 +67,12 @@ interface Ids {
   root: string;
   us: string;
   aapl: string;
+  nvdaJournal: string;
+  aaplJournal: string;
+  template: string;
+  allWeather: string;
+  assetClass: string;
+  equityStyle: string;
 }
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
@@ -181,6 +191,147 @@ const SHOTS: Shot[] = [
     clip: [card('실시간 랭킹')],
     marks: [{ sel: '[aria-label="시장"]' }, { sel: '[aria-label="랭킹 기준"]' }],
   },
+  {
+    file: 'journal-list',
+    path: () => '/journal',
+    wait: 2500,
+    marks: [{ sel: 'form[method="get"]' }, { sel: '.target-bar' }, { sel: 'a', text: '양식 관리' }],
+  },
+  {
+    file: 'journal-entry',
+    path: (ids) => `/journal/${ids.nvdaJournal}`,
+    wait: 4000,
+    width: 1280,
+    clip: [{ sel: '.doc-bar' }, { sel: '.format-pick' }],
+    marks: [{ sel: '#j-target', closest: 'dd' }, { sel: 'button[aria-label="연결 해제"]', closest: '.chip' }, { sel: 'button', text: '속성 편집', closest: 'div' }, { sel: '.format-pick' }],
+  },
+  { file: 'journal-body', path: (ids) => `/journal/${ids.nvdaJournal}`, wait: 4000, width: 1280, clip: [{ sel: '.doc-body' }], pad: 16 },
+  {
+    file: 'journal-stock-chart',
+    path: (ids) => `/journal/${ids.aaplJournal}`,
+    wait: 5000,
+    width: 1280,
+    scale: 2,
+    steps: [
+      { click: { sel: '.jb-stock button', text: '일' } },
+      { wait: 1500 },
+      { until: "(document.querySelector('.jb-stock .recharts-surface')?.getBoundingClientRect().width ?? 0) > 100 && document.querySelectorAll('.jb-stock .recharts-bar-rectangle').length > 40", timeout: 20_000 },
+      { wait: 1000 },
+    ],
+    clip: [{ sel: '.jb-stock' }],
+    pad: 16,
+  },
+  {
+    file: 'journal-templates',
+    path: () => '/journal/templates',
+    wait: 1500,
+    clip: [{ sel: 'main' }],
+    pad: 0,
+    marks: [{ sel: 'a', text: '이 양식으로 쓰기' }, { sel: 'a', text: '복사해서 내 양식 만들기' }, { sel: 'a', text: '+ 새 양식' }],
+  },
+  {
+    file: 'journal-template-edit',
+    path: (ids) => `/journal/templates/${ids.template}`,
+    wait: 3000,
+    width: 1280,
+    clip: [{ sel: '.doc-bar' }, { sel: 'h2', text: '속성', closest: 'section' }],
+    marks: [{ sel: '.def-row select', nth: 1 }, { sel: 'button', text: '+ 속성 추가' }],
+  },
+  {
+    file: 'dashboard-journal',
+    path: () => '/dashboard',
+    wait: 2500,
+    width: 1280,
+    steps: [{ click: { sel: 'li.pick-slice span', text: '엔비디아', closest: 'li' } }, { until: "!!document.querySelector('#journal-panel .journal-list button')" }, { wait: 800 }],
+    clip: [card('자산 배분'), { sel: '#journal-panel' }],
+    marks: [{ sel: 'li.pick-slice span', text: '엔비디아', closest: 'li' }, { sel: '#journal-panel .journal-list' }],
+  },
+  {
+    file: 'dashboard-journal-drawer',
+    path: () => '/dashboard',
+    wait: 2500,
+    steps: [
+      { click: { sel: 'li.pick-slice span', text: '엔비디아', closest: 'li' } },
+      { until: "!!document.querySelector('#journal-panel .journal-list button')" },
+      { click: { sel: '#journal-panel .journal-list button' } },
+      { until: "!!document.querySelector('.drawer .bn-editor')" },
+      // Keep the list in view next to the side window
+      { until: "(window.scrollTo(0, document.getElementById('journal-panel').getBoundingClientRect().top + scrollY - 380), true)" },
+      { wait: 2500 },
+    ],
+    marks: [{ sel: '#journal-panel .journal-list button .strong' }, { sel: '.drawer .props' }],
+  },
+  {
+    file: 'journal-tree',
+    path: () => '/journal?view=tree',
+    wait: 2500,
+    clip: [{ sel: 'h2', text: '자산 구성 트리', closest: 'section' }],
+    pad: 0,
+    marks: [{ sel: '[aria-label="분류 기준"]' }, { sel: '.tree-node.k-category' }, { sel: '.tree-node.k-asset .tgl' }, { sel: '.tree-node.k-journal' }, { sel: '.tree-node.k-trade' }],
+  },
+  {
+    file: 'journal-tree-detail',
+    path: (ids) => `/journal?view=tree&by=${ids.allWeather}`,
+    wait: 2500,
+    steps: [{ press: { sel: '.tree-node.k-asset' } }, { until: "!!document.querySelector('.drawer.tree-detail')" }, { wait: 800 }],
+    marks: [{ sel: '.tree-node.k-asset' }, { sel: '.drawer.tree-detail .props' }, { sel: '.drawer.tree-detail .detail-list' }],
+  },
+  {
+    file: 'traits',
+    path: (ids) => `/traits?g=${ids.assetClass}`,
+    wait: 2500,
+    clip: [{ sel: '.page-head' }, { sel: 'h2', text: '무엇을 살까', closest: 'section' }],
+    marks: [{ sel: '[role="tablist"]' }, { sel: 'table.trait-table thead' }, { sel: '.alloc-bar .target' }, { sel: 'table.trait-table .badge.warn' }, { sel: 'h2', text: '무엇을 살까', closest: 'section' }],
+  },
+  {
+    file: 'traits-style',
+    path: (ids) => `/traits?g=${ids.equityStyle}`,
+    wait: 2500,
+    width: 1280,
+    clip: [{ sel: 'h2', text: '무엇을 살까', closest: 'section' }, { sel: 'h2', text: '종목별 성질 지정', closest: 'section' }],
+    marks: [{ sel: '.buy-row .chip-btn' }, { sel: '.trait-chip[aria-pressed="true"]' }, { sel: 'button', text: '성질 지정하기' }],
+  },
+  {
+    file: 'traits-edit',
+    path: (ids) => `/traits?g=${ids.equityStyle}`,
+    wait: 2500,
+    width: 1280,
+    steps: [{ click: { sel: 'button', text: '성질 · 목표 비중 편집' } }, { wait: 500 }],
+    clip: [{ sel: '.card.tight', within: { sel: 'h2', text: '주식 스타일', closest: 'section' } }],
+    marks: [{ sel: 'input[aria-label="목표 비중 %"]' }, { sel: 'span', text: '목표 합계' }, { sel: 'select', within: { sel: '.card.tight' } }],
+  },
+  {
+    file: 'traits-add',
+    path: () => '/traits',
+    wait: 2000,
+    width: 1280,
+    steps: [{ click: { sel: 'button[role="tab"]', text: '+ 분류 추가' } }, { wait: 500 }],
+    clip: [{ sel: 'h2', text: '분류 추가', closest: 'section' }],
+    marks: [{ sel: 'label', text: '자동으로 지정' }, { sel: 'h3', text: '지역', closest: '.card' }, { sel: 'h3', text: '직접 만들기', closest: '.card' }],
+  },
+  {
+    file: 'dashboard-traits',
+    path: (ids) => `/dashboard?alloc=trait&g=${ids.allWeather}`,
+    wait: 2500,
+    width: 1280,
+    clip: [card('자산 배분')],
+    marks: [{ sel: 'a', text: '성질', within: { sel: '[aria-label="배분 기준"]' } }, { sel: '[aria-label="성질 분류"]' }],
+  },
+  {
+    file: 'journal-slash',
+    path: (ids) => `/journal/${ids.nvdaJournal}`,
+    wait: 4000,
+    width: 1280,
+    steps: [
+      { press: { sel: '.bn-editor [data-content-type="paragraph"] .bn-inline-content' } },
+      { key: 'End' },
+      { key: 'Enter' },
+      { type: '/' },
+      { until: "!!document.querySelector('.bn-suggestion-menu')" },
+      { wait: 600 },
+    ],
+    clip: [{ sel: '.bn-suggestion-menu' }, { sel: '.bn-editor [data-content-type="heading"]' }],
+  },
   { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
 ];
@@ -211,6 +362,12 @@ window.__docs = {
     return { x, y, width: right - x, height: bottom - y };
   },
   click(f) { this.find(f).click(); },
+  center(f) {
+    const el = this.find(f);
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  },
   set(f, value) {
     const el = this.find(f);
     const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -336,7 +493,17 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
           await sleep(250);
         }
       } else if ('click' in step) await run(`__docs.click(${JSON.stringify(step.click)})`);
-      else await run(`__docs.set(${JSON.stringify(step.set)}, ${JSON.stringify(step.value)})`);
+      else if ('press' in step) {
+        const { x, y } = await run(`__docs.center(${JSON.stringify(step.press)})`);
+        for (const type of ['mousePressed', 'mouseReleased']) await s('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+      } else if ('type' in step) {
+        await s('Input.insertText', { text: step.type });
+        await sleep(150);
+      } else if ('key' in step) {
+        const code = { Enter: 13, End: 35 }[step.key];
+        for (const type of ['keyDown', 'keyUp']) await s('Input.dispatchKeyEvent', { type, key: step.key, code: step.key, windowsVirtualKeyCode: code, ...(type === 'keyDown' && step.key === 'Enter' ? { text: '\r' } : {}) });
+        await sleep(150);
+      } else await run(`__docs.set(${JSON.stringify(step.set)}, ${JSON.stringify(step.value)})`);
     }
     // Lay the whole page out at once for crops, so nothing depends on scrolling
     if (shot.clip) {
@@ -403,7 +570,18 @@ async function main() {
     const pf = await db.portfolio.findMany({ select: { id: true, name: true } });
     const pid = (n: string) => pf.find((p) => p.name === n)!.id;
     const aapl = await db.holding.findFirstOrThrow({ where: { portfolioId: pid('미국 주식'), asset: { symbol: 'AAPL' } } });
-    const ids: Ids = { root: pid('순자산'), us: pid('미국 주식'), aapl: aapl.id };
+    const journal = async (symbol: string) => (await db.journalEntry.findFirstOrThrow({ where: { asset: { symbol } } })).id;
+    const ids: Ids = {
+      root: pid('순자산'),
+      us: pid('미국 주식'),
+      aapl: aapl.id,
+      nvdaJournal: await journal('NVDA'),
+      aaplJournal: await journal('AAPL'),
+      template: (await db.journalTemplate.findFirstOrThrow()).id,
+      allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,
+      assetClass: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'assetClass' } })).id,
+      equityStyle: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'equityStyle' } })).id,
+    };
     await db.$disconnect();
 
     console.log(`starting the demo server on ${BASE}`);
