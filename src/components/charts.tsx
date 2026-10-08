@@ -41,7 +41,7 @@ export function ValueChart({ data }: { data: { date: string; value: number; inve
   );
 }
 
-interface DonutSlice {
+export interface DonutSlice {
   key: string;
   label: string;
   sub?: string;
@@ -67,16 +67,48 @@ function DonutTip({ active, payload }: { active?: boolean; payload?: { payload?:
   );
 }
 
-export function Donut({ slices, centerLabel, centerValue }: { slices: DonutSlice[]; centerLabel: string; centerValue: string }) {
+/**
+ * Ring chart with its legend. With `onPick`, slices whose key is in `pickable` can be clicked
+ * (on the ring or the legend); `notes` adds a small count badge per slice.
+ */
+export function Donut({
+  slices,
+  centerLabel,
+  centerValue,
+  onPick,
+  pickable,
+  picked,
+  notes,
+}: {
+  slices: DonutSlice[];
+  centerLabel: string;
+  centerValue: string;
+  onPick?: (s: DonutSlice) => void;
+  pickable?: Set<string>;
+  picked?: string | null;
+  notes?: Record<string, string>;
+}) {
+  const can = (s: DonutSlice) => !!onPick && (!pickable || pickable.has(s.key));
   if (!slices.length) return <p className="empty">보유 자산이 없습니다.</p>;
   return (
     <div className="inline" style={{ alignItems: 'center', gap: 20 }}>
       <div style={{ position: 'relative', width: 180, height: 180, flex: 'none' }}>
         <ResponsiveContainer>
           <PieChart>
-            <Pie data={slices} dataKey="value" nameKey="label" innerRadius={56} outerRadius={84} paddingAngle={0} stroke="var(--surface)" strokeWidth={2} isAnimationActive={false}>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={56}
+              outerRadius={84}
+              paddingAngle={0}
+              stroke="var(--surface)"
+              strokeWidth={2}
+              isAnimationActive={false}
+              onClick={(_d, i) => slices[i] && can(slices[i]) && onPick?.(slices[i])}
+            >
               {slices.map((s) => (
-                <Cell key={s.key} fill={s.color} />
+                <Cell key={s.key} fill={s.color} cursor={can(s) ? 'pointer' : undefined} fillOpacity={picked && picked !== s.key ? 0.35 : 1} />
               ))}
             </Pie>
             <Tooltip content={<DonutTip />} wrapperStyle={{ zIndex: 2 }} />
@@ -91,12 +123,27 @@ export function Donut({ slices, centerLabel, centerValue }: { slices: DonutSlice
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, flex: '1 1 180px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
         {slices.map((s) => (
-          <li key={s.key} className="inline" style={{ fontSize: 13, flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+          <li
+            key={s.key}
+            className={`inline${can(s) ? ' pick-slice' : ''}`}
+            style={{ fontSize: 13, flexWrap: 'nowrap', alignItems: 'flex-start' }}
+            {...(can(s)
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  'aria-pressed': picked === s.key,
+                  title: `${s.label} 매매일지 보기`,
+                  onClick: () => onPick!(s),
+                  onKeyDown: (e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick!(s)),
+                }
+              : {})}
+          >
             <span className="dot" style={{ background: s.color, marginTop: 5 }} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.label}>{s.label}</span>
               {s.sub && <span className="sub" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.sub}>{s.sub}</span>}
             </span>
+            {notes?.[s.key] && <span className="badge" style={{ height: 20, fontSize: 11 }}>{notes[s.key]}</span>}
             <span className="strong">{pct(s.share, 1, false)}</span>
             <span className="muted money" style={{ width: 70, textAlign: 'right' }}>{krwShort(s.value)}</span>
           </li>

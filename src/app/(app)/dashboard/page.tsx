@@ -1,11 +1,13 @@
 import { refreshDataAction } from '@/app/actions';
 import { AutoRefresh, PrivacyToggle, ScopeSelect } from '@/components/client-bits';
-import { Donut, ValueChart, WeightChart } from '@/components/charts';
+import { ValueChart, WeightChart } from '@/components/charts';
+import { AllocationDonut, JournalPanel, JournalPanelProvider, JournalPickButton } from '@/components/journal/dashboard-panel';
 import { ActionForm, Submit } from '@/components/forms';
 import { PeriodBar } from '@/components/period-bar';
 import { kstDateTime, krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { dashboard } from '@/server/services/analytics';
+import { journalCounts } from '@/server/services/journal';
 import { userGraph } from '@/server/services/portfolios';
 
 export const metadata = { title: '대시보드' };
@@ -18,7 +20,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const user = await requireUser();
   const sp = await searchParams;
   const params = { p: one(sp.p), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc) };
-  const [d, graph] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id)]);
+  const [d, graph, counts] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id), journalCounts(user.id)]);
   const s = d.summary;
   const allocKind = params.alloc === 'ccy' ? 'ccy' : params.alloc === 'type' ? 'type' : 'holding';
   const slices = allocKind === 'ccy' ? d.allocation.byCurrency : allocKind === 'type' ? d.allocation.byType : d.allocation.byHolding;
@@ -47,7 +49,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   }
 
   return (
-    <>
+    <JournalPanelProvider counts={counts}>
       <AutoRefresh seconds={30} />
       <header className="page-head">
         <div className="stack" style={{ gap: 6 }}>
@@ -139,13 +141,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
               <a href={q({ alloc: 'ccy' })} aria-current={allocKind === 'ccy' ? 'true' : undefined}>통화</a>
             </div>
           </div>
-          <Donut slices={slices} centerLabel="총자산" centerValue={krwShort(slices.reduce((a, b) => a + b.value, 0))} />
+          <AllocationDonut slices={slices} byStock={allocKind === 'holding'} centerLabel="총자산" centerValue={krwShort(slices.reduce((a, b) => a + b.value, 0))} />
           <p className="sub">
             {allocKind === 'holding' && '여러 포트폴리오에 나눠 담은 같은 종목은 하나로 합칩니다. 전체 종목별 비중은 아래 보유 종목 표에 있습니다. '}
             부채는 배분에서 제외하고 총평가액에서는 차감합니다.
           </p>
         </div>
       </section>
+
+      <JournalPanel />
 
       <section className="card">
         <div className="stack" style={{ gap: 4 }}>
@@ -223,7 +227,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th scope="col">종목</th><th scope="col">수량 · Lot</th><th scope="col">현재가</th><th scope="col">평가액</th><th scope="col">비중</th><th scope="col">미실현 손익</th></tr>
+                  <tr><th scope="col">종목</th><th scope="col">수량 · Lot</th><th scope="col">현재가</th><th scope="col">평가액</th><th scope="col">비중</th><th scope="col">미실현 손익</th><th scope="col">매매일지</th></tr>
                 </thead>
                 <tbody>
                   {d.holdings.slice(0, 15).map((h) => (
@@ -243,6 +247,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
                         {signedKrwShort(h.unrealized.toString())}
                         <span className="sub">{h.costBase.isZero() ? '' : pct(h.unrealized.div(h.costBase.abs()).toString())}</span>
                       </td>
+                      <td><JournalPickButton assetId={h.assetId} name={h.name} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -253,6 +258,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           )}
         </div>
       </section>
-    </>
+    </JournalPanelProvider>
   );
 }

@@ -62,8 +62,14 @@ function Tip({ active, payload, unit, currency }: { active?: boolean; payload?: 
   );
 }
 
-/** Candlesticks with volume underneath; the interval is picked above the chart. */
-export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: string; currency: string; prevClose: number | null; paused: boolean }) {
+export interface PriceMark {
+  y: number;
+  label: string;
+  color: string;
+}
+
+/** Candlesticks with volume underneath; the interval is picked above the chart. `marks` draws extra price lines (a journal's target, stop). */
+export function CandleChart({ symbol, currency, prevClose, paused, marks = [] }: { symbol: string; currency: string; prevClose: number | null; paused: boolean; marks?: PriceMark[] }) {
   const [unit, setUnit] = useState<CandleUnit>(() => {
     try {
       const saved = localStorage.getItem('ppfp-candle-unit') as CandleUnit | null;
@@ -104,7 +110,7 @@ export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: s
   const rows: Row[] = (data?.candles ?? []).map((c) => ({ ...c, range: [c.l, c.h] }));
   const intradayUnit = MINUTE_UNITS.includes(unit);
   // Wide enough for the longest price label: coins run to hundreds of millions of won
-  const longest = Math.max(0, ...rows.map((r) => priceTick(r.h).length), prevClose === null ? 0 : priceTick(prevClose).length);
+  const longest = Math.max(0, ...rows.map((r) => priceTick(r.h).length), ...marks.map((m) => priceTick(m.y).length), prevClose === null ? 0 : priceTick(prevClose).length);
   const axisWidth = Math.max(56, 16 + 7 * (longest + 1));
   return (
     <div className="stack" style={{ gap: 8 }}>
@@ -126,13 +132,16 @@ export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: s
         <div className="money" role="img" aria-label={`${symbol} ${CANDLE_LABEL[unit]}봉 차트, ${rows.length}개`}>
           <div style={{ width: '100%', height: 240 }}>
             <ResponsiveContainer>
-              <ComposedChart data={rows} syncId={`candles-${symbol}`} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <ComposedChart data={rows} syncId={`candles-${symbol}`} margin={{ top: marks.length ? 20 : 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="var(--line-soft)" vertical={false} />
                 <XAxis dataKey="t" hide />
                 <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={axisWidth} tickFormatter={(v) => priceTick(Number(v))} />
                 {intradayUnit && prevClose !== null && (
                   <ReferenceLine y={prevClose} stroke="var(--muted)" strokeDasharray="4 4" ifOverflow="extendDomain" label={{ value: '전일 종가', position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' }} />
                 )}
+                {marks.map((m) => (
+                  <ReferenceLine key={m.label} y={m.y} stroke={m.color} strokeDasharray="6 3" ifOverflow="extendDomain" label={{ value: `${m.label} ${priceTick(m.y)}`, position: 'insideBottomRight', fontSize: 11, fill: m.color }} />
+                ))}
                 <Tooltip content={<Tip unit={unit} currency={currency} />} cursor={{ fill: 'var(--line-soft)', opacity: 0.6 }} />
                 <Bar dataKey="range" shape={<CandleShape />} isAnimationActive={false} />
               </ComposedChart>

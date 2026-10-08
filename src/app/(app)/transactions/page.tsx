@@ -7,6 +7,7 @@ import { effectiveWeights } from '@/domain/portfolio-graph';
 import { kstDateTime, money, qty, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { dec, prisma } from '@/server/db';
+import { journalsByTxn } from '@/server/services/journal';
 import { userGraph } from '@/server/services/portfolios';
 
 export const metadata = { title: '거래 내역' };
@@ -37,6 +38,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     }),
     prisma.transaction.count({ where }),
   ]);
+  const journals = await journalsByTxn(user.id, rows.map((t) => t.id));
   const pageHref = (n: number) =>
     `?${new URLSearchParams([...Object.entries(sp).filter(([k, v]) => v && k !== 'page'), ['page', String(n)]] as [string, string][])}`;
   const exportQs = new URLSearchParams(Object.entries({ p: scope, from: sp.from, to: sp.to }).filter(([, v]) => v) as [string, string][]);
@@ -91,7 +93,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
               <thead>
                 <tr>
                   <th scope="col">일시</th><th scope="col" className="l">포트폴리오</th><th scope="col">유형</th><th scope="col" className="l">자산</th>
-                  <th scope="col">수량</th><th scope="col">단가</th><th scope="col">현금 증감</th><th scope="col">실현손익</th><th scope="col"><span className="sr-only">작업</span></th>
+                  <th scope="col">수량</th><th scope="col">단가</th><th scope="col">현금 증감</th><th scope="col">실현손익</th><th scope="col">매매일지</th><th scope="col"><span className="sr-only">작업</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -107,6 +109,15 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                       <td>{t.price ? money(dec(t.price).toString(), t.currency) : '—'}</td>
                       <td className={`money ${tone(dec(t.cashDelta).toString())}`}>{dec(t.cashDelta).isZero() ? '—' : money(dec(t.cashDelta).toString(), t.currency)}</td>
                       <td className={pnl ? tone(pnl.toString()) : 'muted'}>{pnl ? money(pnl.toString(), t.currency) : '—'}</td>
+                      <td>
+                        {journals.get(t.id)?.length ? (
+                          <a href={`/journal/${journals.get(t.id)![0]}`}>일지{journals.get(t.id)!.length > 1 ? ` ${journals.get(t.id)!.length}` : ''}</a>
+                        ) : t.holding ? (
+                          <a className="sub" href={`/journal/new?txn=${t.id}`}>+ 일지</a>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                       <td>
                         <ActionForm action={deleteTransactionAction} confirm="이 거래를 삭제하고 Lot·현금을 되돌릴까요?">
                           <input type="hidden" name="id" value={t.id} />

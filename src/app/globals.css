@@ -227,3 +227,61 @@ tr.pick[aria-selected='true'] td { background: var(--line-soft); }
 .icon-btn:hover { background: var(--line-soft); color: var(--ink); }
 .icon-btn[aria-pressed='true'] { color: #e8a200; }
 @media (prefers-reduced-motion: reduce) { .flash-up, .flash-down { animation: none; } }
+
+/* trade journal */
+.journal-doc { max-width: 920px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.doc-bar { position: sticky; top: 0; z-index: 3; background: var(--ground); padding: 6px 0; }
+.doc-title { border: 0; background: transparent; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 4px 0; min-height: 0; color: var(--ink); width: 100%; }
+.doc-title:focus { outline: none; box-shadow: none; }
+.doc-title::placeholder { color: var(--muted); opacity: 0.6; }
+.props { display: grid; grid-template-columns: minmax(110px, 160px) 1fr; gap: 6px 14px; margin: 0; align-items: center; font-size: 14px; }
+.props dt { color: var(--muted); font-weight: 500; font-size: 13px; }
+.props dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.props dd > input:not([type='checkbox']), .props dd > select, .props dd > span > input { max-width: 260px; min-height: 34px; }
+.props.compact { grid-template-columns: minmax(90px, 120px) 1fr; gap: 6px 12px; font-size: 13.5px; }
+.req { color: var(--danger); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--line-soft); font-size: 12.5px; }
+.chip button { border: 0; background: transparent; cursor: pointer; color: var(--muted); padding: 0 4px; font-size: 12px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip-btn[aria-pressed='true'] { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+.chip-btn .badge { height: 18px; font-size: 11px; }
+.txn-pick { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); width: 100%; font-size: 13px; }
+.format-pick { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--line-soft); }
+.doc-body { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 0; min-height: 240px; }
+.def-row { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(110px, 0.8fr) minmax(140px, 1.4fr) auto; gap: 8px; align-items: center; }
+@media (max-width: 640px) { .def-row { grid-template-columns: 1fr 1fr; } .props { grid-template-columns: 1fr; gap: 2px; } .props dd { margin-bottom: 8px; } }
+.stars { display: inline-flex; gap: 2px; color: var(--line); font-size: 18px; line-height: 1; }
+.stars button { border: 0; background: transparent; cursor: pointer; padding: 0 1px; font-size: 18px; color: inherit; line-height: 1; }
+.stars .on { color: #e8a200; }
+.target-bar { display: inline-flex; flex-direction: column; gap: 4px; min-width: 120px; }
+.target-bar .track { display: block; height: 6px; border-radius: 3px; background: var(--line-soft); overflow: hidden; }
+.target-bar .fill { display: block; height: 100%; border-radius: 3px; background: var(--up); }
+.target-bar .fill.down { background: var(--down); }
+.badge.ok { background: #e9f7ef; color: var(--ok); }
+.badge.muted { color: var(--muted); }
+.excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; max-width: 420px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.jb-chart, .jb-stock { width: 100%; margin: 4px 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.jb-title { border: 0; background: transparent; font-weight: 600; font-size: 15px; padding: 2px 0; min-height: 0; flex: 1 1 160px; }
+/* BlockNote: follow the app's colors and type */
+.journal-body .bn-editor { background: transparent; font-family: inherit; padding-inline: 48px 24px; }
+.bn-container[data-color-scheme] { --bn-colors-editor-background: var(--surface); --bn-colors-editor-text: var(--ink); --bn-font-family: inherit; --bn-border-radius-medium: 8px; }
+@media (max-width: 640px) { .journal-body .bn-editor { padding-inline: 28px 8px; } }
+
+/* journal panel on the dashboard */
+.journal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.journal-list li + li { border-top: 1px solid var(--line-soft); }
+.journal-list button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; text-align: left; border: 0; background: transparent; padding: 10px 8px; border-radius: 10px; cursor: pointer; font: inherit; color: inherit; }
+.journal-list button:hover, .journal-list button[aria-current='true'] { background: var(--surface-2); }
+.pick-slice { cursor: pointer; border-radius: 8px; }
+.pick-slice:hover, .pick-slice[aria-pressed='true'] { background: var(--surface-2); }
+.drawer { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(480px, calc(100vw - 24px)); z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; animation: drawer-in 0.18s ease-out; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+.drawer-body { overflow: auto; padding: 16px 18px 24px; }
+.drawer .doc-body { border: 0; padding: 0; min-height: 0; }
+.drawer .journal-body .bn-editor { padding-inline: 0; }
+@keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
+/* the app's data-table rules must not reach tables inside a journal body */
+.journal-body :is(td, th) { text-align: left; white-space: normal; vertical-align: top; font-size: inherit; color: inherit; border-color: var(--line); }
+.journal-body th { font-weight: 600; background: var(--surface-2); }
