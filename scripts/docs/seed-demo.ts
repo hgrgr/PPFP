@@ -362,6 +362,8 @@ async function seedKnowledge(uid: string) {
   await createNote(uid, '반도체 업황 바닥 신호. PBR 1배 아래면 분할 매수 검토 #가치투자 #안전마진', `/holdings/${samsung.id}`);
   await createNote(uid, '비중이 커진 종목은 감정이 아니라 목표 비중표로 정리하기 #리스크_관리 #자산배분', '/dashboard');
   await createNote(uid, '린치: 내가 쓰는 제품의 회사부터 보기. 매일 쓰는 앱·결제 서비스 목록 만들어 보기 #성장투자', '/sages');
+  // AI advisor: morning briefing on (the capture script triggers it), alerts analyzed by hand
+  await prisma.aiSettings.create({ data: { userId: uid, briefing: true, briefingHour: 7, briefingWeekdays: false, monthlyLimit: '20.00' } });
 }
 
 main()
