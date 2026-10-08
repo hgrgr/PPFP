@@ -60,6 +60,7 @@ export const TOOL_LABEL: Record<string, string> = {
   get_investment_notes: '투자 노트 확인',
   get_sage_profile: '투자 거장 정리 확인',
   get_price_history: '주가 흐름 확인',
+  get_tax_summary: '세금 예상 확인',
   get_journal: '매매일지 읽기',
   get_trade_review: '실현 매매 통계 확인',
   propose_journal_review: '일지 복기 제안',

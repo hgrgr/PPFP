@@ -15,6 +15,7 @@ import { getJournal, listJournals } from '../journal';
 import { relatedView, topicsOverview } from '../knowledge';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
+import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
 
 export interface ToolContext {
@@ -414,6 +415,17 @@ const tradeReview = tool(
   },
 );
 
+const tax = tool(
+  'get_tax_summary',
+  '한 해의 세금 예상(한국 거주 개인, 소액주주 기준): 해외주식 양도차익·손실·과세표준·예상 세액(250만 원 공제, 22%), 국내주식·코인 실현손익, 배당·이자 금융소득과 2,000만 원 종합과세 기준, 올해라면 연말 전 손실 상계 후보와 기본공제를 채울 이익 실현 후보. 금액은 원화.',
+  z.object({ year: z.number().int().min(2000).max(2100).optional().describe('연도, 기본 올해') }),
+  async ({ year }, { userId }) => {
+    const r = await taxReport(userId, year ?? Number(kstDate().slice(0, 4)));
+    const { realized, income, ...rest } = r;
+    return { ...rest, overseasSales: realized.filter((x) => x.bucket === 'OVERSEAS').slice(-30), incomeItems: income.length };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -527,7 +539,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 
