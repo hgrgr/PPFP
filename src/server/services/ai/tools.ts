@@ -6,13 +6,14 @@
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { priceStats, tradeStats } from '@/domain/ai-analysis';
 import type { Dec } from '@/domain/decimal';
 import { kstDate, prisma } from '../../db';
 import { currentState, dashboard } from '../analytics';
 import { listAlerts, portfolioTargets } from '../alerts';
-import { listJournals } from '../journal';
+import { getJournal, listJournals } from '../journal';
 import { relatedView, topicsOverview } from '../knowledge';
-import { stockDetail } from '../market-board';
+import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
 import { assetTraitMap, traitOverview } from '../traits';
 
@@ -325,6 +326,94 @@ const sageProfile = tool(
   },
 );
 
+const priceHistory = tool(
+  'get_price_history',
+  '종목의 일봉으로 계산한 주가 흐름: 1주·1개월·3개월·6개월·1년 수익률, 52주 고가·저가와 거리, 20·60·120일 이동평균, 20일 변동성(연율), 20일 평균 거래량. 보유하지 않은 종목도 됩니다.',
+  z.object({ symbol: z.string().describe('종목 코드, 예: 005930, NVDA, KRW-BTC') }),
+  async ({ symbol }, { userId }) => {
+    const v = await liveCandles(userId, symbol, '1d', 260);
+    const stats = priceStats(v.candles);
+    if (!stats) throw new UserError(`${symbol}의 일봉을 받지 못했습니다. 연결된 증권사·거래소에서 이 종목 시세를 주는지 확인하세요.`);
+    return { symbol, source: v.source, ...stats };
+  },
+);
+
+async function findJournal(userId: string, ref: string) {
+  const q = ref.trim();
+  const j =
+    (await prisma.journalEntry.findFirst({ where: { userId, OR: [{ id: q }, { title: q }] } })) ??
+    (await prisma.journalEntry.findFirst({ where: { userId, title: { contains: q, mode: 'insensitive' } }, orderBy: { entryDate: 'desc' } }));
+  if (!j) throw new UserError(`'${ref}' 매매일지를 찾지 못했습니다. get_journals로 제목을 확인하세요.`);
+  return j;
+}
+
+const journal = tool(
+  'get_journal',
+  '매매일지 한 편 전체: 속성(목표 예상 가격, 기준 가격, 손절가, 목표 기한, 사용자 속성), 본문, 연결된 거래, 지금 가격과 목표까지의 진행, 목표가·손절가 알림 상태.',
+  z.object({ journal: z.string().describe('일지 제목(일부도 됨)이나 id') }),
+  async ({ journal: ref }, { userId }) => {
+    const j = await getJournal(userId, (await findJournal(userId, ref)).id);
+    const row = await prisma.journalEntry.findUniqueOrThrow({ where: { id: j!.id }, select: { contentText: true } });
+    return {
+      id: j!.id,
+      title: j!.title,
+      asset: `${j!.assetName}${j!.symbol ? ` (${j!.symbol})` : ''}`,
+      date: j!.entryDate,
+      status: j!.status,
+      currency: j!.currency,
+      targetPrice: j!.targetPrice,
+      basePrice: j!.basePrice,
+      stopPrice: j!.stopPrice,
+      targetDate: j!.targetDate,
+      currentPrice: j!.currentPrice,
+      progressPct: pct(j!.progress.ratio),
+      reached: j!.progress.reached,
+      properties: j!.fields.filter((f) => f.value).map((f) => ({ name: f.label, value: f.value })),
+      body: row.contentText.slice(0, 6000),
+      transactions: j!.txns.map((t) => ({ date: t.tradeAt.slice(0, 10), type: t.type, qty: t.qty, price: t.price, portfolio: t.portfolioName })),
+      alerts: j!.alerts,
+    };
+  },
+);
+
+const tradeReview = tool(
+  'get_trade_review',
+  '실현된 매도 전체를 모아 본 매매 성적: 매도 수, 승률, 평균 수익·손실률, 손익비(profit factor), 실현 손익, 이긴·진 매매의 평균 보유 기간, 일지 없이 한 매도 수, 가장 잘한·못한 매매. 기간을 줄 수 있습니다.',
+  z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  }),
+  async ({ from, to }, { userId }) => {
+    const sells = await prisma.transaction.findMany({
+      where: { type: 'SELL', portfolio: { userId }, tradeAt: from || to ? { gte: from ? new Date(`${from}T00:00:00+09:00`) : undefined, lte: to ? new Date(`${to}T23:59:59.999+09:00`) : undefined } : undefined },
+      include: { consumptions: true, holding: { include: { asset: { select: { name: true } } } }, journals: { select: { entryId: true }, take: 1 } },
+      orderBy: { tradeAt: 'desc' },
+      take: 1000,
+    });
+    const rows = sells
+      .filter((t) => t.consumptions.length)
+      .map((t) => {
+        const qty = t.consumptions.reduce((s, c) => s + Number(c.qty), 0);
+        return {
+          date: kstDate(t.tradeAt),
+          asset: t.holding?.asset.name ?? '—',
+          pnlKrw: t.consumptions.reduce((s, c) => s + Number(c.pnlBase), 0),
+          cost: t.consumptions.reduce((s, c) => s + Number(c.cost), 0),
+          pnl: t.consumptions.reduce((s, c) => s + Number(c.pnl), 0),
+          holdingDays: qty ? Math.round(t.consumptions.reduce((s, c) => s + c.holdingDays * Number(c.qty), 0) / qty) : 0,
+          hasJournal: t.journals.length > 0,
+        };
+      });
+    const [buys, buysWithJournal, open, closed] = await Promise.all([
+      prisma.transaction.count({ where: { type: 'BUY', portfolio: { userId } } }),
+      prisma.transaction.count({ where: { type: 'BUY', portfolio: { userId }, journals: { some: {} } } }),
+      prisma.journalEntry.count({ where: { userId, status: 'OPEN' } }),
+      prisma.journalEntry.count({ where: { userId, status: 'CLOSED' } }),
+    ]);
+    return { period: { from: from ?? null, to: to ?? null }, ...tradeStats(rows), buys, buysWithJournal, journalsOpen: open, journalsClosed: closed };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -351,8 +440,8 @@ async function propose(ctx: ToolContext, kind: string, payload: unknown, summary
 
 const proposeNote = tool(
   'propose_note',
-  '투자 노트에 메모를 남기자고 제안합니다(사용자가 확인해야 저장). 본문에 #키워드를 쓰면 키워드로 묶이고, assets에 적은 종목이 연결됩니다.',
-  z.object({ body: z.string().min(1).max(4000), assets: z.array(z.string()).max(5).optional().describe('연결할 내 종목 코드나 이름') }),
+  '투자 노트에 메모를 남기자고 제안합니다(사용자가 확인해야 저장). 리서치 리포트 요약도 여기에 남깁니다. 본문에 #키워드를 쓰면 키워드로 묶이고, assets에 적은 종목이 연결됩니다.',
+  z.object({ body: z.string().min(1).max(10000), assets: z.array(z.string()).max(5).optional().describe('연결할 내 종목 코드나 이름') }),
   async (input, ctx) => {
     const assets = [];
     for (const a of input.assets ?? []) assets.push(await findAsset(ctx.userId, a));
@@ -404,7 +493,41 @@ const proposeTargets = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, holding, transactions, quote, journals, notes, sageProfile, proposeNote, proposeAlert, proposeTargets] as Tool<z.ZodType>[];
+const proposeReview = tool(
+  'propose_journal_review',
+  '매매일지 본문 끝에 복기 내용을 덧붙이자고 제안합니다(사용자가 확인해야 저장). review는 "## 소제목", "- 목록" 줄을 쓸 수 있는 글입니다. close를 true로 하면 일지를 종료로 바꿉니다.',
+  z.object({ journal: z.string().describe('일지 제목이나 id'), review: z.string().min(1).max(6000), close: z.boolean().optional() }),
+  async (input, ctx) => {
+    const j = await findJournal(ctx.userId, input.journal);
+    return propose(ctx, 'journal_review', { entryId: j.id, review: input.review, close: !!input.close }, `'${j.title}' 일지에 복기 덧붙이기${input.close ? ' · 종료로 바꾸기' : ''}`);
+  },
+);
+
+const proposeDraft = tool(
+  'propose_journal_draft',
+  '새 매매일지 초안을 만들자고 제안합니다(사용자가 확인해야 생성). 목표 예상 가격은 필수입니다. 보유하지 않은 종목도 종목 코드로 만들 수 있습니다. body는 "## 소제목", "- 목록" 줄을 쓸 수 있는 매수 근거·시나리오·리스크 글입니다.',
+  z.object({
+    symbol: z.string().describe('종목 코드, 예: 005930, NVDA'),
+    title: z.string().min(1).max(80),
+    targetPrice: z.number().positive(),
+    basePrice: z.number().positive().optional(),
+    stopPrice: z.number().positive().optional(),
+    targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    body: z.string().min(1).max(8000),
+  }),
+  async (input, ctx) => {
+    const own = await prisma.asset.findFirst({ where: { userId: ctx.userId, symbol: input.symbol.trim().toUpperCase() } });
+    const cur = own?.currency ?? '';
+    return propose(
+      ctx,
+      'journal_draft',
+      input,
+      `새 매매일지: ${input.title} · 목표 ${input.targetPrice.toLocaleString('ko-KR')}${cur ? ` ${cur}` : ''}${input.stopPrice ? ` · 손절 ${input.stopPrice.toLocaleString('ko-KR')}` : ''}`,
+    );
+  },
+);
+
+const TOOLS = [listPortfolios, overview, drift, traits, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

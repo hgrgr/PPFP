@@ -2,7 +2,7 @@
 
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import type { AgentKind } from '@/domain/ai';
+import { AGENTS, type AgentKind } from '@/domain/ai';
 import { AiChat, type SageOption } from './chat';
 
 export interface AskAiDetail {
@@ -12,6 +12,7 @@ export interface AskAiDetail {
 }
 
 const EVENT = 'ppfp:ai';
+const LENSES: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH'];
 
 /** Opens the AI side window with a question about the current screen. */
 export function askAi(detail: AskAiDetail) {
@@ -58,9 +59,12 @@ export function AiLauncher({ sages, configured }: { sages: SageOption[]; configu
 
   if (pathname === '/ai') return null;
   const path = `${pathname}${search.toString() ? `?${search}` : ''}`;
-  const lens = session.agent === 'SAGE' ? (session.sageId ?? '') : 'MANAGER';
+  const lens = session.agent === 'SAGE' ? (session.sageId ?? '') : session.agent;
   const fresh = (value: string) =>
-    setSession((s) => ({ key: s.key + 1, agent: value === 'MANAGER' ? 'MANAGER' : 'SAGE', sageId: value === 'MANAGER' ? null : value || null, conversationId: null }));
+    setSession((s) => {
+      const agent = (LENSES as string[]).includes(value) ? (value as AgentKind) : 'SAGE';
+      return { key: s.key + 1, agent, sageId: agent === 'SAGE' ? value || null : null, conversationId: null };
+    });
 
   return (
     <>
@@ -70,7 +74,11 @@ export function AiLauncher({ sages, configured }: { sages: SageOption[]; configu
       <div className="drawer ai-drawer" role="dialog" aria-label="AI 어드바이저" hidden={!open} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
         <div className="drawer-head">
           <select aria-label="에이전트" value={lens} onChange={(e) => fresh(e.target.value)}>
-            <option value="MANAGER">포트폴리오 매니저</option>
+            {LENSES.map((k) => (
+              <option key={k} value={k}>
+                {AGENTS[k].name}
+              </option>
+            ))}
             {sages.length > 0 && (
               <optgroup label="투자 거장 관점">
                 {sages.map((s) => (

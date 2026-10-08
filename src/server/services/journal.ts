@@ -296,6 +296,17 @@ export async function saveJournal(userId: string, input: JournalInput): Promise<
   });
 }
 
+/** Add blocks at the end of an entry's body (an AI review), optionally closing it. */
+export async function appendToJournal(userId: string, id: string, blocks: unknown[], close = false): Promise<void> {
+  const j = await prisma.journalEntry.findFirst({ where: { id, userId }, select: { content: true } });
+  if (!j) throw new UserError('매매일지를 찾을 수 없습니다.');
+  const content = sanitizeContent([...(Array.isArray(j.content) ? j.content : []), ...blocks]);
+  await prisma.journalEntry.update({
+    where: { id },
+    data: { content: content as Prisma.InputJsonValue, contentText: plainText(content), ...(close ? { status: 'CLOSED' as const } : {}) },
+  });
+}
+
 export async function deleteJournal(userId: string, id: string): Promise<void> {
   const r = await prisma.journalEntry.deleteMany({ where: { id, userId } });
   if (!r.count) throw new UserError('매매일지를 찾을 수 없습니다.');

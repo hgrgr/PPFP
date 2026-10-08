@@ -5,7 +5,10 @@
 
 export const AI_MODEL = 'claude-opus-5-5';
 
-export type AgentKind = 'MANAGER' | 'SAGE';
+export type AgentKind = 'MANAGER' | 'RESEARCH' | 'COACH' | 'SAGE';
+
+/** Order in pickers */
+export const AGENT_ORDER: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH', 'SAGE'];
 
 export const AGENTS: Record<AgentKind, { name: string; description: string; starters: string[] }> = {
   MANAGER: {
@@ -16,6 +19,24 @@ export const AGENTS: Record<AgentKind, { name: string; description: string; star
       '목표 비중에서 벗어난 곳이 있으면 어떻게 맞추면 좋을지 알려 줘',
       '매매일지의 목표가와 지금 가격을 비교해서 다시 볼 종목을 골라 줘',
       '내 보유 종목 중 최근 실적이나 뉴스로 확인할 만한 것을 찾아 줘',
+    ],
+  },
+  RESEARCH: {
+    name: '리서치 애널리스트',
+    description: '종목·업종을 웹에서 깊이 조사해 사업, 최근 실적, 밸류에이션, 주가 흐름, 리스크와 촉매를 출처와 함께 리포트로 정리합니다. 매수 계획 일지 초안도 써 줍니다.',
+    starters: [
+      '내 보유 종목 중 비중이 가장 큰 종목을 깊이 리서치해 줘',
+      '관심종목 중 지금 살펴볼 만한 종목을 골라 리서치해 줘',
+      '반도체 업황을 정리하고 내 포트폴리오에 미치는 영향을 알려 줘',
+    ],
+  },
+  COACH: {
+    name: '매매일지 코치',
+    description: '매매일지와 실제 매매 기록을 함께 보고 복기합니다. 근거가 지켜졌는지, 반복되는 습관과 편향을 짚고, 복기 내용을 일지에 덧붙이자고 제안합니다.',
+    starters: [
+      '최근 1년 매매를 복기해서 내 습관의 강점과 약점을 알려 줘',
+      '진행 중인 일지 중 근거를 다시 점검해야 할 것을 골라 줘',
+      '일지 없이 한 매매를 찾아서 무엇을 기록해 둘지 알려 줘',
     ],
   },
   SAGE: {
@@ -37,6 +58,11 @@ export const TOOL_LABEL: Record<string, string> = {
   get_journals: '매매일지 확인',
   get_investment_notes: '투자 노트 확인',
   get_sage_profile: '투자 거장 정리 확인',
+  get_price_history: '주가 흐름 확인',
+  get_journal: '매매일지 읽기',
+  get_trade_review: '실현 매매 통계 확인',
+  propose_journal_review: '일지 복기 제안',
+  propose_journal_draft: '일지 초안 제안',
   propose_note: '메모 제안',
   propose_price_alert: '가격 알림 제안',
   propose_target_weights: '목표 비중 제안',

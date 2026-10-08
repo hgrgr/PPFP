@@ -5,6 +5,7 @@ import { money } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { journalAssets, listJournals } from '@/server/services/journal';
 import { journalTree } from '@/server/services/journal-tree';
+import { AskAiButton } from '@/components/ai/launcher';
 
 export const metadata = { title: '매매일지' };
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ export default async function JournalListPage({ searchParams }: { searchParams: 
           <a href="/journal" aria-current={tree ? undefined : 'true'}>목록</a>
           <a href="/journal?view=tree" aria-current={tree ? 'true' : undefined}>트리</a>
         </div>
+        <AskAiButton label="AI 매매 코치" agent="COACH" prompt="최근 1년 매매를 복기해서 내 습관의 강점과 약점, 다음에 바꿀 점을 알려 줘. 일지에 적은 계획과 실제 매매가 맞았는지도 봐 줘." />
         <a className="btn" href="/journal/templates">양식 관리</a>
         <a className="btn primary" href={`/journal/new${sp.asset ? `?asset=${sp.asset}` : ''}`}>+ 새 매매일지</a>
       </div>

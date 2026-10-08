@@ -5,7 +5,7 @@
  */
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
-import { AGENTS, AI_MODEL, conversationTitle, costUsd, monthStartKst, TOOL_LABEL, userContent, type AgentKind } from '@/domain/ai';
+import { AGENT_ORDER, AGENTS, AI_MODEL, conversationTitle, costUsd, monthStartKst, TOOL_LABEL, userContent, type AgentKind } from '@/domain/ai';
 import { decryptSecret } from '../../crypto';
 import { dec, kstDate, prisma } from '../../db';
 import { UserError } from '../portfolios';
@@ -19,7 +19,7 @@ export type ChatEvent =
   | { t: 'done'; costUsd: number }
   | { t: 'error'; message: string };
 
-const MAX_STEPS = 12;
+const MAX_STEPS = 16;
 const running = new Set<string>();
 
 // ---------------------------------------------------------------- settings
@@ -69,6 +69,12 @@ const COMMON = `
 const SYSTEM: Record<AgentKind, string> = {
   MANAGER: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 포트폴리오 매니저입니다. 사용자의 실제 보유 종목, 포트폴리오 구조와 목표 비중, 자산 성질(올웨더 경제 국면·자산군·주식 스타일 등), 매매일지, 투자 노트를 도구로 읽고 점검·리밸런싱·위험 관리를 돕습니다. 집중 위험, 목표 비중 이탈, 통화·자산군 쏠림, 일지의 목표가와 손절가, 사용자가 정리한 투자 원칙과 실제 포트폴리오의 차이를 살핍니다.
 ${COMMON}`,
+  RESEARCH: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 리서치 애널리스트입니다. 사용자가 묻는 종목·업종·주제를 web_search와 web_fetch로 깊이 조사하고, get_quote와 get_price_history로 시세와 주가 흐름을, get_holding과 get_investment_notes로 사용자의 보유 상황과 투자 원칙을 확인해 리포트로 정리합니다. 회사 발표·공시·실적 자료 같은 1차 자료를 우선하고, 기사와 의견은 그렇다고 밝힙니다. 서로 다른 출처가 엇갈리면 둘 다 적습니다.
+
+리포트는 다음 순서를 기본으로 하되 질문에 맞게 줄이거나 늘립니다: 한 줄 결론 → 사업과 경쟁력 → 최근 실적과 가이던스 → 밸류에이션(가능하면 PER·PBR 등 수치와 기준 날짜) → 주가 흐름 → 리스크 → 앞으로 볼 촉매와 일정 → 내 포트폴리오에서의 의미. 끝에 요약을 투자 노트 메모로 남기자고 propose_note로 제안하고, 사용자가 매수를 검토하면 propose_journal_draft로 근거·시나리오·손절 조건이 담긴 일지 초안을 제안합니다.
+${COMMON}`,
+  COACH: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 매매일지 코치입니다. 사용자가 쓴 매매일지(get_journals, get_journal)와 실제 거래·실현 손익(get_transactions, get_trade_review)을 함께 보고 복기를 돕습니다. 일지에 적은 근거·목표가·손절가와 실제 행동이 맞았는지, 이익은 일찍 팔고 손실은 오래 들고 있는지, 물타기·추격 매수·확증 편향 같은 반복 패턴이 있는지, 일지 없이 한 매매가 얼마나 되는지를 숫자로 짚습니다. 비난하지 않고 다음에 바꿀 한두 가지를 구체적으로 제안합니다. 일지 한 편을 복기하면 propose_journal_review로 그 일지에 복기 내용을 덧붙이자고 제안하고, 새 계획이 나오면 propose_journal_draft로 초안을 제안합니다.
+${COMMON}`,
   SAGE: `당신은 개인 투자 관리 앱 PPFP 안에서, 사용자가 투자 노트에 정리한 투자 거장의 철학을 렌즈 삼아 사용자의 포트폴리오를 보는 에이전트입니다. <page-context>의 '관점으로 삼을 거장' 정리(사용자가 직접 쓰고 고친 내용)를 기준으로 판단하고, 필요하면 get_sage_profile로 다시 확인합니다. 그 인물 본인인 척하지 않고 "버핏의 관점에서 보면"처럼 말합니다. 실제 발언을 인용할 때는 확인된 것만 쓰고, 불확실하면 web_search로 확인하거나 인용하지 않습니다. 그 철학에 잘 맞는 종목과 어긋나는 종목, 그 철학이라면 하지 않을 행동을 짚어 줍니다.
 ${COMMON}`,
 };
@@ -115,6 +121,7 @@ async function pageContext(userId: string, path: string | null): Promise<string 
 // ---------------------------------------------------------------- conversations
 
 export async function startConversation(userId: string, agent: AgentKind, sageId: string | null, firstText: string) {
+  if (!AGENT_ORDER.includes(agent)) throw new UserError('알 수 없는 에이전트입니다.');
   if (agent === 'SAGE') {
     if (!sageId || !(await prisma.sage.findFirst({ where: { id: sageId, userId } }))) throw new UserError('관점으로 삼을 투자 거장을 고르세요.');
   }
@@ -179,11 +186,13 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
     await append(userId, conv.id, 'user', userContent(text, ctx.join('\n')));
     await prisma.aiConversation.update({ where: { id: conv.id }, data: { updatedAt: new Date() } });
 
+    const kind = (conv.agent in SYSTEM ? conv.agent : 'MANAGER') as AgentKind;
+    const research = kind === 'RESEARCH';
     const tools: Anthropic.Beta.BetaToolUnion[] = [...toolDefs];
     if (status.webSearch) {
       tools.push(
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' } },
-        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3, citations: { enabled: true } },
+        { type: 'web_search_20260209', name: 'web_search', max_uses: research ? 10 : 5, user_location: { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' } },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: research ? 6 : 3, citations: { enabled: true } },
       );
     }
     let total = 0;
@@ -196,11 +205,12 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
         {
           model: AI_MODEL,
           max_tokens: 32000,
-          system: [{ type: 'text', text: SYSTEM[conv.agent as AgentKind] ?? SYSTEM.MANAGER }],
+          system: [{ type: 'text', text: SYSTEM[kind] }],
           // Caches the stable prefix (tools, system, earlier turns) for the next step
           cache_control: { type: 'ephemeral' },
           thinking: { type: 'adaptive' },
-          output_config: { effort: 'medium' },
+          // Research reads and weighs many sources: think harder there
+          output_config: { effort: research ? 'high' : 'medium' },
           tools,
           messages,
           // A declined request is retried server-side on the model Anthropic picks for the category

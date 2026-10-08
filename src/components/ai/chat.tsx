@@ -37,7 +37,7 @@ function Md({ text }: { text: string }) {
 }
 
 const STATUS_LABEL: Record<string, string> = { DONE: '실행함', DISMISSED: '넘김', FAILED: '실패' };
-const KIND_LABEL: Record<string, string> = { note: '메모', price_alert: '가격 알림', target_weights: '목표 비중' };
+const KIND_LABEL: Record<string, string> = { note: '메모', price_alert: '가격 알림', target_weights: '목표 비중', journal_review: '일지 복기', journal_draft: '일지 초안' };
 
 function ActionCard({ action, onChange }: { action: ActionView; onChange: () => void }) {
   const [pending, start] = useTransition();

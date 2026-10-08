@@ -5,6 +5,7 @@ import type { ActionState } from '@/app/actions';
 import { krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
 import type { Board, BoardRow, RankingView, StockDetail } from '@/server/services/market-board';
 import { CandleChart } from './candle-chart';
+import { AskAiButton } from './ai/launcher';
 
 type Action = (s: ActionState, f: FormData) => Promise<ActionState>;
 type Market = 'KR' | 'US' | 'CRYPTO';
@@ -365,6 +366,7 @@ function Detail({ symbol, paused, onClose, watchAction, unwatchAction, onChanged
           )}
         </div>
         <div className="inline">
+          <AskAiButton className="btn small" label="AI 리서치" agent="RESEARCH" prompt={`${d?.name ?? symbol}(${symbol})을(를) 리서치해 줘. 사업, 최근 실적과 가이던스, 밸류에이션, 주가 흐름, 리스크와 앞으로의 촉매를 출처와 함께 정리해 줘.`} />
           {d && !d.held && (
             <button type="button" className="btn small" onClick={toggleWatch} disabled={pending} aria-pressed={d.watched}>
               {d.watched ? '★ 관심종목 해제' : '☆ 관심종목'}
