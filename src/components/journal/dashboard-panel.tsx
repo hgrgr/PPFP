@@ -138,7 +138,7 @@ export function JournalPanel() {
   );
 }
 
-function JournalDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+export function JournalDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [entry, setEntry] = useState<JournalDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);

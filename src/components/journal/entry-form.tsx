@@ -15,6 +15,8 @@ export interface JournalAssetOption {
   symbol: string | null;
   currency: string;
   type: string;
+  /** Asset traits, for showing next to the asset */
+  traits?: { name: string; color: string }[];
 }
 
 export interface Prefill {
@@ -222,6 +224,17 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
             ))}
           </select>
           {current && <span className="sub">현재가 <span className="money">{money(current, currency)}</span></span>}
+          {asset && (
+            <span className="inline" style={{ gap: 4 }}>
+              {asset.traits?.map((t) => (
+                <span key={t.name} className="chip" style={{ paddingRight: 10 }}>
+                  <span className="dot" style={{ background: t.color }} />
+                  {t.name}
+                </span>
+              ))}
+              <a className="sub" href="/traits">{asset.traits?.length ? '성질 바꾸기' : '성질 지정'}</a>
+            </span>
+          )}
         </dd>
 
         <dt><label htmlFor="j-target">목표 예상 가격 <span className="req" title="필수">*</span></label></dt>

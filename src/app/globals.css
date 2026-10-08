@@ -285,3 +285,44 @@ tr.pick[aria-selected='true'] td { background: var(--line-soft); }
 /* the app's data-table rules must not reach tables inside a journal body */
 .journal-body :is(td, th) { text-align: left; white-space: normal; vertical-align: top; font-size: inherit; color: inherit; border-color: var(--line); }
 .journal-body th { font-weight: 600; background: var(--surface-2); }
+
+/* asset traits */
+.alloc-bar { position: relative; display: block; height: 10px; border-radius: 5px; background: var(--line-soft); min-width: 120px; }
+.alloc-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; }
+.alloc-bar .target { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.trait-chip { --c: var(--ink); display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.trait-chip::before { content: ''; width: 8px; height: 8px; border-radius: 3px; background: var(--c); opacity: 0.35; }
+.trait-chip[aria-pressed='true'] { border-color: var(--c); color: var(--ink); font-weight: 600; background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
+.trait-chip[aria-pressed='true']::before { opacity: 1; }
+.buy-row { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.trait-edit-row { display: grid; grid-template-columns: 44px minmax(120px, 1fr) auto minmax(140px, 1.6fr) auto; gap: 8px; align-items: center; }
+@media (max-width: 640px) { .trait-edit-row { grid-template-columns: 44px 1fr auto; } }
+
+/* journal tree */
+.tree-wrap { min-width: 0; }
+.tree-scroll { overflow: auto; max-height: 78vh; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); }
+.tree-svg { display: block; font-family: inherit; }
+.tree-link { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.tree-node { cursor: pointer; outline: none; }
+.tree-node .box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.tree-node.k-root .box { fill: var(--ink); stroke: var(--ink); }
+.tree-node.k-root .lbl { fill: var(--surface); font-weight: 700; }
+.tree-node.k-category .lbl { font-weight: 700; }
+.tree-node.k-asset .lbl { font-weight: 600; }
+.tree-node.k-trade .box { fill: transparent; stroke-dasharray: 4 3; }
+.tree-node.k-trade .lbl, .tree-node.k-more .lbl { fill: var(--muted); }
+.tree-node.k-more .box { fill: transparent; stroke: none; }
+.tree-node .lbl { fill: var(--ink); font-size: 13px; }
+.tree-node .val { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tree-node .badge-t { fill: var(--series-1); font-size: 11px; font-weight: 600; }
+.tree-node .ico { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tree-node.k-journal .ico { stroke: var(--series-1); }
+.tree-node:hover .box, .tree-node:focus-visible .box { stroke: var(--ink-2); }
+.tree-node.sel .box { stroke: var(--ink); stroke-width: 2; }
+.tree-node .tgl circle { fill: var(--surface); stroke: var(--muted); }
+.tree-node .tgl path { stroke: var(--ink-2); stroke-width: 1.5; }
+.drawer.tree-detail { bottom: auto; max-height: calc(100vh - 24px); width: min(380px, calc(100vw - 24px)); }
+.detail-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 13.5px; }
+.detail-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--line-soft); }
+.linkish { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; font-weight: 600; }
+.linkish:hover { text-decoration: underline; }

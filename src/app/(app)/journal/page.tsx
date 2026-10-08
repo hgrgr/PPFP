@@ -1,8 +1,10 @@
+import { JournalTreeView } from '@/components/journal/tree-view';
 import { TargetBar } from '@/components/journal/viewer';
 import { STATUS_LABEL } from '@/domain/journal';
 import { money } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { journalAssets, listJournals } from '@/server/services/journal';
+import { journalTree } from '@/server/services/journal-tree';
 
 export const metadata = { title: '매매일지' };
 export const dynamic = 'force-dynamic';
@@ -10,21 +12,51 @@ export const dynamic = 'force-dynamic';
 export default async function JournalListPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireUser();
   const sp = await searchParams;
+  const tree = sp.view === 'tree';
+  const head = (
+    <header className="page-head">
+      <div className="stack" style={{ gap: 6 }}>
+        <h1>매매일지</h1>
+        <p className="sub">거래마다 근거와 목표 예상 가격을 남기고, 지금 가격과 비교합니다.</p>
+      </div>
+      <div className="inline">
+        <div className="seg" role="group" aria-label="보기">
+          <a href="/journal" aria-current={tree ? undefined : 'true'}>목록</a>
+          <a href="/journal?view=tree" aria-current={tree ? 'true' : undefined}>트리</a>
+        </div>
+        <a className="btn" href="/journal/templates">양식 관리</a>
+        <a className="btn primary" href={`/journal/new${sp.asset ? `?asset=${sp.asset}` : ''}`}>+ 새 매매일지</a>
+      </div>
+    </header>
+  );
+  if (tree) {
+    const t = await journalTree(user.id, sp.by ?? 'type');
+    return (
+      <>
+        {head}
+        <section className="card">
+          <div className="spread">
+            <div className="stack" style={{ gap: 4 }}>
+              <h2>자산 구성 트리</h2>
+              <p className="sub">큰 분류 → 종목 → 매매(일지, 아직 일지가 없는 거래) 순서입니다. 분류 기준은 자산 유형이나 <a href="/traits">자산 성질</a>에서 만든 분류로 바꿀 수 있습니다.</p>
+            </div>
+            <div className="seg" role="group" aria-label="분류 기준" style={{ flexWrap: 'wrap' }}>
+              {t.groupings.map((g) => (
+                <a key={g.key} href={`/journal?view=tree&by=${g.key}`} aria-current={t.current === g.key ? 'true' : undefined}>{g.label}</a>
+              ))}
+            </div>
+          </div>
+          <JournalTreeView key={t.current} tree={t.tree} />
+        </section>
+      </>
+    );
+  }
   const [rows, assets] = await Promise.all([listJournals(user.id, { assetId: sp.asset, status: sp.status, q: sp.q?.trim() }), journalAssets(user.id)]);
   const filtered = Boolean(sp.asset || sp.status || sp.q);
 
   return (
     <>
-      <header className="page-head">
-        <div className="stack" style={{ gap: 6 }}>
-          <h1>매매일지</h1>
-          <p className="sub">거래마다 근거와 목표 예상 가격을 남기고, 지금 가격과 비교합니다.</p>
-        </div>
-        <div className="inline">
-          <a className="btn" href="/journal/templates">양식 관리</a>
-          <a className="btn primary" href={`/journal/new${sp.asset ? `?asset=${sp.asset}` : ''}`}>+ 새 매매일지</a>
-        </div>
-      </header>
+{head}
 
       <form method="get" className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, alignItems: 'end' }}>
         <label className="field">

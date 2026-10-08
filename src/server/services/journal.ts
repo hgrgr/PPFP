@@ -181,10 +181,14 @@ export async function journalsByTxn(userId: string, txnIds: string[]): Promise<M
 
 /** Assets the user can write about: everything they have recorded, held ones first. */
 export async function journalAssets(userId: string) {
-  const assets = await prisma.asset.findMany({ where: { userId, type: { notIn: ['CASH', 'LIABILITY'] } }, include: { _count: { select: { holdings: true } } }, orderBy: { name: 'asc' } });
+  const assets = await prisma.asset.findMany({
+    where: { userId, type: { notIn: ['CASH', 'LIABILITY'] } },
+    include: { _count: { select: { holdings: true } }, traits: { include: { trait: { select: { name: true, color: true } } } } },
+    orderBy: { name: 'asc' },
+  });
   return assets
     .sort((a, b) => Number(b._count.holdings > 0) - Number(a._count.holdings > 0))
-    .map((a) => ({ id: a.id, name: a.name, symbol: a.symbol, currency: a.currency, type: a.type }));
+    .map((a) => ({ id: a.id, name: a.name, symbol: a.symbol, currency: a.currency, type: a.type, traits: a.traits.map((l) => l.trait) }));
 }
 
 /** Trades of one asset the entry can link to, newest first, with the asset's current price. */
