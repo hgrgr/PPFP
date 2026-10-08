@@ -20,6 +20,7 @@ import { portfolioTargets } from '@/server/services/alerts';
 import { currentState } from '@/server/services/analytics';
 import { ASSET_TYPE_LABEL } from '@/server/services/assets';
 import { userGraph } from '@/server/services/portfolios';
+import { AskAiButton } from '@/components/ai/launcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,7 +128,10 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
 
       <section className="card" id="targets">
         <div className="stack" style={{ gap: 4 }}>
-          <h2>목표 비중 · 리밸런싱 알림</h2>
+          <div className="spread">
+            <h2>목표 비중 · 리밸런싱 알림</h2>
+            <AskAiButton className="btn small" label="AI 리밸런싱 제안" prompt="이 포트폴리오의 목표 비중과 지금 비중을 비교해서 리밸런싱 방안을 제안해 줘. 목표가 없거나 어색하면 목표 비중도 제안해 줘." />
+          </div>
           <p className="sub">하위 포트폴리오(할당만큼), 직접 보유 종목, 현금이 이 포트폴리오에서 차지할 목표 비중을 정합니다. 비워 둔 항목은 목표가 없습니다.</p>
         </div>
         {targets.report.rows.length ? (

@@ -553,3 +553,6 @@ globalThis.fetch = async function demoFetch(input, init) {
 };
 
 module.exports = { KR, US, COINS, KIS_ACCOUNT, USDKRW, ANCHOR, priceAt, stockMeta, dayBar, quoteOf, ledger, smooth, sessionOnOrBefore, parts };
+
+// The AI advisor's Claude calls go to a scripted fake as well
+require('./fake-claude.cjs');

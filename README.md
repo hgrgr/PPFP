@@ -120,6 +120,14 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/dai
 * * * * *  curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/alerts
 ```
 
+## AI 어드바이저
+
+포트폴리오 매니저와 투자 거장 관점 에이전트는 Anthropic의 Claude로 동작합니다. 앱의 서비스 함수를 도구로 써서 숫자를 읽고, 데이터를 바꾸는 일(메모·가격 알림·목표 비중)은 사용자가 확인 카드에서 실행해야 반영됩니다. 웹 검색은 설정에서 끌 수 있습니다.
+
+| 환경 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | (없음) | 서버 기본 키. 사용자가 연동 · 설정에 자기 키를 넣으면 그 키를 씁니다(`APP_ENCRYPTION_KEY`로 암호화해 저장). 둘 다 없으면 AI 어드바이저는 꺼져 있습니다. |
+
 휴대폰·PC 푸시 알림은 HTTPS로 서비스할 때만 켤 수 있습니다(`localhost` 제외). 아이폰은 iOS 16.4 이상에서 홈 화면에 추가한 앱에서만 됩니다.
 
 ## 테스트

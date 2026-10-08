@@ -93,6 +93,10 @@ model User {
   sages            Sage[]
   topics           Topic[]
   knowledgeLinks   KnowledgeLink[]
+  aiSettings       AiSettings?
+  aiConversations  AiConversation[]
+  aiMessages       AiMessage[]
+  aiActions        AiAction[]
 }
 
 model Session {
@@ -675,4 +679,77 @@ model KnowledgeLink {
   @@unique([userId, aType, aId, bType, bId])
   @@index([userId, aType, aId])
   @@index([userId, bType, bId])
+}
+
+/// AI advisor settings: the user's own Anthropic API key (AES-256-GCM, like broker secrets)
+/// and a monthly spending cap. Without a key here the server's ANTHROPIC_API_KEY is used.
+model AiSettings {
+  userId       String   @id
+  apiKeyEnc    String?
+  apiKeyHint   String?
+  /// Monthly cap in USD, estimated from token usage; null = no cap
+  monthlyLimit Decimal? @db.Decimal(10, 2)
+  webSearch    Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One chat with an advisor agent. `agent` is MANAGER (포트폴리오 매니저) or SAGE (an investor's lens, sageId).
+model AiConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  agent     String
+  sageId    String?
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AiMessage[]
+  actions  AiAction[]
+
+  @@index([userId, updatedAt])
+}
+
+/// A message exactly as sent to or received from the Messages API, in order (append-only).
+model AiMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  seq            Int
+  role           String
+  content        Json
+  model          String?
+  usage          Json?
+  costUsd        Decimal  @default(0) @db.Decimal(12, 6)
+  createdAt      DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, seq])
+  @@index([userId, createdAt])
+}
+
+/// Something an agent proposed that changes data (a memo, a price alert, target weights).
+/// Runs only when the user presses 실행.
+model AiAction {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  toolUseId      String
+  kind           String
+  payload        Json
+  summary        String
+  /// PENDING, DONE, DISMISSED, FAILED
+  status         String   @default("PENDING")
+  result         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
 }

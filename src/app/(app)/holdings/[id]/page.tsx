@@ -15,6 +15,7 @@ import { relatedView } from '@/server/services/knowledge';
 import { RelatedPanel } from '@/components/knowledge/links';
 import { TargetBar } from '@/components/journal/viewer';
 import { STATUS_LABEL } from '@/domain/journal';
+import { AskAiButton } from '@/components/ai/launcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
             {[h.asset.symbol, h.asset.market, ASSET_TYPE_LABEL[h.asset.type], h.asset.currency, manual ? '수기 시세' : '증권사 시세'].filter(Boolean).join(' · ')}
           </p>
         </div>
+        <AskAiButton label="AI에게 이 종목 묻기" prompt={`${h.asset.name}을(를) 점검해 줘. 내 보유 상황과 비중, 매매일지 목표가 대비 위치, 최근 실적·뉴스, 내가 정리한 투자 철학과 맞는지 알려 줘.`} />
       </header>
 
       <section className="row">
