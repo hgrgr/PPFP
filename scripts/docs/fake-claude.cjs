@@ -193,12 +193,137 @@ function sageScript(turn, results, first) {
   return { blocks: [text('확인 카드에서 **실행**을 누르면 메모가 투자 노트에 저장됩니다.')], stop: 'end_turn', usage: { input: 500, cached: 13500, output: 40 } };
 }
 
+const fmtNum = (v, cur) => (v === null || v === undefined ? '—' : cur === 'USD' ? `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `₩${Math.round(v).toLocaleString('ko-KR')}`);
+const sign = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`);
+
+function researchScript(turn, results) {
+  const asked = turn[0].content.filter((b) => b.type === 'text').at(-1).text;
+  const m = asked.match(/^(.+?)\(([A-Z0-9.-]+)\)/);
+  const name = m ? m[1] : '엔비디아';
+  const symbol = m ? m[2] : 'NVDA';
+  const done = turn.filter((x) => x.role === 'assistant').length;
+  if (done === 0) {
+    return { blocks: [text(`${name}의 시세와 주가 흐름, 내 보유 기록을 먼저 확인하고 최근 실적 자료를 찾아볼게요.`), call('get_quote', { symbols: [symbol] }), call('get_price_history', { symbol }), call('get_holding', { asset: symbol })], stop: 'tool_use', usage: { input: 10800, cached: 0, output: 180 } };
+  }
+  if (done === 1) {
+    const q = (results.get_quote ?? [])[0] ?? {};
+    const cur = q.currency ?? 'USD';
+    const ph = results.get_price_history ?? { returnPct: {} };
+    const h = results.get_holding && !results.get_holding.error ? results.get_holding : null;
+    const lots = h ? h.holdings.flatMap((x) => x.lots) : [];
+    const qty = lots.reduce((s2, l) => s2 + Number(l.qty), 0);
+    const art1 = { url: 'https://ir.example.com/q3-results', title: '[가상 자료] 3분기 실적 발표: 데이터센터 매출 사상 최대' };
+    const art2 = { url: 'https://news.example.com/ai-capex-2027', title: '[가상 기사] 빅테크 내년 AI 설비 투자 계획 상향' };
+    const s1 = { type: 'server_tool_use', id: id('srvtoolu'), name: 'web_search', input: { query: `${name} 3분기 실적 가이던스` } };
+    const s2 = { type: 'server_tool_use', id: id('srvtoolu'), name: 'web_search', input: { query: 'AI 데이터센터 설비 투자 2027 전망' } };
+    const r = (srv, art) => ({ type: 'web_search_tool_result', tool_use_id: srv.id, content: [{ type: 'web_search_result', url: art.url, title: art.title, encrypted_content: 'demo', page_age: '2026-10-02' }] });
+    const cite = (art, t) => ({ type: 'web_search_result_location', url: art.url, title: art.title, cited_text: t, encrypted_index: 'demo' });
+    const target = q.quote ? Math.round(Number(q.quote.price) * 1.18 * 100) / 100 : 220;
+    const stop = q.quote ? Math.round(Number(q.quote.price) * 0.88 * 100) / 100 : 160;
+    const head = [
+      `## 한 줄 결론`,
+      `성장은 이어지고 있지만 기대도 높습니다. 지금 가격에서는 **분할로 비중을 유지**하고, 실적 발표 전후 변동성에 대비하는 편이 낫습니다.`,
+      ``,
+      `## 주가 흐름`,
+      `| 기간 | 수익률 |`,
+      `| --- | ---: |`,
+      ...['1M', '3M', '6M', '1Y'].map((k) => `| ${k} | ${sign(ph.returnPct[k])} |`),
+      ``,
+      `현재가 ${fmtNum(ph.close, cur)}는 52주 고가보다 ${sign(ph.fromHighPct)}, 20일 변동성은 연 ${ph.volatility20dAnnualPct ?? '—'}%입니다.`,
+      ``,
+      `## 최근 실적`,
+    ].join('\n');
+    return {
+      blocks: [
+        s1,
+        r(s1, art1),
+        s2,
+        r(s2, art2),
+        text(head + '\n'),
+        text('데이터센터 매출이 사상 최대를 기록했고 다음 분기 가이던스도 시장 예상을 웃돌았습니다', [cite(art1, '데이터센터 매출 사상 최대')]),
+        text('. 수요 쪽에서는 '),
+        text('주요 클라우드 기업들이 내년 AI 설비 투자 계획을 올렸습니다', [cite(art2, '내년 AI 설비 투자 계획 상향')]),
+        text(
+          [
+            '.',
+            '',
+            '## 리스크',
+            '- 높은 밸류에이션: 성장 둔화 신호에 주가가 크게 흔들릴 수 있습니다.',
+            '- 고객 집중: 소수 클라우드 기업의 투자 계획에 실적이 좌우됩니다.',
+            '- 수출 규제와 공급망 이슈.',
+            '',
+            '## 내 포트폴리오에서',
+            h ? `${qty.toLocaleString('ko-KR')}주를 보유 중이고, 자산 성질은 ${h.traits.slice(-2).join(', ')}입니다. 위성 비중 한도 안에서 관리하세요.` : '아직 보유하지 않은 종목입니다.',
+            '',
+            '검토용 매수 계획 일지 초안을 제안합니다.',
+          ].join('\n'),
+        ),
+        call('propose_journal_draft', { symbol, title: `${name} 추가 매수 검토`, targetPrice: target, stopPrice: stop, basePrice: q.quote ? Number(q.quote.price) : undefined, body: '## 매수 근거\n- 데이터센터 수요 확대와 가이던스 상향\n## 시나리오\n- 실적 발표 후 조정 시 2회에 나눠 매수\n## 손절 조건\n- 가이던스 하향 또는 손절가 이탈' }),
+      ],
+      stop: 'tool_use',
+      usage: { input: 5200, cached: 10800, output: 1100, searches: 2 },
+    };
+  }
+  return { blocks: [text('확인 카드에서 **실행**을 누르면 매매일지 초안이 만들어집니다. 속성(진입 방식, 투자 기간 등)은 직접 채워 주세요.')], stop: 'end_turn', usage: { input: 600, cached: 16000, output: 50 } };
+}
+
+function coachScript(turn, results) {
+  const ctx = turn[0].content.find((b) => b.type === 'text' && b.text.startsWith('<page-context>'))?.text ?? '';
+  const jt = ctx.match(/매매일지 화면: '(.+?)'/);
+  const done = turn.filter((x) => x.role === 'assistant').length;
+  if (done === 0) {
+    return {
+      blocks: [text(jt ? `'${jt[1]}' 일지와 실제 매매 기록을 함께 볼게요.` : '실현된 매매와 진행 중인 일지를 함께 볼게요.'), call('get_trade_review', {}), jt ? call('get_journal', { journal: jt[1] }) : call('get_journals', { status: 'OPEN' })],
+      stop: 'tool_use',
+      usage: { input: 10200, cached: 0, output: 130 },
+    };
+  }
+  if (done === 1) {
+    const t = results.get_trade_review ?? {};
+    const j = results.get_journal;
+    const rows = [
+      `| 지표 | 값 |`,
+      `| --- | ---: |`,
+      `| 실현 매도 | ${t.sells ?? 0}건 (이익 ${t.wins ?? 0} · 손실 ${t.losses ?? 0}) |`,
+      `| 승률 | ${t.winRatePct ?? '—'}% |`,
+      `| 평균 수익 / 손실 | ${sign(t.avgWinPct)} / ${sign(t.avgLossPct)} |`,
+      `| 평균 보유 (이익 / 손실) | ${t.avgHoldingDaysWins ?? '—'}일 / ${t.avgHoldingDaysLosses ?? '—'}일 |`,
+      `| 일지 없이 한 매도 | ${t.sellsWithoutJournal ?? 0}건 |`,
+    ];
+    const lines = [
+      '## 매매 성적',
+      ...rows,
+      '',
+      j
+        ? `## '${j.title}' 복기\n목표 예상 가격 ${fmtNum(j.targetPrice, j.currency)} 대비 지금 ${fmtNum(j.currentPrice, j.currency)}이고, 연결된 거래는 ${j.transactions.length}건입니다. 일지에 적은 매도 사유와 실제 매도 시점이 맞았습니다.`
+        : '## 진행 중인 일지\n목표가에 가까워진 일지부터 근거를 다시 확인하세요.',
+      '',
+      '## 다음에 바꿀 점',
+      '1. 매도할 때도 일지를 남겨 계획과 비교하세요.',
+      '2. 손실 매매의 보유 기간이 길어지지 않도록 손절가를 일지에 미리 적어 두세요.',
+    ].join('\n');
+    const blocks = [text(lines)];
+    if (j) {
+      blocks.push(text('\n\n이 복기를 일지 끝에 덧붙이자고 제안합니다.'));
+      blocks.push(call('propose_journal_review', { journal: j.title, review: '## 잘한 점\n- 목표 비중을 넘은 만큼만 계획대로 나눠 팔았다\n## 아쉬운 점\n- 매도 후 남은 수량의 새 목표가를 정하지 않았다\n## 다음에\n- 남은 수량의 목표가와 손절가를 다시 적는다' }));
+    }
+    return { blocks, stop: j ? 'tool_use' : 'end_turn', usage: { input: 2600, cached: 10200, output: 640 } };
+  }
+  return { blocks: [text('확인 카드에서 **실행**을 누르면 일지 끝에 복기가 덧붙습니다.')], stop: 'end_turn', usage: { input: 500, cached: 13000, output: 40 } };
+}
+
 async function messages(init) {
   const body = JSON.parse(String(init?.body ?? '{}'));
   const system = Array.isArray(body.system) ? body.system.map((b) => b.text).join('') : String(body.system ?? '');
   const turn = lastTurn(body.messages);
   const results = toolResults(turn);
-  const script = system.includes('렌즈') ? sageScript(turn, results, body.messages[0]) : managerScript(turn, results);
+  const script = system.includes('리서치 애널리스트')
+    ? researchScript(turn, results)
+    : system.includes('매매일지 코치')
+      ? coachScript(turn, results)
+      : system.includes('렌즈')
+        ? sageScript(turn, results, body.messages[0])
+        : managerScript(turn, results);
   const chunks = events(body.model, script.blocks, script.stop, script.usage);
   const enc = new TextEncoder();
   const stream = new ReadableStream({

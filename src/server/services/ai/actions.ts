@@ -1,8 +1,12 @@
 /** Running what an agent proposed, settings, and the chat view of a conversation. */
 import 'server-only';
 import { toChat } from '@/domain/ai';
+import { textToBlocks } from '@/domain/ai-analysis';
+import { BUILTIN_FORMATS } from '@/domain/journal';
 import { encryptSecret, mask } from '../../crypto';
-import { prisma } from '../../db';
+import { kstDate, prisma } from '../../db';
+import { ensureListedAsset } from '../assets';
+import { appendToJournal, saveJournal } from '../journal';
 import { createAlert, savePortfolioTargets } from '../alerts';
 import { addLink, createNote } from '../knowledge';
 import { UserError } from '../portfolios';
@@ -21,6 +25,8 @@ function hrefOf(kind: string, payload: Record<string, unknown>, resultId: string
   if (kind === 'note' && resultId) return `/notes?open=${resultId}`;
   if (kind === 'price_alert') return '/alerts';
   if (kind === 'target_weights' && typeof payload.portfolioId === 'string') return `/portfolios/${payload.portfolioId}#targets`;
+  if (kind === 'journal_review' && typeof payload.entryId === 'string') return `/journal/${payload.entryId}`;
+  if (kind === 'journal_draft' && resultId) return `/journal/${resultId}`;
   return null;
 }
 
@@ -70,9 +76,29 @@ export async function executeAction(userId: string, id: string): Promise<string>
     } else if (a.kind === 'target_weights') {
       await savePortfolioTargets(userId, String(p.portfolioId), { targets: p.targets as Record<string, string>, tolerance: String(p.tolerance), alert: !!p.alert });
       result = '목표 비중을 저장했습니다';
+    } else if (a.kind === 'journal_review') {
+      await appendToJournal(userId, String(p.entryId), textToBlocks(`AI 복기 · ${kstDate()}`, String(p.review)), !!p.close);
+      result = '일지에 복기를 덧붙였습니다';
+    } else if (a.kind === 'journal_draft') {
+      const asset = await ensureListedAsset(userId, String(p.symbol));
+      const num = (v: unknown) => (typeof v === 'number' ? String(v) : '');
+      result = await saveJournal(userId, {
+        assetId: asset.id,
+        title: String(p.title),
+        targetPrice: num(p.targetPrice),
+        basePrice: num(p.basePrice),
+        stopPrice: num(p.stopPrice),
+        targetDate: typeof p.targetDate === 'string' ? p.targetDate : undefined,
+        // The 매수 계획 format's properties, left for the user to fill
+        template: 'builtin:buy',
+        fields: BUILTIN_FORMATS.find((f) => f.id === 'builtin:buy')?.fields ?? [],
+        values: {},
+        content: textToBlocks('AI 초안', String(p.body)).slice(1),
+        txnIds: [],
+      });
     } else throw new UserError('알 수 없는 제안입니다.');
     await prisma.aiAction.update({ where: { id }, data: { status: 'DONE', result } });
-    return a.kind === 'note' ? '메모를 저장했습니다' : result;
+    return a.kind === 'note' ? '메모를 저장했습니다' : a.kind === 'journal_draft' ? '일지 초안을 만들었습니다' : result;
   } catch (e) {
     const msg = e instanceof UserError ? e.message : '실행하지 못했습니다.';
     if (!(e instanceof UserError)) console.error('[ai] action failed', e);

@@ -203,7 +203,7 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
             </button>
           ) : (
             <>
-              <AskAiButton className="btn small" label="AI와 복기" prompt="이 매매일지를 복기해 줘. 매수 근거가 지금도 유효한지, 목표 예상 가격과 손절가가 적절한지, 놓친 위험은 없는지 봐 줘." />
+              <AskAiButton className="btn small" label="AI와 복기" agent="COACH" prompt="이 매매일지를 복기해 줘. 매수 근거가 지금도 유효한지, 목표 예상 가격과 손절가가 적절한지, 놓친 위험은 없는지 봐 줘." />
               <a className="btn small" href="/journal/new">+ 새 일지</a>
               <button type="button" className="btn small danger" onClick={() => void remove()}>삭제</button>
             </>

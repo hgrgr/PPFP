@@ -1,6 +1,6 @@
 import { AiChat } from '@/components/ai/chat';
 import { AiConversations } from '@/components/ai/conversations';
-import { AGENTS, type AgentKind } from '@/domain/ai';
+import { AGENT_ORDER, AGENTS, type AgentKind } from '@/domain/ai';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { conversationView, listConversations } from '@/server/services/ai/actions';
@@ -10,6 +10,7 @@ export const metadata = { title: 'AI 어드바이저' };
 export const dynamic = 'force-dynamic';
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
+const AGENT_SUB = { MANAGER: '포트폴리오 점검 · 리밸런싱 · 위험 관리', RESEARCH: '종목·업종 리서치 리포트 · 출처 · 일지 초안', COACH: '매매일지 복기 · 매매 습관 · 성적 분석' };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default async function AiPage({ searchParams }: { searchParams: SP }) {
@@ -17,7 +18,8 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const [status, list, sages] = await Promise.all([aiStatus(user.id), listConversations(user.id), prisma.sage.findMany({ where: { userId: user.id }, orderBy: { name: 'asc' }, select: { id: true, name: true } })]);
   const view = one(sp.c) ? await conversationView(user.id, one(sp.c)!) : null;
-  const agent: AgentKind = (view?.agent as AgentKind) ?? (one(sp.agent) === 'SAGE' ? 'SAGE' : 'MANAGER');
+  const asked = one(sp.agent) as AgentKind | undefined;
+  const agent: AgentKind = (view?.agent as AgentKind) ?? (asked && AGENT_ORDER.includes(asked) ? asked : 'MANAGER');
   const sageId = view?.sage?.id ?? (agent === 'SAGE' ? (one(sp.sage) ?? null) : null);
   const sageName = sages.find((s) => s.id === sageId)?.name;
   const sageNames = Object.fromEntries(sages.map((s) => [s.id, s.name]));
@@ -49,10 +51,12 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
           <aside className="stack" style={{ gap: 12 }}>
             <nav className="stack ai-new" aria-label="새 대화">
               <span className="sub strong">새 대화</span>
-              <a className="ai-agent" href="/ai" aria-current={!view && agent === 'MANAGER' ? 'true' : undefined}>
-                <span className="strong">{AGENTS.MANAGER.name}</span>
-                <span className="sub">포트폴리오 점검 · 리밸런싱 · 일지 복기 · 웹 리서치</span>
-              </a>
+              {(['MANAGER', 'RESEARCH', 'COACH'] as const).map((k) => (
+                <a key={k} className="ai-agent" href={k === 'MANAGER' ? '/ai' : `/ai?agent=${k}`} aria-current={!view && agent === k ? 'true' : undefined}>
+                  <span className="strong">{AGENTS[k].name}</span>
+                  <span className="sub">{AGENT_SUB[k]}</span>
+                </a>
+              ))}
               {sages.map((s) => (
                 <a key={s.id} className="ai-agent" href={`/ai?agent=SAGE&sage=${s.id}`} aria-current={!view && sageId === s.id ? 'true' : undefined}>
                   <span className="strong">{s.name}의 관점</span>
@@ -65,12 +69,12 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
                 </a>
               )}
             </nav>
-            <AiConversations items={list.map((c) => ({ id: c.id, title: c.title, who: c.agent === 'SAGE' ? `${sageNames[c.sageId ?? ''] ?? '거장'}의 관점` : AGENTS.MANAGER.name, at: c.updatedAt.toISOString() }))} current={view?.id ?? null} />
+            <AiConversations items={list.map((c) => ({ id: c.id, title: c.title, who: c.agent === 'SAGE' ? `${sageNames[c.sageId ?? ''] ?? '거장'}의 관점` : (AGENTS[c.agent as AgentKind]?.name ?? c.agent), at: c.updatedAt.toISOString() }))} current={view?.id ?? null} />
           </aside>
           <section className="card ai-main">
             <div className="spread">
-              <h2>{view ? view.title : agent === 'SAGE' ? `${sageName ?? '투자 거장'}의 관점` : AGENTS.MANAGER.name}</h2>
-              {view && <span className="badge">{view.agent === 'SAGE' ? `${view.sage?.name ?? '거장'}의 관점` : AGENTS.MANAGER.name}</span>}
+              <h2>{view ? view.title : agent === 'SAGE' ? `${sageName ?? '투자 거장'}의 관점` : AGENTS[agent].name}</h2>
+              {view && <span className="badge">{view.agent === 'SAGE' ? `${view.sage?.name ?? '거장'}의 관점` : (AGENTS[view.agent as AgentKind]?.name ?? view.agent)}</span>}
             </div>
             <AiChat key={view?.id ?? `${agent}:${sageId}`} initial={view} agent={agent} sageId={sageId} path="/ai" urlOnStart />
           </section>
