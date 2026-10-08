@@ -382,7 +382,7 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .ai-drawer .drawer-head select { max-width: 220px; font-weight: 600; }
 .ai-chat { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .ai-main .ai-chat { height: calc(100vh - 240px); min-height: 480px; }
-.ai-log { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; }
+.ai-log { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; }
 .ai-main .ai-log { padding: 8px 2px 16px; }
 .ai-input { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--line-soft); }
 .ai-main .ai-input { padding: 12px 0 0; }
