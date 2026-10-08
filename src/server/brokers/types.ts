@@ -3,9 +3,11 @@
  * account holdings plus whatever market data that broker documents. Nothing
  * here places orders.
  */
-import type { BrokerId } from '@/lib/brokers';
+import type { BrokerId, BrokerKind } from '@/lib/brokers';
+import type { Candle, CandleUnit } from '@/domain/candles';
+import type { ExchangeBalance, ExchangeEvent } from '@/domain/exchange-replay';
 
-export type { BrokerId };
+export type { BrokerId, BrokerKind, Candle, CandleUnit, ExchangeBalance, ExchangeEvent };
 export type Currency = 'KRW' | 'USD';
 
 export interface BrokerHolding {
@@ -58,7 +60,7 @@ export interface IndexQuote {
 }
 
 export type RankingType = 'AMOUNT' | 'VOLUME' | 'GAINERS' | 'LOSERS';
-export type RankingMarket = 'KR' | 'US';
+export type RankingMarket = 'KR' | 'US' | 'CRYPTO';
 
 export interface RankingRow {
   symbol: string;
@@ -101,6 +103,8 @@ export interface DailyClose {
 
 export interface BrokerAdapter {
   readonly broker: BrokerId;
+  /** Stock brokers price listed stocks; crypto exchanges price "KRW-*" coins. */
+  readonly kind: BrokerKind;
   /** Issue a token and make one cheap authenticated call. Returns the account to remember, if the broker reports one. */
   verify(): Promise<{ accountNo?: string | null }>;
   holdings(): Promise<BrokerHolding[]>;
@@ -115,6 +119,15 @@ export interface BrokerAdapter {
   /** One-minute bars of the most recent session, oldest first. */
   intraday?(ref: InstrumentRef): Promise<MinuteBar[]>;
   orderbook?(ref: InstrumentRef): Promise<Orderbook | null>;
+  /** Up to `count` bars of `unit`, oldest first; null when this broker does not publish that interval. */
+  candles?(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null>;
+  /** Crypto exchanges: every balance including KRW, for replaying history. */
+  balances?(): Promise<ExchangeBalance[]>;
+  /**
+   * Crypto exchanges: filled trades and completed deposits/withdrawals from `since` until `until`.
+   * `since` in the result is where the history really starts (some exchanges keep only recent records).
+   */
+  history?(since: Date, until: Date): Promise<{ since: Date; events: ExchangeEvent[] }>;
 }
 
 export class BrokerApiError extends Error {

@@ -18,6 +18,8 @@ import {
   type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type OrderbookLevel,
@@ -87,6 +89,7 @@ export function parseMeritzOverseas(data: unknown): BrokerHolding[] {
 
 export class MeritzAdapter implements BrokerAdapter {
   readonly broker = 'MERITZ' as const;
+  readonly kind = 'stock' as const;
   private readonly tokens: TokenManager;
   private readonly mac = macAddress();
 
@@ -304,5 +307,45 @@ export class MeritzAdapter implements BrokerAdapter {
       }
     }
     return null;
+  }
+
+  /** Minute bars (today's session for KRX, KST-stamped for US) and daily bars; 4-hour and weekly are rolled up. */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    const kr = isKrSymbol(ref.symbol);
+    const seconds = { '1m': 60, '5m': 300, '15m': 900, '60m': 3600 }[unit as string];
+    if (!seconds && unit !== '1d') return null;
+    const bars: Candle[] = [];
+    if (unit === '1d') {
+      const range = { from: ymd(addDays(todayKst(), -Math.ceil(count * 1.5) - 7)), to: ymd(todayKst()) };
+      const body = kr
+        ? await this.get('/market/v1/candles/days', { mrkt_div_code: 'J', iscd: ref.symbol, mod_stpr_cls_code: '1', ...range })
+        : await this.get('/market/v1/overseas/candles/days', {
+            mrkt_div_code: 'OV', mrkt_cls_code: MRKT_CLS[usMarketOf(ref.market) ?? 'NASDAQ'], iscd: ref.symbol, dely_rltm_cls_code: '1', mod_stpr_cls_code: '1', ...range,
+          });
+      for (const x of rows(body.data)) {
+        const time = zonedIso(str(x.date), '000000', kr ? 'Asia/Seoul' : 'America/New_York');
+        const close = num(kr ? x.stck_clpr : x.prpr);
+        if (time && close !== '0') bars.push({ time, open: num(x.oprc), high: num(x.hprc), low: num(x.lprc), close, volume: num(x.acml_vol) });
+      }
+    } else if (kr) {
+      const day = ymd(krSessionDate());
+      for (const x of rows((await this.get('/market/v1/candles/minutes', { mrkt_div_code: 'J', iscd: ref.symbol, hour_cls_code: String(seconds) })).data)) {
+        const time = zonedIso(day, str(x.cntg_hour), 'Asia/Seoul');
+        if (time && num(x.stck_prpr) !== '0') bars.push({ time, open: num(x.oprc), high: num(x.hprc), low: num(x.lprc), close: num(x.stck_prpr), volume: num(x.cntg_vol) });
+      }
+    } else {
+      const list = rows(
+        (
+          await this.get('/market/v1/overseas/candles/minutes', {
+            mrkt_div_code: 'OV', mrkt_cls_code: MRKT_CLS[usMarketOf(ref.market) ?? 'NASDAQ'], iscd: ref.symbol, dely_rltm_cls_code: '1', hour_cls_code: String(seconds),
+          })
+        ).data,
+      );
+      for (const x of list) {
+        const time = zonedIso(str(x.korea_date), str(x.korea_hour), 'Asia/Seoul');
+        if (time && num(x.prpr) !== '0') bars.push({ time, open: num(x.oprc), high: num(x.hprc), low: num(x.lprc), close: num(x.prpr), volume: num(x.cntg_vol) });
+      }
+    }
+    return bars.sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
   }
 }

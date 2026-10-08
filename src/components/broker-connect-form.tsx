@@ -14,11 +14,20 @@ export function BrokerConnectForm({ action }: { action: (s: ActionState, f: Form
       <label className="field">
         증권사
         <select name="broker" value={broker} onChange={(e) => setBroker(e.target.value as BrokerId)}>
-          {BROKER_IDS.map((id) => (
-            <option key={id} value={id}>
-              {BROKERS[id].label}
-            </option>
-          ))}
+          <optgroup label="증권사">
+            {BROKER_IDS.filter((id) => BROKERS[id].kind === 'stock').map((id) => (
+              <option key={id} value={id}>
+                {BROKERS[id].label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="코인 거래소">
+            {BROKER_IDS.filter((id) => BROKERS[id].kind === 'crypto').map((id) => (
+              <option key={id} value={id}>
+                {BROKERS[id].label}
+              </option>
+            ))}
+          </optgroup>
         </select>
       </label>
       <label className="field">
@@ -47,7 +56,7 @@ export function BrokerConnectForm({ action }: { action: (s: ActionState, f: Form
       <p className="sub full">
         {meta.note}{' '}
         <a href={meta.portal} target="_blank" rel="noreferrer">
-          {meta.label} 개발자 포털 ↗
+          {meta.kind === 'crypto' ? `${meta.label} API 관리 ↗` : `${meta.label} 개발자 포털 ↗`}
         </a>
       </p>
       <div className="inline full">

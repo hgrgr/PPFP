@@ -11,7 +11,7 @@
 import { Dec } from '@/domain/decimal';
 import { cleanSymbol, isKrSymbol } from '@/domain/broker-format';
 import { parseHoldingsText } from '@/domain/holdings-paste';
-import { BROKERS, type BrokerId } from '@/lib/brokers';
+import { BROKERS, isCryptoBroker, type BrokerId } from '@/lib/brokers';
 import { dec, prisma } from '../db';
 import { fxRate } from '../market';
 import { BrokerApiError, type BrokerHolding } from '../brokers';
@@ -107,7 +107,8 @@ const fromBroker = (h: BrokerHolding): RawRow => ({
 
 /** Current holdings of every linked account, side by side with what was already imported. */
 export async function loadBrokerSources(userId: string): Promise<ImportSource[]> {
-  const conns = await listConnections(userId);
+  // Crypto exchanges replay their full history instead (services/exchange-sync), so their holdings are not offered here.
+  const conns = (await listConnections(userId)).filter((c) => !isCryptoBroker(c.broker));
   return Promise.all(
     conns.map(async (c) => {
       const key = sourceKey(c);

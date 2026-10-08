@@ -1,13 +1,14 @@
 import type { AssetType } from '@prisma/client';
-import { cleanSymbol } from '@/domain/broker-format';
+import { cleanSymbol, isCryptoSymbol } from '@/domain/broker-format';
 import { prisma } from '../db';
 import { BrokerApiError, type Instrument } from '../brokers';
-import { marketProviders } from './brokers';
+import { kindOf, marketProviders } from './brokers';
 import { audit, UserError } from './portfolios';
 
 export const ASSET_TYPE_LABEL: Record<AssetType, string> = {
   KR_STOCK: '국내 주식·ETF',
   US_STOCK: '해외 주식·ETF',
+  CRYPTO: '가상자산',
   BOND: '채권',
   CASH: '현금·예금',
   REAL_ESTATE: '부동산',
@@ -36,7 +37,7 @@ export async function ensureListedAsset(userId: string, rawSymbol: string, hint?
   const existing = await prisma.asset.findUnique({ where: { userId_symbol: { userId, symbol } } });
   if (existing) return existing;
 
-  const providers = await marketProviders(userId);
+  const providers = await marketProviders(userId, kindOf(symbol));
   // An account balance already names the stock: no lookup needed.
   let info: Instrument | null = hint && hint.name && hint.name !== symbol ? { symbol, ...hint } : null;
   let lastError: string | null = null;
@@ -75,7 +76,7 @@ export async function ensureListedAsset(userId: string, rawSymbol: string, hint?
   const asset = await prisma.asset.create({
     data: {
       userId,
-      type: currency === 'USD' ? 'US_STOCK' : 'KR_STOCK',
+      type: isCryptoSymbol(symbol) ? 'CRYPTO' : currency === 'USD' ? 'US_STOCK' : 'KR_STOCK',
       name: info.name.slice(0, 80) || symbol,
       symbol,
       market: info.market,

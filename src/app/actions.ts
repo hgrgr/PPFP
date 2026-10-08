@@ -20,6 +20,7 @@ import {
 import { rebuildSnapshots } from '@/server/services/snapshots';
 import { removeConnection, saveConnection, testConnection } from '@/server/services/brokers';
 import { addWatch, removeWatch } from '@/server/services/market-board';
+import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings, readPastedHoldings, uploadedTableText, type ImportSelection, type ImportSource } from '@/server/services/imports';
 import { deleteTransaction, recordBuy, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
 
@@ -330,6 +331,19 @@ export async function readPasteAction(_: PasteState, f: FormData): Promise<Paste
     console.error('[action] paste', e);
     return { error: '붙여넣은 잔고를 읽지 못했습니다.', at: Date.now() };
   }
+}
+
+export async function syncExchangeAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const sinceText = s(f, 'since');
+    const since = sinceText ? parseKstLocal(sinceText) : undefined;
+    const r = await syncExchangeHistory(user.id, s(f, 'id'), { portfolioId: s(f, 'portfolioId') || undefined, since });
+    const parts = [`체결 ${r.trades}건`, `입출금 ${r.transfers}건`];
+    if (r.openings) parts.push(`시작 잔고 ${r.openings}건`);
+    if (r.skipped) parts.push(`이미 있던 ${r.skipped}건 건너뜀`);
+    return `${kstDate(new Date(r.since))}부터 동기화했습니다: ${parts.join(', ')}.`;
+  }, ['/import', '/dashboard', '/portfolios', '/market']);
 }
 
 // ── Market board watchlist ──────────────────────────

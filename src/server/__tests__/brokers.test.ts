@@ -455,3 +455,152 @@ describe('시세판 기능', () => {
     assert.equal(calls.find((c) => c.url.pathname === '/market/v1/index/prices')!.url.searchParams.get('iscd'), 'KGG01P');
   });
 });
+
+describe('코인 거래소', () => {
+  const decode = (token: string) => {
+    const [h, p, sig] = token.split('.');
+    return { header: JSON.parse(Buffer.from(h, 'base64url').toString()), payload: JSON.parse(Buffer.from(p, 'base64url').toString()), signed: `${h}.${p}`, sig };
+  };
+
+  it('업비트: signs with HS512 and the hash of the raw query, prices fills from the order’s trades', async () => {
+    const { createHash, createHmac } = await import('node:crypto');
+    const { UpbitAdapter } = await import('../brokers/upbit');
+    fake((c) => {
+      const p = c.url.pathname;
+      if (p === '/v1/accounts')
+        return { body: [{ currency: 'KRW', balance: '1000', locked: '0', avg_buy_price: '0', unit_currency: 'KRW' }, { currency: 'BTC', balance: '0.01', locked: '0.005', avg_buy_price: '90000000', unit_currency: 'KRW' }] };
+      if (p === '/v1/orders/closed') {
+        const start = Number(c.url.searchParams.get('start_time'));
+        return { body: start === Date.parse('2026-10-01T00:00:00Z') ? [{ uuid: 'o1', market: 'KRW-BTC', side: 'bid', price: '100000', executed_volume: '0.001', paid_fee: '50', created_at: '2026-10-02T10:00:00+09:00' }, { uuid: 'o2', market: 'KRW-BTC', side: 'ask', executed_volume: '0', paid_fee: '0', created_at: '2026-10-02T11:00:00+09:00' }, { uuid: 'o3', market: 'BTC-ETH', side: 'bid', executed_volume: '1', paid_fee: '0', created_at: '2026-10-02T12:00:00+09:00' }] : [] };
+      }
+      if (p === '/v1/order')
+        return { body: { uuid: 'o1', trades: [{ price: '99000000', volume: '0.0006', funds: '59400', created_at: '2026-10-02T10:00:01+09:00' }, { price: '101000000', volume: '0.0004', funds: '40400', created_at: '2026-10-02T10:00:02+09:00' }] } };
+      if (p === '/v1/deposits') return { body: [{ uuid: 'd1', currency: 'KRW', state: 'ACCEPTED', amount: '200000', fee: '0', done_at: '2026-10-01T09:00:00+09:00' }] };
+      if (p === '/v1/withdraws') return { body: [{ uuid: 'w1', currency: 'BTC', state: 'DONE', amount: '0.001', fee: '0.0002', done_at: '2026-10-03T09:00:00+09:00' }, { uuid: 'w0', currency: 'BTC', state: 'DONE', amount: '1', fee: '0', done_at: '2026-09-01T09:00:00+09:00' }] };
+      throw new Error('unexpected ' + c.url);
+    });
+    const up = new UpbitAdapter(cfg({ appKey: 'AK', secret: 'SK' }));
+    const balances = await up.balances();
+    assert.deepEqual(balances.find((b) => b.currency === 'BTC'), { currency: 'BTC', qty: '0.015', avgPrice: '90000000' });
+    const { since, events } = await up.history(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-05T00:00:00Z'));
+    assert.equal(since.toISOString(), '2026-10-01T00:00:00.000Z');
+    assert.deepEqual(
+      events.map((e) => [e.kind, e.currency, e.qty, e.price, e.fee]),
+      [
+        ['BUY', 'BTC', '0.001', '99800000', '50'], // 99,800 KRW of fills for 0.001 BTC; zero-fill and BTC-market orders skipped
+        ['DEPOSIT', 'KRW', '200000', null, '0'],
+        ['WITHDRAW', 'BTC', '0.001', null, '0.0002'], // the September withdrawal is before `since`
+      ],
+    );
+    const orders = calls.find((c) => c.url.pathname === '/v1/orders/closed')!;
+    const { header, payload, signed, sig } = decode(orders.headers.authorization.replace('Bearer ', ''));
+    assert.equal(header.alg, 'HS512');
+    assert.equal(payload.access_key, 'AK');
+    assert.equal(payload.query_hash_alg, 'SHA512');
+    assert.equal(payload.query_hash, createHash('sha512').update(orders.url.search.slice(1)).digest('hex'));
+    assert.equal(sig, createHmac('sha512', 'SK').update(signed).digest('base64url'));
+    assert.equal(decode(calls[0].headers.authorization.replace('Bearer ', '')).payload.query_hash, undefined, 'no query, no hash');
+  });
+
+  it('빗썸: HS256 with timestamp, v2 order history priced from executed funds, KST candle paging', async () => {
+    const { BithumbAdapter } = await import('../brokers/bithumb');
+    fake((c) => {
+      if (c.url.pathname === '/v2/orders/history') {
+        return { body: { data: [{ order_id: 'B1', market: 'KRW-ETH', side: 'ask', executed_volume: '2', executed_funds: '7000000', paid_fee: '1750', created_at: '2026-10-02T10:00:00+09:00' }], has_next: false, next_key: null } };
+      }
+      if (c.url.pathname === '/v1/candles/minutes/60') {
+        const first = !c.url.searchParams.get('to');
+        return { body: first ? [{ candle_date_time_utc: '2026-10-07T01:00:00', candle_date_time_kst: '2026-10-07T10:00:00', opening_price: 10, high_price: 12, low_price: 9, trade_price: 11, candle_acc_trade_volume: 5 }] : [] };
+      }
+      return { body: [] };
+    });
+    const bt = new BithumbAdapter(cfg({ appKey: 'AK', secret: 'SK' }));
+    const { events } = await bt.history(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-03T00:00:00Z'));
+    assert.deepEqual(events.map((e) => [e.kind, e.currency, e.qty, e.price, e.fee]), [['SELL', 'ETH', '2', '3500000', '1750']]);
+    const h = calls.find((c) => c.url.pathname === '/v2/orders/history')!;
+    assert.equal(h.url.origin, 'https://api.bithumb.com');
+    const { header, payload } = decode(h.headers.authorization.replace('Bearer ', ''));
+    assert.equal(header.alg, 'HS256');
+    assert.equal(typeof payload.timestamp, 'number');
+    assert.ok(calls.some((c) => c.url.pathname === '/v1/deposits/krw') && calls.some((c) => c.url.pathname === '/v1/withdraws/krw'));
+    const candles = await bt.candles({ symbol: 'KRW-ETH', market: null }, '60m', 300);
+    assert.deepEqual(candles?.map((x) => [x.time, x.close, x.volume]), [['2026-10-07T01:00:00.000Z', '11', '5']]);
+    assert.equal(calls.filter((c) => c.url.pathname === '/v1/candles/minutes/60')[1].url.searchParams.get('to'), '2026-10-07 10:00:00');
+  });
+
+  it('코인원: base64 payload signed with HMAC-SHA512, per-fill history with coin fees', async () => {
+    const { createHmac } = await import('node:crypto');
+    const { CoinoneAdapter } = await import('../brokers/coinone');
+    fake((c) => {
+      const body = JSON.parse(Buffer.from(c.headers['x-coinone-payload'] ?? '', 'base64').toString() || '{}');
+      if (c.url.pathname === '/v2.1/account/balance/all') return { body: { result: 'success', balances: [{ currency: 'XRP', available: '10', limit: '5', average_price: '700' }] } };
+      if (c.url.pathname === '/v2.1/order/completed_orders/all') {
+        return { body: { result: 'success', completed_orders: body.from_ts === Date.parse('2026-10-01T00:00:00Z') ? [{ trade_id: 't1', quote_currency: 'KRW', target_currency: 'XRP', is_ask: false, price: '700', qty: '15', fee: '0.03', fee_currency: 'XRP', timestamp: Date.parse('2026-10-02T00:00:00Z') }] : [] } };
+      }
+      if (c.url.pathname === '/v2.1/transaction/krw/history') return { body: { result: 'success', transactions: [{ id: 'k1', status: 'DEPOSIT_COMPLETE', type: 'DEPOSIT', amount: '20000', fee: '0', created_at: Date.parse('2026-10-01T12:00:00Z') }] } };
+      if (c.url.pathname === '/v2.1/transaction/coin/history') return { body: { result: 'success', transactions: [] } };
+      throw new Error('unexpected ' + c.url);
+    });
+    const co = new CoinoneAdapter(cfg({ appKey: 'TOKEN', secret: 'SK' }));
+    assert.deepEqual(await co.balances(), [{ currency: 'XRP', qty: '15', avgPrice: '700' }]);
+    const req = calls[0];
+    assert.equal(req.method, 'POST');
+    assert.equal(req.headers['x-coinone-signature'], createHmac('sha512', 'SK').update(req.headers['x-coinone-payload']).digest('hex'));
+    const sent = JSON.parse(Buffer.from(req.headers['x-coinone-payload'], 'base64').toString());
+    assert.equal(sent.access_token, 'TOKEN');
+    assert.match(sent.nonce, /^[0-9a-f-]{36}$/);
+    const { events } = await co.history(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-05T00:00:00Z'));
+    assert.deepEqual(events.map((e) => [e.kind, e.currency, e.qty, e.fee, !!e.feeInCoin]), [['BUY', 'XRP', '15', '0.03', true], ['DEPOSIT', 'KRW', '20000', '0', false]]);
+  });
+
+  it('코빗: HMAC-SHA256 over the exact query, history clamped to the 36-hour trade window', async () => {
+    const { createHmac } = await import('node:crypto');
+    const { KorbitAdapter, korbitQuery, KORBIT_TRADE_WINDOW_MS } = await import('../brokers/korbit');
+    const qs = korbitQuery({ symbol: 'btc_krw' }, 'SK', 1719232467910);
+    const params = new URLSearchParams(qs);
+    const signature = params.get('signature');
+    params.delete('signature');
+    assert.equal(params.toString(), 'symbol=btc_krw&timestamp=1719232467910');
+    assert.equal(signature, createHmac('sha256', 'SK').update('symbol=btc_krw&timestamp=1719232467910').digest('hex'));
+    fake((c) => {
+      if (c.url.pathname === '/v2/balance') return { body: { success: true, data: [{ currency: 'krw', balance: '5000', avgPrice: '0' }, { currency: 'btc', balance: '0.1', avgPrice: '90000000' }] } };
+      if (c.url.pathname === '/v2/myTrades') return { body: { success: true, data: [{ tradeId: 7, side: 'buy', price: '100000000', qty: '0.01', tradedAt: Date.now() - 3_600_000, feeCurrency: 'krw', feeQty: '500' }] } };
+      return { body: { success: true, data: [] } };
+    });
+    const kb = new KorbitAdapter(cfg({ appKey: 'KEY', secret: 'SK' }));
+    const { since, events } = await kb.history(new Date('2020-01-01T00:00:00Z'), new Date());
+    assert.ok(Date.now() - since.getTime() <= KORBIT_TRADE_WINDOW_MS + 1000);
+    assert.deepEqual(events.map((e) => [e.kind, e.currency, e.qty, e.price, e.fee]), [['BUY', 'BTC', '0.01', '100000000', '500']]);
+    const trades = calls.find((c) => c.url.pathname === '/v2/myTrades')!;
+    assert.equal(trades.headers['x-kapi-key'], 'KEY');
+    assert.equal(trades.url.searchParams.get('symbol'), 'btc_krw');
+    assert.ok(trades.url.searchParams.get('signature'));
+  });
+});
+
+describe('여러 간격 봉', () => {
+  it('KIS: US weekly bars from dailyprice GUBN=1', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/tokenP') return { body: { access_token: 'T', expires_in: 86400 } };
+      const first = !c.url.searchParams.get('BYMD');
+      return { body: { rt_cd: '0', output2: first ? [{ xymd: '20261005', open: '10', high: '12', low: '9', clos: '11', tvol: '100' }, { xymd: '20260928', open: '9', high: '10', low: '8', clos: '10', tvol: '90' }] : [] } };
+    });
+    const bars = await new KisAdapter(cfg({ accountNo: '12345678-01' }), memoryTokenStore()).candles({ symbol: 'AAPL', market: 'NASDAQ' }, '1w', 2);
+    assert.deepEqual(bars?.map((b) => [b.time, b.open, b.close, b.volume]), [['2026-09-28T04:00:00.000Z', '9', '10', '90'], ['2026-10-05T04:00:00.000Z', '10', '11', '100']]);
+    const call = calls.find((c) => c.url.pathname.endsWith('/dailyprice'))!;
+    assert.equal(call.url.searchParams.get('GUBN'), '1');
+    assert.equal(call.url.searchParams.get('EXCD'), 'NAS');
+  });
+
+  it('Kiwoom: native 5-minute bars, nothing for 4-hour', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/token') return { body: { return_code: 0, token: 'KW', expires_dt: '20991231235959' } };
+      return { body: { return_code: 0, stk_min_pole_chart_qry: [{ cntr_tm: '20261007090500', open_pric: '+71000', high_pric: '+71300', low_pric: '-70900', cur_prc: '+71200', trde_qty: '1500' }] } };
+    });
+    const kw = new KiwoomAdapter(cfg(), memoryTokenStore());
+    const bars = await kw.candles({ symbol: '005930', market: 'KRX' }, '5m', 10);
+    assert.deepEqual(bars, [{ time: '2026-10-07T00:05:00.000Z', open: '71000', high: '71300', low: '70900', close: '71200', volume: '1500' }]);
+    assert.equal(JSON.parse(calls.find((c) => c.headers['api-id'] === 'ka10080')!.body).tic_scope, '5');
+    assert.equal(await kw.candles({ symbol: '005930', market: 'KRX' }, '240m', 10), null);
+  });
+});

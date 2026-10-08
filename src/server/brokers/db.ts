@@ -14,6 +14,8 @@ import {
   type ConnectionConfig,
   type DailyClose,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type OrderbookLevel,
@@ -81,6 +83,7 @@ export function parseDbOverseas(out2: unknown): BrokerHolding[] {
 
 export class DbAdapter implements BrokerAdapter {
   readonly broker = 'DB' as const;
+  readonly kind = 'stock' as const;
   private readonly tokens: TokenManager;
 
   constructor(private readonly cfg: ConnectionConfig, store: TokenStore) {
@@ -224,7 +227,7 @@ export class DbAdapter implements BrokerAdapter {
 
   /** DB publishes gainer/loser rankings only. */
   async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
-    if (type !== 'GAINERS' && type !== 'LOSERS') return null;
+    if (market === 'CRYPTO' || (type !== 'GAINERS' && type !== 'LOSERS')) return null;
     const up = type === 'GAINERS';
     const list =
       market === 'KR'
@@ -299,5 +302,41 @@ export class DbAdapter implements BrokerAdapter {
       if (book.asks.length || book.bids.length) return book;
     }
     return null;
+  }
+
+  /** Any N-minute interval (InputDivXtick = 60·N seconds) plus daily and weekly bars. */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    const kr = isKrSymbol(ref.symbol);
+    const minutes = { '1m': 1, '5m': 5, '15m': 15, '60m': 60, '240m': 240 }[unit as string];
+    const today = todayKst();
+    // Calendar days needed to cover `count` bars (~6.5 trading hours a day, 5 days a week)
+    const days = minutes ? Math.ceil((count * minutes) / 390) * 2 + 4 : unit === '1d' ? Math.ceil(count * 1.5) + 7 : count * 7 + 14;
+    const mrkt = kr ? 'J' : MRKT[usMarketOf(ref.market) ?? 'NASDAQ'];
+    const common = { InputCondMrktDivCode: mrkt, InputIscd1: ref.symbol, InputOrgAdjPrc: '1', InputDate1: ymd(addDays(today, -days)) };
+    const path = minutes
+      ? kr
+        ? '/api/v1/quote/kr-chart/min'
+        : '/api/v1/quote/overseas-stock/chart/min'
+      : kr
+        ? unit === '1d'
+          ? '/api/v1/quote/kr-chart/day'
+          : '/api/v1/quote/kr-chart/week'
+        : unit === '1d'
+          ? '/api/v1/quote/overseas-stock/chart/day'
+          : '/api/v1/quote/overseas-stock/chart/week';
+    const input: Record<string, string> = minutes
+      ? kr
+        ? { ...common, dataCnt: String(Math.min(2000, count)), InputDivXtick: String(minutes * 60) }
+        : { ...common, InputDate2: ymd(today), InputHourClsCode: '0', InputDivXtick: String(minutes * 60), InputPwDataIncuYn: 'Y', dataCnt: String(Math.min(2000, count)) }
+      : { ...common, InputDate2: ymd(today), ...(unit === '1w' ? { InputPeriodDivCode: 'W' } : {}) };
+    const list = await this.paged(path, input, (b) => b.Out);
+    const zone = kr ? 'Asia/Seoul' : 'America/New_York';
+    const bars = new Map<string, Candle>();
+    for (const x of list) {
+      const time = zonedIso(str(x.Date), minutes ? str(x.Hour).slice(0, 6) : '000000', zone);
+      if (!time || num(x.Prpr) === '0') continue;
+      bars.set(time, { time, open: absNum(x.Oprc), high: absNum(x.Hprc), low: absNum(x.Lprc), close: absNum(x.Prpr), volume: num(x.CntgVol ?? x.AcmlVol) });
+    }
+    return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
   }
 }

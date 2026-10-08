@@ -7,7 +7,8 @@
  * user, so the caches are global; credentials are still the requesting user's.
  */
 import { Dec } from '@/domain/decimal';
-import { cleanSymbol, isKrSymbol, usMarketOf } from '@/domain/broker-format';
+import { cleanSymbol, isCryptoSymbol, isKrSymbol, usMarketOf } from '@/domain/broker-format';
+import { BUILD_FROM, rollUp, type Candle, type CandleUnit } from '@/domain/candles';
 import { dbDate, dec, kstDate, prisma } from '../db';
 import { fxRate, refOf } from '../market';
 import {
@@ -22,13 +23,12 @@ import {
   type RankingRow,
   type RankingType,
 } from '../brokers';
-import { marketProviders, type Provider } from './brokers';
+import { kindOf, marketProviders, type Provider } from './brokers';
 import { UserError } from './portfolios';
 
 const QUOTE_TTL = 3_000;
 const INDEX_TTL = 5_000;
 const RANKING_TTL = 15_000;
-const INTRADAY_TTL = 30_000;
 const SPARK_TTL = 5 * 60_000;
 const ORDERBOOK_TTL = 2_000;
 
@@ -47,6 +47,16 @@ const intradayCache = new Map<string, Cached<MinuteBar[]>>();
 const sparkCache = new Map<string, Cached<number[]>>();
 const sparkPending = new Set<string>();
 const orderbookCache = new Map<string, Cached<Orderbook | null>>();
+const candleCache = new Map<string, Cached<{ candles: Candle[]; source: string | null; built: boolean }>>();
+const CANDLE_TTL: Record<CandleUnit, number> = { '1m': 10_000, '5m': 20_000, '15m': 30_000, '60m': 60_000, '240m': 120_000, '1d': 300_000, '1w': 600_000 };
+
+/** Providers that can answer for this symbol (stock brokers for stocks, exchanges for coins). */
+async function providersFor(userId: string, symbol: string): Promise<Provider[]> {
+  return marketProviders(userId, kindOf(symbol));
+}
+
+/** Home market's time zone for bucketing bars. */
+const zoneOf = (symbol: string) => (isKrSymbol(symbol) || isCryptoSymbol(symbol) ? ('Asia/Seoul' as const) : ('America/New_York' as const));
 
 const fresh = <T>(c: Cached<T> | undefined, ttl: number): boolean => !!c && Date.now() - c.at < ttl;
 
@@ -119,9 +129,10 @@ export async function liveQuotes(userId: string, items: { symbol: string; market
     providers = await marketProviders(userId);
     let left = missing;
     for (const p of providers) {
-      if (!p.adapter.quotes || !left.length) continue;
+      const mine = left.filter((r) => kindOf(r.symbol) === p.adapter.kind);
+      if (!p.adapter.quotes || !mine.length) continue;
       try {
-        const got = await p.adapter.quotes(left);
+        const got = await p.adapter.quotes(mine);
         for (const q of got) quoteCache.set(q.symbol.toUpperCase(), { value: q, at: Date.now() });
         const done = new Set(got.map((q) => q.symbol.toUpperCase()));
         left = left.filter((r) => !done.has(r.symbol));
@@ -135,10 +146,7 @@ export async function liveQuotes(userId: string, items: { symbol: string; market
     const c = quoteCache.get(s);
     const q = c?.value;
     let prev = q?.prevClose ?? null;
-    if (q && !prev) {
-      providers ??= await marketProviders(userId);
-      prev = await prevCloseFallback(providers, refs.get(s)!);
-    }
+    if (q && !prev) prev = await prevCloseFallback(await providersFor(userId, s), refs.get(s)!);
     const price = q?.price ?? null;
     out.set(s, {
       symbol: s,
@@ -165,7 +173,7 @@ export async function liveIndices(userId: string): Promise<IndexView[]> {
   const missing = INDEX_CODES.filter((c) => !fresh(indexCache.get(c), INDEX_TTL));
   if (missing.length) {
     let left = missing;
-    for (const p of await marketProviders(userId)) {
+    for (const p of await marketProviders(userId, 'stock')) {
       if (!p.adapter.indices || !left.length) continue;
       try {
         const got = await p.adapter.indices(left);
@@ -197,7 +205,7 @@ export async function liveRankings(userId: string, market: RankingMarket, type: 
   const key = `${market}:${type}`;
   let c = rankingCache.get(key);
   if (!fresh(c, RANKING_TTL)) {
-    const r = await firstAnswer(await marketProviders(userId), (p) => p.adapter.rankings?.(market, type) ?? null, `${key} ranking`);
+    const r = await firstAnswer(await marketProviders(userId, market === 'CRYPTO' ? 'crypto' : 'stock'), (p) => p.adapter.rankings?.(market, type) ?? null, `${key} ranking`);
     c = { value: r ? { rows: r.value, source: r.source } : null, at: Date.now() };
     rankingCache.set(key, c);
   }
@@ -208,7 +216,7 @@ export async function liveRankings(userId: string, market: RankingMarket, type: 
 async function intradayBars(userId: string, ref: InstrumentRef, ttl: number): Promise<MinuteBar[]> {
   const c = intradayCache.get(ref.symbol);
   if (fresh(c, ttl)) return c!.value;
-  const r = await firstAnswer(await marketProviders(userId), (p) => p.adapter.intraday?.(ref) ?? null, 'intraday');
+  const r = await firstAnswer(await providersFor(userId, ref.symbol), (p) => p.adapter.intraday?.(ref) ?? null, 'intraday');
   const bars = r?.value ?? c?.value ?? [];
   intradayCache.set(ref.symbol, { value: bars, at: Date.now() });
   return bars;
@@ -261,13 +269,12 @@ export interface StockDetail {
   currency: string;
   market: string | null;
   quote: LiveQuote | null;
-  bars: { t: string; p: number }[];
   orderbook: Orderbook | null;
   watched: boolean;
   held: boolean;
 }
 
-/** Everything the detail panel needs for one symbol. */
+/** Quote and orderbook for the detail panel (its chart loads separately, see liveCandles). */
 export async function stockDetail(userId: string, rawSymbol: string): Promise<StockDetail> {
   const symbol = cleanSymbol(rawSymbol);
   if (!symbol) throw new UserError('종목 코드가 올바르지 않습니다.');
@@ -275,19 +282,19 @@ export async function stockDetail(userId: string, rawSymbol: string): Promise<St
     prisma.asset.findUnique({ where: { userId_symbol: { userId, symbol } }, include: { holdings: { select: { id: true }, take: 1 } } }),
     prisma.watchItem.findUnique({ where: { userId_symbol: { userId, symbol } } }),
   ]);
-  const currency = asset?.currency ?? watch?.currency ?? (isKrSymbol(symbol) ? 'KRW' : 'USD');
+  const currency = asset?.currency ?? watch?.currency ?? (isKrSymbol(symbol) || isCryptoSymbol(symbol) ? 'KRW' : 'USD');
   const market = asset?.market ?? watch?.market ?? null;
   let name = asset?.name ?? watch?.name ?? null;
   const ref = refOf({ symbol, market });
-  const [quotes, bars] = await Promise.all([liveQuotes(userId, [{ symbol, market, currency }]), intradayBars(userId, ref, INTRADAY_TTL)]);
+  const quotes = await liveQuotes(userId, [{ symbol, market, currency }]);
   let orderbook = orderbookCache.get(symbol);
   if (!fresh(orderbook, ORDERBOOK_TTL)) {
-    const r = await firstAnswer(await marketProviders(userId), (p) => p.adapter.orderbook?.(ref) ?? null, 'orderbook');
+    const r = await firstAnswer(await providersFor(userId, symbol), (p) => p.adapter.orderbook?.(ref) ?? null, 'orderbook');
     orderbook = { value: r?.value ?? orderbook?.value ?? null, at: Date.now() };
     orderbookCache.set(symbol, orderbook);
   }
   if (!name) {
-    const r = await firstAnswer(await marketProviders(userId), (p) => p.adapter.instrument?.(symbol) ?? null, 'instrument');
+    const r = await firstAnswer(await providersFor(userId, symbol), (p) => p.adapter.instrument?.(symbol) ?? null, 'instrument');
     name = r?.value.name ?? symbol;
   }
   return {
@@ -296,7 +303,6 @@ export async function stockDetail(userId: string, rawSymbol: string): Promise<St
     currency,
     market,
     quote: quotes.get(symbol) ?? null,
-    bars: bars.map((b) => ({ t: b.time, p: Number(b.close) })),
     orderbook: orderbook!.value,
     watched: !!watch,
     held: !!asset?.holdings.length,
@@ -374,7 +380,13 @@ export async function board(userId: string): Promise<Board> {
       cost = cost.add(h.cost);
       heldView = { qty: h.qty.toString(), valueKrw: v?.round(0).toString() ?? null, costKrw: h.cost.round(0).toString(), todayKrw: t?.round(0).toString() ?? null };
     }
-    return { ...q, name: it.name, market: it.market ?? (isKrSymbol(it.symbol) ? 'KRX' : usMarketOf(it.market)), watched: watched.has(it.symbol), held: heldView };
+    return {
+      ...q,
+      name: it.name,
+      market: it.market ?? (isCryptoSymbol(it.symbol) ? 'CRYPTO' : isKrSymbol(it.symbol) ? 'KRX' : usMarketOf(it.market)),
+      watched: watched.has(it.symbol),
+      held: heldView,
+    };
   });
   // Held first, by value; then the watchlist in the order it was added.
   rows.sort((a, b) => {
@@ -401,8 +413,9 @@ export async function addWatch(userId: string, rawSymbol: string) {
   const asset = await prisma.asset.findUnique({ where: { userId_symbol: { userId, symbol } } });
   let info = asset ? { name: asset.name, currency: asset.currency, market: asset.market } : null;
   if (!info) {
-    const providers = await marketProviders(userId);
-    if (!providers.length) throw new UserError('관심종목을 추가하려면 먼저 설정에서 증권사 API를 연결하세요.');
+    const providers = await providersFor(userId, symbol);
+    if (!providers.length)
+      throw new UserError(isCryptoSymbol(symbol) ? '코인을 추가하려면 먼저 설정에서 코인 거래소 API를 연결하세요.' : '관심종목을 추가하려면 먼저 설정에서 증권사 API를 연결하세요.');
     const r = await firstAnswer(providers, (p) => p.adapter.instrument?.(symbol) ?? null, 'instrument');
     if (r) info = { name: r.value.name, currency: r.value.currency, market: r.value.market };
     else {
@@ -418,4 +431,53 @@ export async function removeWatch(userId: string, rawSymbol: string) {
   const symbol = cleanSymbol(rawSymbol);
   if (!symbol) throw new UserError('종목 코드가 올바르지 않습니다.');
   await prisma.watchItem.deleteMany({ where: { userId, symbol } });
+}
+
+export interface CandleView {
+  unit: CandleUnit;
+  candles: { t: string; o: number; h: number; l: number; c: number; v: number | null }[];
+  source: string | null;
+  /** Built from a finer interval because no linked broker publishes this one */
+  built: boolean;
+}
+
+/**
+ * Candles for the chart. Brokers that publish the interval are asked first; failing that,
+ * it is rolled up from the finer interval (1m -> 5m/15m/1h, 1h -> 4h, 1d -> 1w).
+ */
+export async function liveCandles(userId: string, rawSymbol: string, unit: CandleUnit, count = 120): Promise<CandleView> {
+  const symbol = cleanSymbol(rawSymbol);
+  if (!symbol) throw new UserError('종목 코드가 올바르지 않습니다.');
+  const key = `${symbol}:${unit}`;
+  let c = candleCache.get(key);
+  if (!fresh(c, CANDLE_TTL[unit])) {
+    const [asset, watch] = await Promise.all([
+      prisma.asset.findUnique({ where: { userId_symbol: { userId, symbol } }, select: { market: true } }),
+      prisma.watchItem.findUnique({ where: { userId_symbol: { userId, symbol } }, select: { market: true } }),
+    ]);
+    const ref = refOf({ symbol, market: asset?.market ?? watch?.market ?? null });
+    const providers = await providersFor(userId, symbol);
+    let r = await firstAnswer(providers, (p) => p.adapter.candles?.(ref, unit, count) ?? null, `${unit} candles`);
+    let built = false;
+    // Roll up from a finer interval: 4h needs 1h (which may itself come from 1m)
+    let from = BUILD_FROM[unit];
+    while (!r && from) {
+      const need = unit === '1w' ? count * 5 : Math.min(2000, count * ((unit === '240m' ? 240 : Number(unit.replace('m', ''))) / (from === '1m' ? 1 : 60)));
+      const base = await firstAnswer(providers, (p) => p.adapter.candles?.(ref, from!, need) ?? null, `${from} candles`);
+      if (base) {
+        r = { value: rollUp(base.value, unit, zoneOf(symbol)).slice(-count), source: base.source };
+        built = true;
+      }
+      from = from === '60m' ? '1m' : undefined;
+    }
+    c = { value: { candles: r?.value ?? c?.value.candles ?? [], source: r?.source ?? null, built }, at: Date.now() };
+    candleCache.set(key, c);
+  }
+  const v = c!.value;
+  return {
+    unit,
+    source: v.source,
+    built: v.built,
+    candles: v.candles.map((b) => ({ t: b.time, o: Number(b.open), h: Number(b.high), l: Number(b.low), c: Number(b.close), v: b.volume === null ? null : Number(b.volume) })),
+  };
 }

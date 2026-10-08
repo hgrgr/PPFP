@@ -230,7 +230,18 @@ const CASH_SIGN: Partial<Record<TxnType, 1 | -1>> = { DEPOSIT: 1, WITHDRAW: -1, 
 
 export async function recordCash(
   userId: string,
-  input: { portfolioId: string; type: TxnType; amount: string; currency: string; tradeAt: Date; holdingId?: string; fxRate?: string; memo?: string },
+  input: {
+    portfolioId: string;
+    type: TxnType;
+    amount: string;
+    currency: string;
+    tradeAt: Date;
+    holdingId?: string;
+    fxRate?: string;
+    memo?: string;
+    externalRef?: string;
+    importSource?: string;
+  },
 ) {
   await ownedPortfolio(userId, input.portfolioId);
   const sign = CASH_SIGN[input.type];
@@ -256,6 +267,8 @@ export async function recordCash(
         cashDelta: out(delta),
         flow: out(flow),
         memo: input.memo?.trim() || null,
+        externalRef: input.externalRef || null,
+        importSource: input.importSource || null,
       },
     });
     await addCash(tx, input.portfolioId, input.currency, delta);
