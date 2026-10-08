@@ -1,8 +1,8 @@
 /**
  * Fills an empty database with the fictional demo account used for the user
  * guide's screenshots: a portfolio tree, a year of stock trades, an imported
- * brokerage account, a replayed 업비트 history, a manual deposit and a few
- * trade journal entries.
+ * brokerage account, a replayed 업비트 history, a manual deposit, a few
+ * trade journal entries and asset trait groups.
  *
  * Run by scripts/docs/capture.ts against its own throwaway database; never
  * against real data. Broker calls go to the fake servers in fake-market.cjs.
@@ -19,6 +19,7 @@ import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings } from '@/server/services/imports';
 import { runDailyForUser } from '@/server/services/jobs';
 import { saveJournal, saveTemplate } from '@/server/services/journal';
+import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
 import { BUILTIN_FORMATS } from '@/domain/journal';
 import { recordBuy, recordCash, recordSell, recordValuation } from '@/server/services/trading';
@@ -129,6 +130,7 @@ async function main() {
 
   await runDailyForUser(uid, { fullRebuild: true });
   await seedJournals(uid);
+  await seedTraits(uid);
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D) } });
@@ -265,6 +267,45 @@ async function seedJournals(uid: string) {
     ],
     content: [h2('발표 전 기대'), li(''), h2('발표 후 반응'), li(''), h2('대응'), todo('')],
   });
+}
+
+// ---------------------------------------------------------------- asset traits
+async function seedTraits(uid: string) {
+  await createGroupFromPreset(uid, 'allWeather', true);
+  const cls = await createGroupFromPreset(uid, 'assetClass', true);
+  await applyExampleTargets(uid, cls);
+  const style = await createGroupFromPreset(uid, 'equityStyle', false);
+  const role = await createGroupFromPreset(uid, 'role', false);
+  await applyExampleTargets(uid, role);
+  const traitsOf = async (groupId: string) => new Map((await prisma.trait.findMany({ where: { groupId } })).map((t) => [t.name, t]));
+  const styles = await traitsOf(style);
+  await saveGroup(uid, style, {
+    name: '주식 스타일',
+    cashTrait: '',
+    traits: [...styles.values()]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((t) => ({ id: t.id, name: t.name, color: t.color, description: t.description ?? '', target: { 성장주: '40', 가치주: '30', 배당주: '20', 혼합: '10' }[t.name] ?? '' })),
+  });
+  const roles = await traitsOf(role);
+  const tesla = await trackWatchItem(uid, 'TSLA');
+  const bySymbol = async (symbol: string) => (await prisma.asset.findFirstOrThrow({ where: { userId: uid, symbol } })).id;
+  const tag = async (symbol: string, groupId: string, names: string[], map: Map<string, { id: string }>) =>
+    setAssetTraits(uid, symbol === 'TSLA' ? tesla : await bySymbol(symbol), groupId, names.map((n) => map.get(n)!.id));
+  for (const [sym, st, ro] of [
+    ['AAPL', '성장주', '핵심'],
+    ['NVDA', '성장주', '위성'],
+    ['VOO', '혼합', '핵심'],
+    ['005930', '가치주', '핵심'],
+    ['000660', '성장주', '위성'],
+    ['069500', '혼합', '핵심'],
+    ['TSLA', '성장주', '위성'],
+  ] as const) {
+    await tag(sym, style, [st], styles);
+    await tag(sym, role, [ro], roles);
+  }
+  for (const sym of ['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-SOL']) {
+    if (await prisma.asset.findFirst({ where: { userId: uid, symbol: sym } })) await tag(sym, role, ['위성'], roles);
+  }
 }
 
 main()

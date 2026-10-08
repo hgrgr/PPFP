@@ -70,6 +70,9 @@ interface Ids {
   nvdaJournal: string;
   aaplJournal: string;
   template: string;
+  allWeather: string;
+  assetClass: string;
+  equityStyle: string;
 }
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
@@ -200,7 +203,7 @@ const SHOTS: Shot[] = [
     wait: 4000,
     width: 1280,
     clip: [{ sel: '.doc-bar' }, { sel: '.format-pick' }],
-    marks: [{ sel: '#j-target', closest: 'dd' }, { sel: '.chip' }, { sel: 'button', text: '속성 편집', closest: 'div' }, { sel: '.format-pick' }],
+    marks: [{ sel: '#j-target', closest: 'dd' }, { sel: 'button[aria-label="연결 해제"]', closest: '.chip' }, { sel: 'button', text: '속성 편집', closest: 'div' }, { sel: '.format-pick' }],
   },
   { file: 'journal-body', path: (ids) => `/journal/${ids.nvdaJournal}`, wait: 4000, width: 1280, clip: [{ sel: '.doc-body' }], pad: 16 },
   {
@@ -209,7 +212,12 @@ const SHOTS: Shot[] = [
     wait: 5000,
     width: 1280,
     scale: 2,
-    steps: [{ click: { sel: '.jb-stock button', text: '일' } }, { wait: 2500 }],
+    steps: [
+      { click: { sel: '.jb-stock button', text: '일' } },
+      { wait: 1500 },
+      { until: "(document.querySelector('.jb-stock .recharts-surface')?.getBoundingClientRect().width ?? 0) > 100 && document.querySelectorAll('.jb-stock .recharts-bar-rectangle').length > 40", timeout: 20_000 },
+      { wait: 1000 },
+    ],
     clip: [{ sel: '.jb-stock' }],
     pad: 16,
   },
@@ -252,6 +260,62 @@ const SHOTS: Shot[] = [
       { wait: 2500 },
     ],
     marks: [{ sel: '#journal-panel .journal-list button .strong' }, { sel: '.drawer .props' }],
+  },
+  {
+    file: 'journal-tree',
+    path: () => '/journal?view=tree',
+    wait: 2500,
+    clip: [{ sel: 'h2', text: '자산 구성 트리', closest: 'section' }],
+    pad: 0,
+    marks: [{ sel: '[aria-label="분류 기준"]' }, { sel: '.tree-node.k-category' }, { sel: '.tree-node.k-asset .tgl' }, { sel: '.tree-node.k-journal' }, { sel: '.tree-node.k-trade' }],
+  },
+  {
+    file: 'journal-tree-detail',
+    path: (ids) => `/journal?view=tree&by=${ids.allWeather}`,
+    wait: 2500,
+    steps: [{ press: { sel: '.tree-node.k-asset' } }, { until: "!!document.querySelector('.drawer.tree-detail')" }, { wait: 800 }],
+    marks: [{ sel: '.tree-node.k-asset' }, { sel: '.drawer.tree-detail .props' }, { sel: '.drawer.tree-detail .detail-list' }],
+  },
+  {
+    file: 'traits',
+    path: (ids) => `/traits?g=${ids.assetClass}`,
+    wait: 2500,
+    clip: [{ sel: '.page-head' }, { sel: 'h2', text: '무엇을 살까', closest: 'section' }],
+    marks: [{ sel: '[role="tablist"]' }, { sel: 'table.trait-table thead' }, { sel: '.alloc-bar .target' }, { sel: 'table.trait-table .badge.warn' }, { sel: 'h2', text: '무엇을 살까', closest: 'section' }],
+  },
+  {
+    file: 'traits-style',
+    path: (ids) => `/traits?g=${ids.equityStyle}`,
+    wait: 2500,
+    width: 1280,
+    clip: [{ sel: 'h2', text: '무엇을 살까', closest: 'section' }, { sel: 'h2', text: '종목별 성질 지정', closest: 'section' }],
+    marks: [{ sel: '.buy-row .chip-btn' }, { sel: '.trait-chip[aria-pressed="true"]' }, { sel: 'button', text: '성질 지정하기' }],
+  },
+  {
+    file: 'traits-edit',
+    path: (ids) => `/traits?g=${ids.equityStyle}`,
+    wait: 2500,
+    width: 1280,
+    steps: [{ click: { sel: 'button', text: '성질 · 목표 비중 편집' } }, { wait: 500 }],
+    clip: [{ sel: '.card.tight', within: { sel: 'h2', text: '주식 스타일', closest: 'section' } }],
+    marks: [{ sel: 'input[aria-label="목표 비중 %"]' }, { sel: 'span', text: '목표 합계' }, { sel: 'select', within: { sel: '.card.tight' } }],
+  },
+  {
+    file: 'traits-add',
+    path: () => '/traits',
+    wait: 2000,
+    width: 1280,
+    steps: [{ click: { sel: 'button[role="tab"]', text: '+ 분류 추가' } }, { wait: 500 }],
+    clip: [{ sel: 'h2', text: '분류 추가', closest: 'section' }],
+    marks: [{ sel: 'label', text: '자동으로 지정' }, { sel: 'h3', text: '지역', closest: '.card' }, { sel: 'h3', text: '직접 만들기', closest: '.card' }],
+  },
+  {
+    file: 'dashboard-traits',
+    path: (ids) => `/dashboard?alloc=trait&g=${ids.allWeather}`,
+    wait: 2500,
+    width: 1280,
+    clip: [card('자산 배분')],
+    marks: [{ sel: 'a', text: '성질', within: { sel: '[aria-label="배분 기준"]' } }, { sel: '[aria-label="성질 분류"]' }],
   },
   {
     file: 'journal-slash',
@@ -514,6 +578,9 @@ async function main() {
       nvdaJournal: await journal('NVDA'),
       aaplJournal: await journal('AAPL'),
       template: (await db.journalTemplate.findFirstOrThrow()).id,
+      allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,
+      assetClass: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'assetClass' } })).id,
+      equityStyle: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'equityStyle' } })).id,
     };
     await db.$disconnect();
 
