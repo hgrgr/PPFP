@@ -3,6 +3,7 @@
  * strings, prefixed KRX codes, and each broker's own exchange codes.
  * Pure functions, shared by the server adapters and the paste importer.
  */
+import { Dec } from './decimal';
 
 export type UsMarket = 'NASDAQ' | 'NYSE' | 'AMEX';
 export const US_MARKETS: readonly UsMarket[] = ['NASDAQ', 'NYSE', 'AMEX'];
@@ -92,4 +93,60 @@ export function fromYmd(v: unknown): string | null {
 export function addDays(date: string, days: number): string {
   const t = Date.parse(date + 'T00:00:00Z') + days * 86_400_000;
   return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Percent figure ("+1.25", "-0.80%") -> fraction string ("0.0125"); null when absent. */
+export function pctToRate(v: unknown): string | null {
+  const s = String(v ?? '').replace('%', '').trim();
+  if (!s) return null;
+  const n = num(s);
+  if (n === '0' && !/^[+-]?0*\.?0*$/.test(s)) return null;
+  return Dec.of(n).div(100).toString();
+}
+
+/** Brokers' up/down codes: 1 상한, 2 상승, 3 보합, 4 하한, 5 하락. Applies the direction to an unsigned figure. */
+export function withSign(v: unknown, sign: unknown): string {
+  const n = absNum(v);
+  return ['4', '5'].includes(String(sign ?? '').trim()) && n !== '0' ? '-' + n : n;
+}
+
+/** Previous close from a price and its change; null when either is missing. */
+export function prevFromChange(price: string, change: string | null): string | null {
+  if (change === null || price === '0') return null;
+  return Dec.of(price).sub(change).toString();
+}
+
+export type MarketZone = 'Asia/Seoul' | 'America/New_York';
+
+function zoneOffsetMs(utcMs: number, zone: MarketZone): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(utcMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - utcMs;
+}
+
+/** Exchange-local "YYYYMMDD" + "HHMMSS"/"HHMM" -> ISO instant. */
+export function zonedIso(ymdValue: string, hms: string, zone: MarketZone): string | null {
+  const d = /^(\d{4})(\d{2})(\d{2})$/.exec(ymdValue.trim());
+  const t = /^(\d{2})(\d{2})(\d{2})?$/.exec(hms.trim().replace(/:/g, ''));
+  if (!d || !t) return null;
+  const asUtc = Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2], +(t[3] ?? 0));
+  // Two passes settle the offset across DST changes.
+  let ms = asUtc - zoneOffsetMs(asUtc, zone);
+  ms = asUtc - zoneOffsetMs(ms, zone);
+  return new Date(ms).toISOString();
+}
+
+/** The calendar date of an instant in a market's time zone. */
+export function zonedDate(iso: string, zone: MarketZone): string {
+  const ms = Date.parse(iso);
+  return new Date(ms + zoneOffsetMs(ms, zone)).toISOString().slice(0, 10);
 }

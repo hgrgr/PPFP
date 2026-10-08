@@ -342,3 +342,116 @@ describe('메리츠증권', () => {
     await assert.rejects(new MeritzAdapter(cfg(), memoryTokenStore()).verify(), /권한이 없습니다/);
   });
 });
+
+describe('시세판 기능', () => {
+  it('KIS: indices, gainers with sign check, and the 10-level orderbook', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/tokenP') return { body: { access_token: 'T', expires_in: 86400 } };
+      const p = c.url.pathname;
+      if (p.endsWith('/inquire-index-price')) return { body: { rt_cd: '0', output: { bstp_nmix_prpr: '2650.50', bstp_nmix_prdy_vrss: '10.50', prdy_vrss_sign: '5' } } };
+      if (p.endsWith('/inquire-daily-chartprice')) return { body: { rt_cd: '0', output1: { ovrs_nmix_prpr: '18000.25', ovrs_nmix_prdy_clpr: '17900.00' } } };
+      if (p.endsWith('/ranking/fluctuation')) {
+        const gainers = c.url.searchParams.get('fid_rank_sort_cls_code') === '0000';
+        return { body: { rt_cd: '0', output: [{ stck_shrn_iscd: '123456', hts_kor_isnm: '급등주', stck_prpr: '1300', prdy_ctrt: gainers ? '30.00' : '29.90', acml_vol: '100' }] } };
+      }
+      if (p.endsWith('/inquire-asking-price-exp-ccn')) {
+        return { body: { rt_cd: '0', output1: { askp1: '71300', askp_rsqn1: '120', askp2: '71400', askp_rsqn2: '80', bidp1: '71200', bidp_rsqn1: '300', askp3: '0' } } };
+      }
+      throw new Error('unexpected ' + c.url);
+    });
+    const kis = new KisAdapter(cfg({ accountNo: '12345678-01' }), memoryTokenStore());
+    const idx = await kis.indices(['KOSPI', 'NASDAQ']);
+    assert.deepEqual(idx.map((i) => [i.code, i.price, i.prevClose]), [['KOSPI', '2650.50', '2661'], ['NASDAQ', '18000.25', '17900.00']]);
+    const index = calls.find((c) => c.url.pathname.endsWith('/inquire-index-price'))!;
+    assert.equal(index.headers.tr_id, 'FHPUP02100000');
+    assert.equal(index.url.searchParams.get('FID_INPUT_ISCD'), '0001');
+    const us = calls.find((c) => c.url.pathname.endsWith('/inquire-daily-chartprice'))!;
+    assert.equal(us.url.searchParams.get('FID_INPUT_ISCD'), 'COMP');
+    const g = await kis.rankings('KR', 'GAINERS');
+    assert.deepEqual(g?.map((r) => [r.symbol, r.name, r.changeRate]), [['123456', '급등주', '0.3']]);
+    // The "losers" request answered with a rising stock: not trusted.
+    assert.equal(await kis.rankings('KR', 'LOSERS'), null);
+    const book = await kis.orderbook({ symbol: '005930', market: 'KRX' });
+    assert.deepEqual(book?.asks, [{ price: '71300', volume: '120' }, { price: '71400', volume: '80' }]);
+    assert.deepEqual(book?.bids, [{ price: '71200', volume: '300' }]);
+  });
+
+  it('KIS: walks domestic minute bars back 30 at a time and keeps one session', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/tokenP') return { body: { access_token: 'T', expires_in: 86400 } };
+      const hour = c.url.searchParams.get('FID_INPUT_HOUR_1');
+      const rows =
+        hour === '153000'
+          ? [{ stck_bsop_date: '20261007', stck_cntg_hour: '090100', stck_prpr: '71100', cntg_vol: '5' }, { stck_bsop_date: '20261007', stck_cntg_hour: '090200', stck_prpr: '71200', cntg_vol: '7' }]
+          : [{ stck_bsop_date: '20261006', stck_cntg_hour: '153000', stck_prpr: '70000', cntg_vol: '1' }];
+      return { body: { rt_cd: '0', output2: rows } };
+    });
+    const bars = await new KisAdapter(cfg({ accountNo: '12345678-01' }), memoryTokenStore()).intraday({ symbol: '005930', market: 'KRX' });
+    assert.deepEqual(bars.map((b) => [b.time, b.close]), [['2026-10-07T00:01:00.000Z', '71100'], ['2026-10-07T00:02:00.000Z', '71200']]);
+    assert.equal(calls.find((c) => c.url.searchParams.get('FID_INPUT_HOUR_1') === '090000') !== undefined, true);
+  });
+
+  it('Kiwoom: rankings in won/thousand dollars and the fpr/nth orderbook fields', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/token') return { body: { return_code: 0, token: 'KW', expires_dt: '20991231235959' } };
+      const id = c.headers['api-id'];
+      if (id === 'ka10032') return { body: { return_code: 0, trde_prica_upper: [{ stk_cd: '005930', stk_nm: '삼성전자', cur_prc: '-71200', flu_rt: '-1.11', now_trde_qty: '12345678', trde_prica: '880000' }] } };
+      if (id === 'usa20910') return { body: { return_code: 0, result_list: [{ stk_cd: 'nvda', stk_nm: '엔비디아', cur_prc: '+130.5000', flu_rt: '+5.20', trde_qty: '1000', trde_prica: '2500' }] } };
+      if (id === 'ka10004') return { body: { return_code: 0, sel_fpr_bid: '+71300', sel_fpr_req: '120', sel_2th_pre_bid: '+71400', sel_2th_pre_req: '80', buy_fpr_bid: '-71200', buy_fpr_req: '300' } };
+      if (id === 'ka20001') return { body: { return_code: 0, cur_prc: '-2650.50', pred_pre: '-10.50' } };
+      throw new Error('unexpected ' + id);
+    });
+    const kw = new KiwoomAdapter(cfg(), memoryTokenStore());
+    const kr = await kw.rankings('KR', 'AMOUNT');
+    assert.deepEqual(kr?.map((r) => [r.symbol, r.price, r.changeRate, r.amount]), [['005930', '71200', '-0.0111', '880000000000']]);
+    const us = await kw.rankings('US', 'GAINERS');
+    assert.deepEqual(us?.map((r) => [r.symbol, r.price, r.changeRate, r.amount]), [['NVDA', '130.5000', '0.052', '2500000']]);
+    assert.equal(JSON.parse(calls.find((c) => c.headers['api-id'] === 'usa20910')!.body).sort_tp, '1');
+    const book = await kw.orderbook({ symbol: '005930', market: 'KRX' });
+    assert.deepEqual(book?.asks.map((l) => l.price), ['71300', '71400']);
+    assert.deepEqual(book?.bids, [{ price: '71200', volume: '300' }]);
+    const [kospi] = await kw.indices(['KOSPI']);
+    assert.deepEqual([kospi.price, kospi.prevClose], ['2650.50', '2661']);
+  });
+
+  it('LS: domestic indices from t1511, signed rankings from the high-item TRs', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/token') return { body: { access_token: 'LS', expires_in: 86400 } };
+      if (c.headers.tr_cd === 't1511') return { body: { rsp_cd: '00000', t1511OutBlock: { pricejisu: 2650.5, jniljisu: 2661 } } };
+      if (c.headers.tr_cd === 't3521') return { body: { rsp_cd: '00000', t3521OutBlock: { close: 18000.25, change: 100.25, sign: '2' } } };
+      if (c.headers.tr_cd === 't1441') return { body: { rsp_cd: '00000', t1441OutBlock1: [{ shcode: '123456', hname: '급락주', price: 700, sign: '5', diff: 29.9, volume: 10, value: 7 }] } };
+      throw new Error('unexpected ' + c.headers.tr_cd);
+    });
+    const ls = new LsAdapter(cfg(), memoryTokenStore());
+    const idx = await ls.indices(['KOSDAQ', 'NASDAQ']);
+    assert.deepEqual(idx.map((i) => [i.code, i.price, i.prevClose]), [['KOSDAQ', '2650.5', '2661'], ['NASDAQ', '18000.25', '17900']]);
+    assert.deepEqual(JSON.parse(calls.find((c) => c.headers.tr_cd === 't1511')!.body), { t1511InBlock: { upcode: '301' } });
+    assert.deepEqual(JSON.parse(calls.find((c) => c.headers.tr_cd === 't3521')!.body), { t3521InBlock: { kind: 'S', symbol: 'NAS@IXIC' } });
+    const losers = await ls.rankings('KR', 'LOSERS');
+    assert.deepEqual(losers?.map((r) => [r.symbol, r.changeRate, r.amount]), [['123456', '-0.299', '7000000']]);
+    assert.equal(JSON.parse(calls.find((c) => c.headers.tr_cd === 't1441')!.body).t1441InBlock.gubun2, '1');
+    assert.equal(await ls.rankings('US', 'AMOUNT'), null);
+  });
+
+  it('DB and Meritz: gainers only for DB, numbered vs bare first orderbook level for Meritz', async () => {
+    fake((c) => {
+      if (c.url.pathname === '/oauth2/token') return { body: { access_token: 'X', expires_in: 86400 } };
+      if (c.url.pathname === '/api/v1/quote/kr-stock/inquiry/rank-list') return { body: { Out: [{ Iscd: 'A123456', KorIsnm: '급등주', Prpr: '1300', PrdyCtrt: '30.00', PrdyVrssSign: '2' }] } };
+      if (c.url.pathname === '/market/v1/orderbook') return { body: { data: { askp: '71300', askp2: '71400', askp_rsqn1: '120', askp_rsqn2: '80', bidp: '71200', bidp_rsqn1: '300' } } };
+      if (c.url.pathname === '/market/v1/index/prices') return { body: { data: { stck_prpr: '2650.50', prdy_clpr: '2661.00' } } };
+      throw new Error('unexpected ' + c.url);
+    });
+    const db = new DbAdapter(cfg(), memoryTokenStore());
+    assert.equal(await db.rankings('KR', 'AMOUNT'), null);
+    const g = await db.rankings('KR', 'GAINERS');
+    assert.deepEqual(g?.map((r) => [r.symbol, r.changeRate]), [['123456', '0.3']]);
+    assert.equal(JSON.parse(calls.find((c) => c.url.pathname.endsWith('/rank-list'))!.body).In.InputRankSortClsCode1, '12');
+    const mz = new MeritzAdapter(cfg(), memoryTokenStore());
+    const book = await mz.orderbook({ symbol: '005930', market: 'KRX' });
+    assert.deepEqual(book?.asks, [{ price: '71300', volume: '120' }, { price: '71400', volume: '80' }]);
+    assert.deepEqual(book?.bids, [{ price: '71200', volume: '300' }]);
+    const [kospi] = await mz.indices(['KOSPI']);
+    assert.deepEqual([kospi.price, kospi.prevClose], ['2650.50', '2661.00']);
+    assert.equal(calls.find((c) => c.url.pathname === '/market/v1/index/prices')!.url.searchParams.get('iscd'), 'KGG01P');
+  });
+});

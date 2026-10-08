@@ -3,7 +3,23 @@
  * Endpoints, TR ids and fields follow the official samples in
  * github.com/koreainvestment/open-trading-api (examples_llm).
  */
-import { addDays, fromYmd, krSymbol, isKrSymbol, num, usMarketCandidates, usMarketOf, ymd, type UsMarket } from '@/domain/broker-format';
+import { Dec } from '@/domain/decimal';
+import {
+  absNum,
+  addDays,
+  fromYmd,
+  isKrSymbol,
+  krSymbol,
+  num,
+  pctToRate,
+  prevFromChange,
+  usMarketCandidates,
+  usMarketOf,
+  withSign,
+  ymd,
+  zonedIso,
+  type UsMarket,
+} from '@/domain/broker-format';
 import { backoff, expiryFrom, fetchJson, obj, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -11,9 +27,17 @@ import {
   type BrokerHolding,
   type ConnectionConfig,
   type DailyClose,
+  type IndexCode,
+  type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type MinuteBar,
+  type Orderbook,
+  type OrderbookLevel,
   type PriceQuote,
+  type RankingMarket,
+  type RankingRow,
+  type RankingType,
   type TokenStore,
 } from './types';
 
@@ -21,6 +45,9 @@ const REAL = 'https://openapi.koreainvestment.com:9443';
 const PAPER = 'https://openapivts.koreainvestment.com:29443';
 /** Quote/info endpoints take 3-letter exchange codes. */
 const EXCD: Record<UsMarket, string> = { NASDAQ: 'NAS', NYSE: 'NYS', AMEX: 'AMS' };
+const KR_INDEX: Partial<Record<IndexCode, string>> = { KOSPI: '0001', KOSDAQ: '1001' };
+/** Overseas index master codes (inquire-daily-chartprice, FID_COND_MRKT_DIV_CODE "N") */
+const US_INDEX: Partial<Record<IndexCode, string>> = { NASDAQ: 'COMP', SP500: 'SPX', DOW: '.DJI' };
 /** search-info product type per exchange */
 const PRDT_TYPE: Record<UsMarket, string> = { NASDAQ: '512', NYSE: '513', AMEX: '529' };
 
@@ -197,15 +224,18 @@ export class KisAdapter implements BrokerAdapter {
       try {
         if (isKrSymbol(ref.symbol)) {
           const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-price', 'FHKST01010100', { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: ref.symbol });
-          const price = num(obj(r.body.output).stck_prpr);
-          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null });
+          const o = obj(r.body.output);
+          const price = num(o.stck_prpr);
+          // stck_sdpr (기준가) is the previous close
+          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null, prevClose: num(o.stck_sdpr) === '0' ? null : num(o.stck_sdpr), volume: num(o.acml_vol) });
           continue;
         }
         for (const m of usMarketCandidates(ref.market)) {
           const r = await this.get('/uapi/overseas-price/v1/quotations/price', 'HHDFS00000300', { AUTH: '', EXCD: EXCD[m], SYMB: ref.symbol });
-          const price = num(obj(r.body.output).last);
+          const o = obj(r.body.output);
+          const price = num(o.last);
           if (price !== '0') {
-            out.push({ symbol: ref.symbol, price, currency: 'USD', market: m, asOf: null });
+            out.push({ symbol: ref.symbol, price, currency: 'USD', market: m, asOf: null, prevClose: num(o.base) === '0' ? null : num(o.base), volume: num(o.tvol) });
             break;
           }
         }
@@ -288,5 +318,200 @@ export class KisAdapter implements BrokerAdapter {
     const r = await this.get('/uapi/overseas-price/v1/quotations/price-detail', 'HHDFS76200200', { AUTH: '', EXCD: 'NAS', SYMB: 'AAPL' });
     const rate = num(obj(r.body.output).t_rate);
     return rate === '0' ? null : rate;
+  }
+
+  async indices(codes: IndexCode[]): Promise<IndexQuote[]> {
+    const out: IndexQuote[] = [];
+    for (const code of codes) {
+      try {
+        if (KR_INDEX[code]) {
+          const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-index-price', 'FHPUP02100000', { FID_COND_MRKT_DIV_CODE: 'U', FID_INPUT_ISCD: KR_INDEX[code]! });
+          const o = obj(r.body.output);
+          const price = num(o.bstp_nmix_prpr);
+          if (price !== '0') out.push({ code, price, prevClose: prevFromChange(price, withSign(o.bstp_nmix_prdy_vrss, o.prdy_vrss_sign)), asOf: null });
+        } else if (US_INDEX[code]) {
+          const today = todayKst();
+          const r = await this.get('/uapi/overseas-price/v1/quotations/inquire-daily-chartprice', 'FHKST03030100', {
+            FID_COND_MRKT_DIV_CODE: 'N',
+            FID_INPUT_ISCD: US_INDEX[code]!,
+            FID_INPUT_DATE_1: ymd(addDays(today, -10)),
+            FID_INPUT_DATE_2: ymd(today),
+            FID_PERIOD_DIV_CODE: 'D',
+          });
+          const o = obj(r.body.output1);
+          const price = num(o.ovrs_nmix_prpr);
+          if (price !== '0') out.push({ code, price, prevClose: num(o.ovrs_nmix_prdy_clpr) === '0' ? null : num(o.ovrs_nmix_prdy_clpr), asOf: null });
+        }
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
+    }
+    return out;
+  }
+
+  async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market === 'KR') {
+      if (type === 'AMOUNT' || type === 'VOLUME') {
+        const r = await this.get('/uapi/domestic-stock/v1/quotations/volume-rank', 'FHPST01710000', {
+          FID_COND_MRKT_DIV_CODE: 'J',
+          FID_COND_SCR_DIV_CODE: '20171',
+          FID_INPUT_ISCD: '0000',
+          FID_DIV_CLS_CODE: '0',
+          // 3: 거래금액순, 0: 평균거래량
+          FID_BLNG_CLS_CODE: type === 'AMOUNT' ? '3' : '0',
+          FID_TRGT_CLS_CODE: '111111111',
+          FID_TRGT_EXLS_CLS_CODE: '0000000000',
+          FID_INPUT_PRICE_1: '',
+          FID_INPUT_PRICE_2: '',
+          FID_VOL_CNT: '',
+          FID_INPUT_DATE_1: '',
+        });
+        return rows(r.body.output).map((x) => ({
+          symbol: str(x.mksc_shrn_iscd),
+          name: str(x.hts_kor_isnm) || null,
+          price: num(x.stck_prpr),
+          changeRate: pctToRate(x.prdy_ctrt),
+          volume: num(x.acml_vol),
+          amount: num(x.acml_tr_pbmn),
+          currency: 'KRW' as const,
+        }));
+      }
+      const r = await this.get('/uapi/domestic-stock/v1/ranking/fluctuation', 'FHPST01700000', {
+        fid_rsfl_rate2: '',
+        fid_cond_mrkt_div_code: 'J',
+        fid_cond_scr_div_code: '20170',
+        fid_input_iscd: '0000',
+        fid_rank_sort_cls_code: type === 'GAINERS' ? '0000' : '0001',
+        fid_input_cnt_1: '0',
+        fid_prc_cls_code: '0',
+        fid_input_price_1: '',
+        fid_input_price_2: '',
+        fid_vol_cnt: '',
+        fid_trgt_cls_code: '0',
+        fid_trgt_exls_cls_code: '0',
+        fid_div_cls_code: '0',
+        fid_rsfl_rate1: '',
+      });
+      const list = rows(r.body.output).map((x) => ({
+        symbol: str(x.stck_shrn_iscd),
+        name: str(x.hts_kor_isnm) || null,
+        price: num(x.stck_prpr),
+        changeRate: pctToRate(x.prdy_ctrt),
+        volume: num(x.acml_vol),
+        amount: null,
+        currency: 'KRW' as const,
+      }));
+      // The sort codes are not spelled out in the samples: accept the list only if it leans the way we asked.
+      const first = list[0]?.changeRate ? Dec.of(list[0].changeRate) : null;
+      if (!first || (type === 'GAINERS' ? first.isNeg() : first.isPos())) return null;
+      return list;
+    }
+    const path = { AMOUNT: 'trade-pbmn', VOLUME: 'trade-vol', GAINERS: 'updown-rate', LOSERS: 'updown-rate' }[type];
+    const trId = { AMOUNT: 'HHDFS76320010', VOLUME: 'HHDFS76310010', GAINERS: 'HHDFS76290000', LOSERS: 'HHDFS76290000' }[type];
+    const merged: RankingRow[] = [];
+    for (const excd of ['NAS', 'NYS']) {
+      const params: Record<string, string> = { EXCD: excd, NDAY: '0', VOL_RANG: '0', AUTH: '', KEYB: '' };
+      if (type === 'GAINERS' || type === 'LOSERS') params.GUBN = type === 'GAINERS' ? '1' : '0';
+      else Object.assign(params, { PRC1: '', PRC2: '' });
+      const r = await this.get(`/uapi/overseas-stock/v1/ranking/${path}`, trId, params);
+      for (const x of rows(r.body.output2)) {
+        merged.push({
+          symbol: str(x.symb).toUpperCase(),
+          name: str(x.name) || str(x.ename) || null,
+          price: num(x.last),
+          changeRate: pctToRate(x.rate),
+          volume: num(x.tvol),
+          amount: num(x.tamt),
+          currency: 'USD',
+        });
+      }
+    }
+    const key = (x: RankingRow) => Dec.of(type === 'AMOUNT' ? (x.amount ?? '0') : type === 'VOLUME' ? (x.volume ?? '0') : (x.changeRate ?? '0'));
+    return merged.sort((a, b) => (type === 'LOSERS' ? key(a).cmp(key(b)) : key(b).cmp(key(a)))).slice(0, 30);
+  }
+
+  async intraday(ref: InstrumentRef): Promise<MinuteBar[]> {
+    const bars = new Map<string, MinuteBar>();
+    if (isKrSymbol(ref.symbol)) {
+      // 30 one-minute bars per call, walking back from the latest.
+      let hour = '153000';
+      let session: string | null = null;
+      for (let i = 0; i < 14; i++) {
+        const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice', 'FHKST03010200', {
+          FID_COND_MRKT_DIV_CODE: 'J',
+          FID_INPUT_ISCD: ref.symbol,
+          FID_INPUT_HOUR_1: hour,
+          FID_PW_DATA_INCU_YN: 'N',
+          FID_ETC_CLS_CODE: '',
+        });
+        const page = rows(r.body.output2).filter((x) => str(x.stck_cntg_hour) && num(x.stck_prpr) !== '0');
+        if (!page.length) break;
+        let oldest = hour;
+        for (const x of page) {
+          const date = str(x.stck_bsop_date);
+          session ??= date;
+          if (date !== session) continue;
+          const t = zonedIso(date, str(x.stck_cntg_hour), 'Asia/Seoul');
+          if (t) bars.set(t, { time: t, close: num(x.stck_prpr), volume: num(x.cntg_vol) });
+          if (str(x.stck_cntg_hour) < oldest) oldest = str(x.stck_cntg_hour);
+        }
+        if (oldest <= '090000' || oldest === hour) break;
+        const prev = new Date(Date.parse(`2000-01-01T${oldest.slice(0, 2)}:${oldest.slice(2, 4)}:00Z`) - 60_000);
+        hour = prev.toISOString().slice(11, 19).replace(/:/g, '');
+      }
+    } else {
+      const m = usMarketOf(ref.market) ?? 'NASDAQ';
+      let keyb = '';
+      let session: string | null = null;
+      for (let i = 0; i < 4; i++) {
+        const r = await this.get('/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice', 'HHDFS76950200', {
+          AUTH: '', EXCD: EXCD[m], SYMB: ref.symbol, NMIN: '1', PINC: keyb ? '1' : '0', NEXT: keyb ? '1' : '', NREC: '120', FILL: '', KEYB: keyb,
+        });
+        const page = rows(r.body.output2).filter((x) => str(x.xymd) && num(x.last) !== '0');
+        if (!page.length) break;
+        let oldest = '';
+        for (const x of page) {
+          const local = str(x.xymd);
+          session ??= local;
+          if (local !== session) continue;
+          // Korean date/time columns are unambiguous instants.
+          const t = zonedIso(str(x.kymd), str(x.khms), 'Asia/Seoul');
+          if (t) bars.set(t, { time: t, close: num(x.last), volume: num(x.evol) });
+          const stamp = local + str(x.xhms);
+          if (!oldest || stamp < oldest) oldest = stamp;
+        }
+        if (!oldest || str(obj(r.body.output1).next) !== '1') break;
+        const prev = zonedIso(oldest.slice(0, 8), oldest.slice(8), 'America/New_York');
+        if (!prev) break;
+        // Next page key: one minute before the oldest bar, exchange-local, YYYYMMDDHHMMSS
+        const ny = new Date(Date.parse(prev) - 60_000);
+        const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        keyb = fmt.format(ny).replace(/\D/g, '');
+      }
+    }
+    return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  async orderbook(ref: InstrumentRef): Promise<Orderbook | null> {
+    const levels = (o: Record<string, unknown>, price: (i: number) => string, vol: (i: number) => string) => {
+      const out: OrderbookLevel[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const p = absNum(o[price(i)]);
+        if (p !== '0') out.push({ price: p, volume: absNum(o[vol(i)]) });
+      }
+      return out;
+    };
+    if (isKrSymbol(ref.symbol)) {
+      const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn', 'FHKST01010200', { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: ref.symbol });
+      const o = obj(r.body.output1);
+      return { asks: levels(o, (i) => `askp${i}`, (i) => `askp_rsqn${i}`), bids: levels(o, (i) => `bidp${i}`, (i) => `bidp_rsqn${i}`), currency: 'KRW', asOf: null };
+    }
+    for (const m of usMarketCandidates(ref.market)) {
+      const r = await this.get('/uapi/overseas-price/v1/quotations/inquire-asking-price', 'HHDFS76200100', { AUTH: '', EXCD: EXCD[m], SYMB: ref.symbol });
+      const o = obj(r.body.output2);
+      const book = { asks: levels(o, (i) => `pask${i}`, (i) => `vask${i}`), bids: levels(o, (i) => `pbid${i}`, (i) => `vbid${i}`), currency: 'USD' as const, asOf: null };
+      if (book.asks.length || book.bids.length) return book;
+    }
+    return null;
   }
 }

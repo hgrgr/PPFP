@@ -43,6 +43,28 @@ export interface TossStock {
   currency: Currency;
 }
 
+export interface TossIndicatorPrice {
+  symbol: string;
+  timestamp: string | null;
+  lastPrice: string;
+}
+
+export interface TossRankingItem {
+  rank: number;
+  symbol: string;
+  currency: Currency;
+  price: { lastPrice: string; basePrice: string; changeRate: string | null };
+  tradingVolume: string;
+  tradingAmount: string;
+}
+
+export interface TossOrderbook {
+  timestamp: string | null;
+  currency: Currency;
+  asks: { price: string; volume: string }[];
+  bids: { price: string; volume: string }[];
+}
+
 export interface TossExchangeRate {
   baseCurrency: Currency;
   quoteCurrency: Currency;
@@ -215,6 +237,34 @@ export class TossClient {
       before = r.nextBefore;
     }
     return out.filter((c) => c.timestamp.slice(0, 10) >= since);
+  }
+
+  /** One page of candles, newest first. */
+  async candles(symbol: string, interval: '1m' | '1d', count = 200, before?: string) {
+    return this.request<{ candles: TossCandle[]; nextBefore: string | null }>('/api/v1/candles', {
+      symbol: assertSymbol(symbol),
+      interval,
+      count,
+      adjusted: true,
+      before,
+    });
+  }
+
+  /** Domestic indices and KR bond yields (KOSPI, KOSDAQ, KR_BOND_*). */
+  async indicatorPrices(symbols: string[]): Promise<TossIndicatorPrice[]> {
+    return this.request<TossIndicatorPrice[]>('/api/v1/market-indicators/prices', { symbols: symbols.join(',') });
+  }
+
+  async indicatorCandles(symbol: string, interval: '1m' | '1d', count = 2) {
+    return this.request<{ candles: TossCandle[]; nextBefore: string | null }>(`/api/v1/market-indicators/${encodeURIComponent(symbol)}/candles`, { interval, count });
+  }
+
+  async rankings(type: string, marketCountry: 'KR' | 'US', duration: string, count = 30) {
+    return this.request<{ rankedAt: string | null; rankings: TossRankingItem[] }>('/api/v1/rankings', { type, marketCountry, duration, count });
+  }
+
+  async orderbook(symbol: string): Promise<TossOrderbook> {
+    return this.request<TossOrderbook>('/api/v1/orderbook', { symbol: assertSymbol(symbol) });
   }
 
   async exchangeRate(base: Currency, quote: Currency, dateTime?: string): Promise<TossExchangeRate> {

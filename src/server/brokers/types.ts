@@ -42,6 +42,55 @@ export interface PriceQuote {
   /** Market the quote came from (useful for US symbols whose exchange was unknown) */
   market: string | null;
   asOf: string | null;
+  /** Previous session's close, when the quote response carries it */
+  prevClose?: string | null;
+  /** Shares traded so far today */
+  volume?: string | null;
+}
+
+export type IndexCode = 'KOSPI' | 'KOSDAQ' | 'NASDAQ' | 'SP500' | 'DOW';
+
+export interface IndexQuote {
+  code: IndexCode;
+  price: string;
+  prevClose: string | null;
+  asOf: string | null;
+}
+
+export type RankingType = 'AMOUNT' | 'VOLUME' | 'GAINERS' | 'LOSERS';
+export type RankingMarket = 'KR' | 'US';
+
+export interface RankingRow {
+  symbol: string;
+  name: string | null;
+  price: string;
+  /** Change versus the previous close as a fraction (0.0125 = +1.25%) */
+  changeRate: string | null;
+  volume: string | null;
+  /** Traded value in the stock's currency */
+  amount: string | null;
+  currency: Currency;
+}
+
+export interface MinuteBar {
+  /** Bar time as an ISO instant */
+  time: string;
+  close: string;
+  volume: string | null;
+}
+
+export interface OrderbookLevel {
+  price: string;
+  volume: string;
+}
+
+export interface Orderbook {
+  /** Best (lowest) ask first */
+  asks: OrderbookLevel[];
+  /** Best (highest) bid first */
+  bids: OrderbookLevel[];
+  currency: Currency;
+  asOf: string | null;
 }
 
 export interface DailyClose {
@@ -59,6 +108,13 @@ export interface BrokerAdapter {
   instrument?(symbol: string): Promise<Instrument | null>;
   dailyCloses?(ref: InstrumentRef, since: string): Promise<DailyClose[]>;
   usdKrw?(): Promise<string | null>;
+  /** Major indices this broker publishes; codes it does not cover are left out. */
+  indices?(codes: IndexCode[]): Promise<IndexQuote[]>;
+  /** Top stocks by the given measure, or null when this broker has no such ranking. */
+  rankings?(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null>;
+  /** One-minute bars of the most recent session, oldest first. */
+  intraday?(ref: InstrumentRef): Promise<MinuteBar[]>;
+  orderbook?(ref: InstrumentRef): Promise<Orderbook | null>;
 }
 
 export class BrokerApiError extends Error {

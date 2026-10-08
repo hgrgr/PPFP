@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           PPFP
         </div>
         <NavLink href="/dashboard">대시보드</NavLink>
+        <NavLink href="/market">실시간 시세</NavLink>
         <NavLink href="/portfolios">포트폴리오</NavLink>
         <NavLink href="/import">보유종목 가져오기</NavLink>
         <NavLink href="/transactions">거래 내역</NavLink>
