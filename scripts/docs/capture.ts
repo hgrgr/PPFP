@@ -62,8 +62,8 @@ interface Shot {
   /** Elements to crop to (their union, padded). Omit for the first screen. */
   clip?: Find[];
   pad?: number;
-  /** Keep the floating quick-memo button (hidden elsewhere so it does not cover content) */
-  memo?: boolean;
+  /** Keep the floating memo and AI buttons (hidden elsewhere so they do not cover content) */
+  fabs?: boolean;
 }
 interface Ids {
   root: string;
@@ -78,6 +78,8 @@ interface Ids {
   samsung: string;
   buffett: string;
   book: string;
+  /** A finished AI advisor conversation, prepared through the demo server before capturing */
+  aiChat: string;
 }
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
@@ -378,7 +380,7 @@ const SHOTS: Shot[] = [
     file: 'quick-memo',
     path: (ids) => `/holdings/${ids.samsung}`,
     wait: 2000,
-    memo: true,
+    fabs: true,
     steps: [{ click: { sel: '.memo-fab' } }, { until: "!!document.querySelector('.memo-drawer textarea')" }, { set: { sel: '.memo-drawer textarea' }, value: '실적 발표 후 외국인 순매수 전환. 목표가 다시 점검 #가치투자' }, { wait: 600 }],
     marks: [{ sel: '.memo-fab' }, { sel: '.memo-drawer textarea' }, { sel: '.memo-drawer .sub', text: 'Ctrl+Enter' }],
   },
@@ -428,6 +430,37 @@ const SHOTS: Shot[] = [
     wait: 2500,
     steps: [{ press: { sel: '.tree-node.k-category' } }, { until: "!!document.querySelector('.drawer.tree-detail .related')", timeout: 20_000 }, { wait: 800 }],
     marks: [{ sel: '.tree-node.k-category' }, { sel: '.drawer.tree-detail .related' }],
+  },
+  {
+    file: 'ai-page',
+    path: (ids) => `/ai?c=${ids.aiChat}`,
+    wait: 2500,
+    height: 1180,
+    steps: [{ until: "(document.querySelector('.ai-log').scrollTop = 0, true)" }, { wait: 300 }],
+    marks: [{ sel: '[aria-label="새 대화"]' }, { sel: '[aria-label="지난 대화"]' }, { sel: '.ai-steps' }, { sel: '.ai-md table' }, { sel: '.ai-action' }, { sel: '.ai-input textarea' }],
+  },
+  {
+    file: 'ai-drawer',
+    path: (ids) => `/holdings/${ids.samsung}`,
+    wait: 2000,
+    fabs: true,
+    steps: [{ click: { sel: 'button', text: 'AI에게 이 종목 묻기' } }, { until: "!!document.querySelector('.ai-drawer .ai-action') && !document.querySelector('.ai-drawer .ai-steps.live')", timeout: 30_000 }, { wait: 800 }],
+    marks: [{ sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-steps' }, { sel: '.ai-drawer .ai-action' }, { sel: '.ai-drawer textarea' }],
+  },
+  {
+    file: 'ai-sage',
+    path: (ids) => `/sages/${ids.buffett}`,
+    wait: 2500,
+    steps: [{ click: { sel: 'button', text: '관점으로 내 포트폴리오 보기' } }, { until: "!!document.querySelector('.ai-drawer .ai-action') && !document.querySelector('.ai-drawer .ai-steps.live')", timeout: 30_000 }, { wait: 800 }],
+    marks: [{ sel: 'button', text: '관점으로 내 포트폴리오 보기' }, { sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-action' }],
+  },
+  {
+    file: 'ai-settings',
+    path: () => '/settings',
+    wait: 1500,
+    width: 1280,
+    clip: [{ sel: '#ai' }],
+    marks: [{ sel: 'input[name="apiKey"]', closest: 'label' }, { sel: 'input[name="monthlyLimit"]', closest: 'label' }, { sel: 'input[name="webSearch"]', closest: 'label' }],
   },
   { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
@@ -581,7 +614,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
       return r.result.value;
     };
     await run(PAGE_HELPERS);
-    if (!shot.memo) await run("document.head.insertAdjacentHTML('beforeend', '<style>.memo-fab{display:none!important}</style>')");
+    if (!shot.fabs) await run("document.head.insertAdjacentHTML('beforeend', '<style>.memo-fab,.ai-fab{display:none!important}</style>')");
     for (const step of shot.steps ?? []) {
       if ('wait' in step) await sleep(step.wait);
       else if ('until' in step) {
@@ -648,7 +681,8 @@ async function main() {
   if (!existsSync(path.join(ROOT, '.next/BUILD_ID'))) throw new Error('No production build: run npm run build first.');
   const { main: mainUrl, demo, name } = demoUrl();
   const admin = new PrismaClient({ datasourceUrl: mainUrl });
-  const env = { ...process.env, DATABASE_URL: demo, COOKIE_SECURE: 'false' };
+  // The AI advisor talks to the scripted fake in fake-claude.cjs, never to the real API
+  const env = { ...process.env, DATABASE_URL: demo, COOKIE_SECURE: 'false', ANTHROPIC_API_KEY: 'sk-ant-docs-demo-not-a-real-key', ANTHROPIC_BASE_URL: 'https://api.anthropic.com' };
   let server: ChildProcess | null = null;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
   try {
@@ -682,8 +716,8 @@ async function main() {
       samsung: (await db.holding.findFirstOrThrow({ where: { asset: { symbol: '005930' } } })).id,
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
+      aiChat: '',
     };
-    await db.$disconnect();
 
     console.log(`starting the demo server on ${BASE}`);
     server = spawn(process.execPath, ['--require', path.join(__dirname, 'fake-market.cjs'), path.join(ROOT, 'node_modules/next/dist/bin/next'), 'start', '-p', String(PORT)], {
@@ -692,6 +726,17 @@ async function main() {
       stdio: ['ignore', 'inherit', 'inherit'],
     });
     await waitForServer(server);
+
+    console.log('preparing an AI advisor conversation');
+    const chat = await fetch(`${BASE}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `ppfp_session=${token}` },
+      body: JSON.stringify({ text: '내 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지는?', path: '/dashboard' }),
+    });
+    const events = await chat.text();
+    if (!events.includes('"t":"done"')) throw new Error(`AI conversation failed:\n${events}`);
+    ids.aiChat = (await db.aiConversation.findFirstOrThrow()).id;
+    await db.$disconnect();
 
     mkdirSync(OUT, { recursive: true });
     chrome = await launchChrome();
