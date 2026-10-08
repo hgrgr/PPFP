@@ -5,7 +5,22 @@
  * (github.com/teranum/ls-openapi-samples). Mock trading uses the same host
  * with a mock app key.
  */
-import { fromYmd, isKrSymbol, krSymbol, num, usMarketCandidates, usMarketOf, ymd, type UsMarket } from '@/domain/broker-format';
+import { Dec } from '@/domain/decimal';
+import {
+  absNum,
+  fromYmd,
+  isKrSymbol,
+  krSymbol,
+  num,
+  pctToRate,
+  prevFromChange,
+  usMarketCandidates,
+  usMarketOf,
+  withSign,
+  ymd,
+  zonedIso,
+  type UsMarket,
+} from '@/domain/broker-format';
 import { backoff, expiryFrom, fetchJson, obj, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -13,9 +28,17 @@ import {
   type BrokerHolding,
   type ConnectionConfig,
   type DailyClose,
+  type IndexCode,
+  type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type MinuteBar,
+  type Orderbook,
+  type OrderbookLevel,
   type PriceQuote,
+  type RankingMarket,
+  type RankingRow,
+  type RankingType,
   type TokenStore,
 } from './types';
 
@@ -23,7 +46,19 @@ const BASE = 'https://openapi.ls-sec.co.kr:8080';
 /** Overseas exchange codes: 82 NASDAQ, 81 NYSE/AMEX */
 const EXCH: Record<UsMarket, string> = { NASDAQ: '82', NYSE: '81', AMEX: '81' };
 /** Documented calls per second per TR */
-const TPS: Record<string, number> = { t0424: 2, t1102: 3, t8410: 1, COSOQ00201: 1, g3101: 10, g3204: 1 };
+const TPS: Record<string, number> = {
+  t0424: 2, t1102: 3, t8410: 1, COSOQ00201: 1, g3101: 10, g3204: 1,
+  t1511: 10, t3521: 1, t1441: 1, t1452: 2, t1463: 1, t8412: 1, t1101: 10, g3203: 1, g3106: 10,
+};
+/** KRX index codes (t1511) and overseas index symbols (t3521, kind "S") */
+const KR_INDEX: Partial<Record<IndexCode, string>> = { KOSPI: '001', KOSDAQ: '301' };
+const US_INDEX: Partial<Record<IndexCode, string>> = { NASDAQ: 'NAS@IXIC', SP500: 'SPI@SPX', DOW: 'DJI@DJI' };
+const RANKING: Record<RankingType, { tr: string; block: Record<string, string | number> }> = {
+  AMOUNT: { tr: 't1463', block: { gubun: '0', jnilgubun: '0', jc_num: 0, sprice: 0, eprice: 0, volume: 0, idx: 0, jc_num2: 0, exchgubun: 'K' } },
+  VOLUME: { tr: 't1452', block: { gubun: '0', jnilgubun: '1', sdiff: 0, ediff: 0, jc_num: 0, sprice: 0, eprice: 0, volume: 0, idx: 0 } },
+  GAINERS: { tr: 't1441', block: { gubun1: '0', gubun2: '0', gubun3: '0', jc_num: 0, sprice: 0, eprice: 0, volume: 0, idx: 0, jc_num2: 0, exchgubun: 'K' } },
+  LOSERS: { tr: 't1441', block: { gubun1: '0', gubun2: '1', gubun3: '0', jc_num: 0, sprice: 0, eprice: 0, volume: 0, idx: 0, jc_num2: 0, exchgubun: 'K' } },
+};
 
 export function parseLsDomestic(out1: unknown): BrokerHolding[] {
   return rows(out1)
@@ -156,7 +191,8 @@ export class LsAdapter implements BrokerAdapter {
         const r = await this.call('/overseas-stock/market-data', 'g3101', { g3101InBlock: { delaygb: 'R', keysymbol: exch + symbol, exchcd: exch, symbol } });
         const o = obj(r.body.g3101OutBlock);
         const price = num(o.price);
-        if (price !== '0' || str(o.korname)) return { market: m, price, name: str(o.korname), currency: str(o.currency) || 'USD' };
+        if (price !== '0' || str(o.korname))
+          return { market: m, price, name: str(o.korname), currency: str(o.currency) || 'USD', prevClose: prevFromChange(price, withSign(o.diff, o.sign)), volume: num(o.volume) };
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
       }
@@ -170,11 +206,13 @@ export class LsAdapter implements BrokerAdapter {
       try {
         if (isKrSymbol(ref.symbol)) {
           const r = await this.call('/stock/market-data', 't1102', { t1102InBlock: { shcode: ref.symbol } });
-          const price = num(obj(r.body.t1102OutBlock).price);
-          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null });
+          const o = obj(r.body.t1102OutBlock);
+          const price = num(o.price);
+          // recprice (기준가) is the previous close
+          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null, prevClose: num(o.recprice) === '0' ? null : num(o.recprice), volume: num(o.volume) });
         } else {
           const q = await this.usQuote(ref.symbol, ref.market);
-          if (q && q.price !== '0') out.push({ symbol: ref.symbol, price: q.price, currency: 'USD', market: q.market, asOf: null });
+          if (q && q.price !== '0') out.push({ symbol: ref.symbol, price: q.price, currency: 'USD', market: q.market, asOf: null, prevClose: q.prevClose, volume: q.volume });
         }
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
@@ -237,5 +275,89 @@ export class LsAdapter implements BrokerAdapter {
     const usd = rows(r.body.COSOQ00201OutBlock3).find((x) => str(x.CrcyCode) === 'USD');
     const rate = num(usd?.BaseXchrat);
     return rate === '0' ? null : rate;
+  }
+
+  async indices(codes: IndexCode[]): Promise<IndexQuote[]> {
+    const out: IndexQuote[] = [];
+    for (const code of codes) {
+      try {
+        if (KR_INDEX[code]) {
+          const o = obj((await this.call('/indtp/market-data', 't1511', { t1511InBlock: { upcode: KR_INDEX[code] } })).body.t1511OutBlock);
+          const price = num(o.pricejisu);
+          if (price !== '0') out.push({ code, price, prevClose: num(o.jniljisu) === '0' ? null : num(o.jniljisu), asOf: null });
+        } else if (US_INDEX[code]) {
+          const o = obj((await this.call('/stock/investinfo', 't3521', { t3521InBlock: { kind: 'S', symbol: US_INDEX[code] } })).body.t3521OutBlock);
+          const price = num(o.close);
+          if (price !== '0') out.push({ code, price, prevClose: prevFromChange(price, withSign(o.change, o.sign)), asOf: null });
+        }
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
+    }
+    return out;
+  }
+
+  /** Domestic rankings only; LS publishes no US ranking TR. */
+  async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market !== 'KR') return null;
+    const spec = RANKING[type];
+    const r = await this.call('/stock/high-item', spec.tr, { [`${spec.tr}InBlock`]: spec.block });
+    return rows(r.body[`${spec.tr}OutBlock1`]).slice(0, 30).map((x) => ({
+      symbol: krSymbol(str(x.shcode)) ?? str(x.shcode),
+      name: str(x.hname) || null,
+      price: num(x.price),
+      changeRate: pctToRate(withSign(x.diff, x.sign)),
+      volume: num(x.volume),
+      // value (거래대금) is reported in millions of won
+      amount: x.value === undefined ? null : Dec.of(num(x.value)).mul(1_000_000).toString(),
+      currency: 'KRW' as const,
+    }));
+  }
+
+  async intraday(ref: InstrumentRef): Promise<MinuteBar[]> {
+    const kr = isKrSymbol(ref.symbol);
+    const exch = EXCH[usMarketOf(ref.market) ?? 'NASDAQ'];
+    const r = kr
+      ? await this.call('/stock/chart', 't8412', {
+          t8412InBlock: { shcode: ref.symbol, ncnt: 1, qrycnt: 500, nday: '1', sdate: '', stime: '', edate: '99999999', etime: '', cts_date: '', cts_time: '', comp_yn: 'N' },
+        })
+      : await this.call('/overseas-stock/chart', 'g3203', {
+          g3203InBlock: { delaygb: 'R', keysymbol: exch + ref.symbol, exchcd: exch, symbol: ref.symbol, ncnt: 1, qrycnt: 500, comp_yn: 'N', sdate: '', edate: '', cts_date: '', cts_time: '' },
+        });
+    const list = rows(kr ? r.body.t8412OutBlock1 : r.body.g3203OutBlock1);
+    const session = list.map((x) => str(x.date)).filter(Boolean).sort().at(-1);
+    const bars: MinuteBar[] = [];
+    for (const x of list) {
+      if (str(x.date) !== session) continue;
+      // Both TRs report exchange-local date and time
+      const t = zonedIso(str(x.date), str(kr ? x.time : x.loctime).slice(0, 6), kr ? 'Asia/Seoul' : 'America/New_York');
+      if (t && num(x.close) !== '0') bars.push({ time: t, close: num(x.close), volume: num(kr ? x.jdiff_vol : x.exevol) });
+    }
+    return bars.sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  async orderbook(ref: InstrumentRef): Promise<Orderbook | null> {
+    const pick = (o: Record<string, unknown>, side: 'offer' | 'bid') => {
+      const out: OrderbookLevel[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const p = absNum(o[`${side}ho${i}`]);
+        if (p !== '0') out.push({ price: p, volume: absNum(o[`${side}rem${i}`]) });
+      }
+      return out;
+    };
+    if (isKrSymbol(ref.symbol)) {
+      const o = obj((await this.call('/stock/market-data', 't1101', { t1101InBlock: { shcode: ref.symbol } })).body.t1101OutBlock);
+      return { asks: pick(o, 'offer'), bids: pick(o, 'bid'), currency: 'KRW', asOf: null };
+    }
+    const tried = new Set<string>();
+    for (const m of usMarketCandidates(ref.market)) {
+      const exch = EXCH[m];
+      if (tried.has(exch)) continue;
+      tried.add(exch);
+      const o = obj((await this.call('/overseas-stock/market-data', 'g3106', { g3106InBlock: { delaygb: 'R', keysymbol: exch + ref.symbol, exchcd: exch, symbol: ref.symbol } })).body.g3106OutBlock);
+      const book = { asks: pick(o, 'offer'), bids: pick(o, 'bid'), currency: 'USD' as const, asOf: null };
+      if (book.asks.length || book.bids.length) return book;
+    }
+    return null;
   }
 }

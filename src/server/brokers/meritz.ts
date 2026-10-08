@@ -6,7 +6,7 @@
  */
 import { networkInterfaces } from 'node:os';
 import { Dec } from '@/domain/decimal';
-import { addDays, fromYmd, isKrSymbol, krSymbol, num, usMarketCandidates, usMarketOf, ymd, type UsMarket } from '@/domain/broker-format';
+import { absNum, addDays, fromYmd, isKrSymbol, krSymbol, num, usMarketCandidates, usMarketOf, ymd, zonedIso, type UsMarket } from '@/domain/broker-format';
 import { backoff, expiryFrom, fetchJson, obj, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -14,14 +14,32 @@ import {
   type BrokerHolding,
   type ConnectionConfig,
   type DailyClose,
+  type IndexCode,
+  type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type MinuteBar,
+  type Orderbook,
+  type OrderbookLevel,
   type PriceQuote,
   type TokenStore,
 } from './types';
 
 const BASE = 'https://openapi.imeritz.com:9443';
 const MRKT_CLS: Record<UsMarket, string> = { NASDAQ: 'OQ', NYSE: 'NY', AMEX: 'AX' };
+/** Index codes: domestic per the spec examples; overseas share LS-style symbols (NAS@IXIC is the documented example). */
+const KR_INDEX: Partial<Record<IndexCode, string>> = { KOSPI: 'KGG01P', KOSDAQ: 'QGG01P' };
+const US_INDEX: Partial<Record<IndexCode, string>> = { NASDAQ: 'NAS@IXIC', SP500: 'SPI@SPX', DOW: 'DJI@DJI' };
+
+/** The KRX session a bare HHMMSS minute bar belongs to: today from 09:00 on weekdays, else the previous weekday. */
+function krSessionDate(now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 3_600_000);
+  let day = kst.toISOString().slice(0, 10);
+  const weekday = (d: string) => new Date(d + 'T00:00:00Z').getUTCDay();
+  if (kst.getUTCHours() < 9) day = addDays(day, -1);
+  while (weekday(day) === 0 || weekday(day) === 6) day = addDays(day, -1);
+  return day;
+}
 
 /** This server's first real MAC address as 12 hex digits, which the gateway insists on. */
 function macAddress(): string {
@@ -141,7 +159,8 @@ export class MeritzAdapter implements BrokerAdapter {
           (await this.get('/market/v1/overseas/prices', { mrkt_div_code: 'OV', mrkt_cls_code: MRKT_CLS[m], iscd: symbol, dely_rltm_cls_code: '1' })).data,
         );
         const price = num(d.prpr);
-        if (price !== '0') return { market: m, price, name: str(d.kor_isnm) || str(d.eng_isnm), englishName: str(d.eng_isnm) };
+        if (price !== '0')
+          return { market: m, price, name: str(d.kor_isnm) || str(d.eng_isnm), englishName: str(d.eng_isnm), prevClose: num(d.prdy_clpr) === '0' ? null : num(d.prdy_clpr), volume: num(d.acml_vol) };
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
       }
@@ -156,10 +175,11 @@ export class MeritzAdapter implements BrokerAdapter {
         if (isKrSymbol(ref.symbol)) {
           const d = obj((await this.get('/market/v1/prices', { mrkt_div_code: 'J', iscd: ref.symbol })).data);
           const price = num(d.stck_prpr);
-          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null });
+          // sdpr (기준가) is the previous close
+          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null, prevClose: num(d.sdpr) === '0' ? null : num(d.sdpr), volume: num(d.acml_vol) });
         } else {
           const q = await this.usPrice(ref.symbol, ref.market);
-          if (q) out.push({ symbol: ref.symbol, price: q.price, currency: 'USD', market: q.market, asOf: null });
+          if (q) out.push({ symbol: ref.symbol, price: q.price, currency: 'USD', market: q.market, asOf: null, prevClose: q.prevClose, volume: q.volume });
         }
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
@@ -208,6 +228,80 @@ export class MeritzAdapter implements BrokerAdapter {
       const rate = num(list.find((x) => str(x.crcd) === 'USD')?.deal_stnd_exrt);
       if (rate !== '0') return rate;
       day = addDays(day, -1);
+    }
+    return null;
+  }
+
+  async indices(codes: IndexCode[]): Promise<IndexQuote[]> {
+    const out: IndexQuote[] = [];
+    for (const code of codes) {
+      const path = KR_INDEX[code] ? '/market/v1/index/prices' : US_INDEX[code] ? '/market/v1/overseas/index/prices' : null;
+      if (!path) continue;
+      try {
+        const d = obj((await this.get(path, { iscd: (KR_INDEX[code] ?? US_INDEX[code])! })).data);
+        const price = num(d.stck_prpr);
+        if (price !== '0') out.push({ code, price, prevClose: num(d.prdy_clpr) === '0' ? null : num(d.prdy_clpr), asOf: null });
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
+    }
+    return out;
+  }
+
+  async intraday(ref: InstrumentRef): Promise<MinuteBar[]> {
+    const bars: MinuteBar[] = [];
+    if (isKrSymbol(ref.symbol)) {
+      const day = ymd(krSessionDate());
+      const list = rows((await this.get('/market/v1/candles/minutes', { mrkt_div_code: 'J', iscd: ref.symbol, hour_cls_code: '60' })).data);
+      for (const x of list) {
+        const t = zonedIso(day, str(x.cntg_hour), 'Asia/Seoul');
+        if (t && num(x.stck_prpr) !== '0') bars.push({ time: t, close: num(x.stck_prpr), volume: num(x.cntg_vol) });
+      }
+    } else {
+      const list = rows(
+        (
+          await this.get('/market/v1/overseas/candles/minutes', {
+            mrkt_div_code: 'OV',
+            mrkt_cls_code: MRKT_CLS[usMarketOf(ref.market) ?? 'NASDAQ'],
+            iscd: ref.symbol,
+            dely_rltm_cls_code: '1',
+            hour_cls_code: '60',
+          })
+        ).data,
+      );
+      // korea_date/korea_hour are KST; keep the latest US session only
+      const stamped = list
+        .map((x) => ({ t: zonedIso(str(x.korea_date), str(x.korea_hour), 'Asia/Seoul'), x }))
+        .filter((e): e is { t: string; x: Record<string, unknown> } => !!e.t && num(e.x.prpr) !== '0');
+      const latest = stamped.map((e) => e.t).sort().at(-1);
+      const cutoff = latest ? Date.parse(latest) - 16 * 3_600_000 : 0;
+      for (const { t, x } of stamped) if (Date.parse(t) > cutoff) bars.push({ time: t, close: num(x.prpr), volume: num(x.cntg_vol) });
+    }
+    return bars.sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  async orderbook(ref: InstrumentRef): Promise<Orderbook | null> {
+    const pick = (d: Record<string, unknown>, side: 'askp' | 'bidp', plainFirst: boolean) => {
+      const out: OrderbookLevel[] = [];
+      for (let i = 1; i <= 10; i++) {
+        // The domestic orderbook names its first level "askp"/"bidp" without a number
+        const p = absNum(d[i === 1 && plainFirst ? side : `${side}${i}`]);
+        if (p !== '0') out.push({ price: p, volume: absNum(d[`${side}_rsqn${i}`]) });
+      }
+      return out;
+    };
+    if (isKrSymbol(ref.symbol)) {
+      const d = obj((await this.get('/market/v1/orderbook', { mrkt_div_code: 'J', iscd: ref.symbol })).data);
+      return { asks: pick(d, 'askp', true), bids: pick(d, 'bidp', true), currency: 'KRW', asOf: null };
+    }
+    for (const m of usMarketCandidates(ref.market)) {
+      try {
+        const d = obj((await this.get('/market/v1/overseas/orderbook', { mrkt_div_code: 'OV', mrkt_cls_code: MRKT_CLS[m], iscd: ref.symbol, dely_rltm_cls_code: '1' })).data);
+        const book = { asks: pick(d, 'askp', false), bids: pick(d, 'bidp', false), currency: 'USD' as const, asOf: null };
+        if (book.asks.length || book.bids.length) return book;
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
     }
     return null;
   }

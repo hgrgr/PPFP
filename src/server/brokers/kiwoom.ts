@@ -4,7 +4,22 @@
  * (kiwoom/_data/kiwoom_api_spec.json). Business errors arrive as HTTP 200
  * with a non-zero `return_code`.
  */
-import { absNum, addDays, fromYmd, isKrSymbol, krSymbol, num, usMarketCandidates, usMarketOf, ymd, type UsMarket } from '@/domain/broker-format';
+import { Dec } from '@/domain/decimal';
+import {
+  absNum,
+  addDays,
+  fromYmd,
+  isKrSymbol,
+  krSymbol,
+  num,
+  pctToRate,
+  prevFromChange,
+  usMarketCandidates,
+  usMarketOf,
+  ymd,
+  zonedIso,
+  type UsMarket,
+} from '@/domain/broker-format';
 import { backoff, fetchJson, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -12,15 +27,53 @@ import {
   type BrokerHolding,
   type ConnectionConfig,
   type DailyClose,
+  type IndexCode,
+  type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type MinuteBar,
+  type Orderbook,
+  type OrderbookLevel,
   type PriceQuote,
+  type RankingMarket,
+  type RankingRow,
+  type RankingType,
   type TokenStore,
 } from './types';
 
 const REAL = 'https://api.kiwoom.com';
 const MOCK = 'https://mockapi.kiwoom.com';
 const STEX: Record<UsMarket, string> = { NASDAQ: 'ND', NYSE: 'NY', AMEX: 'NA' };
+const KR_INDEX: Partial<Record<IndexCode, { mrkt_tp: string; inds_cd: string }>> = {
+  KOSPI: { mrkt_tp: '0', inds_cd: '001' },
+  KOSDAQ: { mrkt_tp: '1', inds_cd: '101' },
+};
+/** Ranking requests (fields from the spec; "0"/"000" means no filter). */
+const KR_RANKING: Record<RankingType, { apiId: string; list: string; body: Record<string, string> }> = {
+  AMOUNT: { apiId: 'ka10032', list: 'trde_prica_upper', body: { mrkt_tp: '000', mang_stk_incls: '0', stex_tp: '1' } },
+  VOLUME: {
+    apiId: 'ka10030',
+    list: 'tdy_trde_qty_upper',
+    body: { mrkt_tp: '000', sort_tp: '1', mang_stk_incls: '0', crd_tp: '0', trde_qty_tp: '0', pric_tp: '0', trde_prica_tp: '0', mrkt_open_tp: '0', stex_tp: '1' },
+  },
+  GAINERS: {
+    apiId: 'ka10027',
+    list: 'pred_pre_flu_rt_upper',
+    body: { mrkt_tp: '000', sort_tp: '1', trde_qty_cnd: '0000', stk_cnd: '0', crd_cnd: '0', updown_incls: '1', pric_cnd: '0', trde_prica_cnd: '0', stex_tp: '1' },
+  },
+  LOSERS: {
+    apiId: 'ka10027',
+    list: 'pred_pre_flu_rt_upper',
+    body: { mrkt_tp: '000', sort_tp: '3', trde_qty_cnd: '0000', stk_cnd: '0', crd_cnd: '0', updown_incls: '1', pric_cnd: '0', trde_prica_cnd: '0', stex_tp: '1' },
+  },
+};
+const US_FILTERS = { stex_tp: '0', inds_cd: '000', stk_tp: '0', stk_cnd: '0', pric_cnd: '0', trde_prica_cnd: '0', trde_qty_tp: '0' };
+const US_RANKING: Record<RankingType, { apiId: string; body: Record<string, string> }> = {
+  AMOUNT: { apiId: 'usa20540', body: US_FILTERS },
+  VOLUME: { apiId: 'usa20530', body: { ...US_FILTERS, qry_tp: '0' } },
+  GAINERS: { apiId: 'usa20910', body: { ...US_FILTERS, inds_cls_tp: '0', sort_tp: '1' } },
+  LOSERS: { apiId: 'usa20910', body: { ...US_FILTERS, inds_cls_tp: '0', sort_tp: '4' } },
+};
 
 /** "20261008123000" (KST) -> epoch ms */
 export function kiwoomExpiry(v: unknown): number {
@@ -150,7 +203,8 @@ export class KiwoomAdapter implements BrokerAdapter {
         const r = await this.post('/api/us/mrkcond', 'usa20100', { stex_tp: STEX[m], stk_cd: symbol });
         const price = absNum(r.body.cur_prc);
         const name = str(r.body.stk_nm) || str(r.body.stk_enm);
-        if (price !== '0' || name) return { market: m, price, name, englishName: str(r.body.stk_enm), fx: num(r.body.base_exrt) };
+        if (price !== '0' || name)
+          return { market: m, price, name, englishName: str(r.body.stk_enm), fx: num(r.body.base_exrt), prevClose: absNum(r.body.base_close_pric), volume: absNum(r.body.acc_trde_qty) };
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
       }
@@ -165,10 +219,13 @@ export class KiwoomAdapter implements BrokerAdapter {
         if (isKrSymbol(ref.symbol)) {
           const r = await this.post('/api/dostk/stkinfo', 'ka10001', { stk_cd: ref.symbol });
           const price = absNum(r.body.cur_prc);
-          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null });
+          // base_pric (기준가) is the previous close
+          const prev = absNum(r.body.base_pric);
+          if (price !== '0') out.push({ symbol: ref.symbol, price, currency: 'KRW', market: ref.market, asOf: null, prevClose: prev === '0' ? null : prev, volume: absNum(r.body.trde_qty) });
         } else {
           const info = await this.usInfo(ref.symbol, ref.market);
-          if (info && info.price !== '0') out.push({ symbol: ref.symbol, price: info.price, currency: 'USD', market: info.market, asOf: null });
+          if (info && info.price !== '0')
+            out.push({ symbol: ref.symbol, price: info.price, currency: 'USD', market: info.market, asOf: null, prevClose: info.prevClose === '0' ? null : info.prevClose, volume: info.volume });
         }
       } catch (e) {
         if (!(e instanceof BrokerApiError)) throw e;
@@ -210,5 +267,117 @@ export class KiwoomAdapter implements BrokerAdapter {
   async usdKrw(): Promise<string | null> {
     const info = await this.usInfo('AAPL', 'NASDAQ');
     return info && info.fx !== '0' ? info.fx : null;
+  }
+
+  async indices(codes: IndexCode[]): Promise<IndexQuote[]> {
+    const out: IndexQuote[] = [];
+    for (const code of codes) {
+      const req = KR_INDEX[code];
+      if (!req) continue;
+      try {
+        const r = await this.post('/api/dostk/sect', 'ka20001', req);
+        const price = absNum(r.body.cur_prc);
+        // pred_pre carries the change with its sign
+        if (price !== '0') out.push({ code, price, prevClose: prevFromChange(price, num(r.body.pred_pre)), asOf: null });
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
+    }
+    return out;
+  }
+
+  async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market === 'KR') {
+      const spec = KR_RANKING[type];
+      const r = await this.post('/api/dostk/rkinfo', spec.apiId, spec.body);
+      return rows(r.body[spec.list]).slice(0, 30).map((x) => ({
+        symbol: krSymbol(str(x.stk_cd)) ?? str(x.stk_cd),
+        name: str(x.stk_nm) || null,
+        price: absNum(x.cur_prc),
+        changeRate: pctToRate(x.flu_rt),
+        volume: absNum(x.now_trde_qty ?? x.trde_qty),
+        // trde_prica is in millions of won
+        amount: x.trde_prica === undefined ? null : Dec.of(absNum(x.trde_prica)).mul(1_000_000).toString(),
+        currency: 'KRW' as const,
+      }));
+    }
+    const spec = US_RANKING[type];
+    const r = await this.post('/api/us/rkinfo', spec.apiId, spec.body);
+    return rows(r.body.result_list).slice(0, 30).map((x) => ({
+      symbol: str(x.stk_cd).toUpperCase(),
+      name: str(x.stk_nm) || str(x.stk_enm) || null,
+      price: absNum(x.cur_prc),
+      changeRate: pctToRate(x.flu_rt),
+      volume: absNum(x.acc_trde_qty ?? x.trde_qty),
+      // trde_prica is in thousands of dollars
+      amount: x.trde_prica === undefined ? null : Dec.of(absNum(x.trde_prica)).mul(1000).toString(),
+      currency: 'USD' as const,
+    }));
+  }
+
+  async intraday(ref: InstrumentRef): Promise<MinuteBar[]> {
+    const kr = isKrSymbol(ref.symbol);
+    const zone = kr ? 'Asia/Seoul' : 'America/New_York';
+    const bars = new Map<string, MinuteBar>();
+    let session: string | null = null;
+    let next: { contYn: string; nextKey: string } | undefined;
+    for (let page = 0; page < 4; page++) {
+      const r = kr
+        ? await this.post('/api/dostk/chart', 'ka10080', { stk_cd: ref.symbol, tic_scope: '1', upd_stkpc_tp: '1' }, next)
+        : await this.post('/api/us/chart', 'usa06011', { stex_tp: STEX[usMarketOf(ref.market) ?? 'NASDAQ'], stk_cd: ref.symbol, tic_scope: '1', upd_stkpc_tp: '1', exrt_appl_tp: '0' }, next);
+      let stop = false;
+      for (const x of rows(kr ? r.body.stk_min_pole_chart_qry : r.body.result_list)) {
+        const stamp = str(x.cntr_tm);
+        if (stamp.length < 12) continue;
+        session ??= stamp.slice(0, 8);
+        if (stamp.slice(0, 8) !== session) {
+          stop = true;
+          continue;
+        }
+        // cntr_tm is exchange-local time
+        const t = zonedIso(stamp.slice(0, 8), stamp.slice(8, 14), zone);
+        if (t) bars.set(t, { time: t, close: absNum(x.cur_prc), volume: absNum(x.trde_qty) });
+      }
+      if (stop || r.contYn !== 'Y' || !r.nextKey) break;
+      next = { contYn: 'Y', nextKey: r.nextKey };
+    }
+    return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  async orderbook(ref: InstrumentRef): Promise<Orderbook | null> {
+    const pick = (o: Record<string, unknown>, price: (i: number) => string, vol: (i: number) => string) => {
+      const out: OrderbookLevel[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const p = absNum(o[price(i)]);
+        if (p !== '0') out.push({ price: p, volume: absNum(o[vol(i)]) });
+      }
+      return out;
+    };
+    if (isKrSymbol(ref.symbol)) {
+      const r = await this.post('/api/dostk/mrkcond', 'ka10004', { stk_cd: ref.symbol });
+      // Level 1 is "fpr" (최우선); levels 2-10 are "{n}th_pre"
+      const key = (side: 'sel' | 'buy', i: number, kind: 'bid' | 'req') => (i === 1 ? `${side}_fpr_${kind}` : `${side}_${i}th_pre_${kind}`);
+      return {
+        asks: pick(r.body, (i) => key('sel', i, 'bid'), (i) => key('sel', i, 'req')),
+        bids: pick(r.body, (i) => key('buy', i, 'bid'), (i) => key('buy', i, 'req')),
+        currency: 'KRW',
+        asOf: null,
+      };
+    }
+    for (const m of usMarketCandidates(ref.market)) {
+      try {
+        const r = await this.post('/api/us/mrkcond', 'usa20101', { stex_tp: STEX[m], stk_cd: ref.symbol });
+        const book = {
+          asks: pick(r.body, (i) => `sel_${i}bid`, (i) => `sel_${i}bid_req`),
+          bids: pick(r.body, (i) => `buy_${i}bid`, (i) => `buy_${i}bid_req`),
+          currency: 'USD' as const,
+          asOf: null,
+        };
+        if (book.asks.length || book.bids.length) return book;
+      } catch (e) {
+        if (!(e instanceof BrokerApiError)) throw e;
+      }
+    }
+    return null;
   }
 }

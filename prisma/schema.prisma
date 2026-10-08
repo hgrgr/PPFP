@@ -72,6 +72,7 @@ model User {
 
   sessions        Session[]
   brokers         BrokerConnection[]
+  watchlist       WatchItem[]
   portfolios      Portfolio[]
   assets          Asset[]
   auditLogs       AuditLog[]
@@ -108,6 +109,20 @@ model BrokerConnection {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// A listed stock the user follows on the live market board (it does not need to be held).
+model WatchItem {
+  id        String   @id @default(cuid())
+  userId    String
+  symbol    String
+  name      String
+  currency  String
+  market    String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol])
 }
 
 model Portfolio {

@@ -19,6 +19,7 @@ import {
 } from '@/server/services/portfolios';
 import { rebuildSnapshots } from '@/server/services/snapshots';
 import { removeConnection, saveConnection, testConnection } from '@/server/services/brokers';
+import { addWatch, removeWatch } from '@/server/services/market-board';
 import { importHoldings, readPastedHoldings, uploadedTableText, type ImportSelection, type ImportSource } from '@/server/services/imports';
 import { deleteTransaction, recordBuy, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
 
@@ -329,6 +330,24 @@ export async function readPasteAction(_: PasteState, f: FormData): Promise<Paste
     console.error('[action] paste', e);
     return { error: '붙여넣은 잔고를 읽지 못했습니다.', at: Date.now() };
   }
+}
+
+// ── Market board watchlist ──────────────────────────
+
+export async function addWatchAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const w = await addWatch(user.id, s(f, 'symbol'));
+    return `${w.name}을(를) 관심종목에 담았습니다.`;
+  }, ['/market']);
+}
+
+export async function removeWatchAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    await removeWatch(user.id, s(f, 'symbol'));
+    return '관심종목에서 뺐습니다.';
+  }, ['/market']);
 }
 
 export async function refreshDataAction(_: ActionState) {

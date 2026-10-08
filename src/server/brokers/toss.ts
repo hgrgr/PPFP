@@ -1,5 +1,5 @@
 /** 토스증권 Open API, adapted to the common broker interface. The HTTP client lives in ../toss/client. */
-import { cleanSymbol, isKrSymbol, num, usMarketOf } from '@/domain/broker-format';
+import { cleanSymbol, isKrSymbol, num, usMarketOf, zonedDate } from '@/domain/broker-format';
 import { TossApiError, TossClient, type TossHoldingItem } from '../toss/client';
 import { kstDate } from '../db';
 import {
@@ -9,10 +9,26 @@ import {
   type ConnectionConfig,
   type DailyClose,
   type Instrument,
+  type IndexCode,
+  type IndexQuote,
   type InstrumentRef,
+  type MinuteBar,
+  type Orderbook,
   type PriceQuote,
+  type RankingMarket,
+  type RankingRow,
+  type RankingType,
   type TokenStore,
 } from './types';
+
+const TOSS_INDEX: Partial<Record<IndexCode, string>> = { KOSPI: 'KOSPI', KOSDAQ: 'KOSDAQ' };
+/** Toss has no realtime window for gainers/losers; a one-day window is the same as "today". */
+const TOSS_RANKING: Record<RankingType, { type: string; duration: string }> = {
+  AMOUNT: { type: 'MARKET_TRADING_AMOUNT', duration: 'realtime' },
+  VOLUME: { type: 'MARKET_TRADING_VOLUME', duration: 'realtime' },
+  GAINERS: { type: 'TOP_GAINERS', duration: '1d' },
+  LOSERS: { type: 'TOP_LOSERS', duration: '1d' },
+};
 
 export function parseTossHoldings(items: TossHoldingItem[]): BrokerHolding[] {
   return items
@@ -108,6 +124,84 @@ export class TossAdapter implements BrokerAdapter {
   async usdKrw(): Promise<string | null> {
     try {
       return num((await this.client.exchangeRate('USD', 'KRW')).midRate);
+    } catch (e) {
+      wrap(e);
+    }
+  }
+
+  async indices(codes: IndexCode[]): Promise<IndexQuote[]> {
+    const wanted = codes.filter((c) => TOSS_INDEX[c]);
+    if (!wanted.length) return [];
+    try {
+      const prices = await this.client.indicatorPrices(wanted.map((c) => TOSS_INDEX[c]!));
+      const out: IndexQuote[] = [];
+      for (const code of wanted) {
+        const p = prices.find((x) => x.symbol === TOSS_INDEX[code]);
+        if (!p || num(p.lastPrice) === '0') continue;
+        // Newest daily candle is the current session; the one before it holds the previous close.
+        const { candles } = await this.client.indicatorCandles(TOSS_INDEX[code]!, '1d', 2);
+        out.push({ code, price: num(p.lastPrice), prevClose: candles[1] ? num(candles[1].closePrice) : null, asOf: p.timestamp });
+      }
+      return out;
+    } catch (e) {
+      wrap(e);
+    }
+  }
+
+  async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    try {
+      const { type: t, duration } = TOSS_RANKING[type];
+      const { rankings } = await this.client.rankings(t, market, duration, 30);
+      if (!rankings.length) return [];
+      // Rankings carry no names; one batch lookup fills them in.
+      const names = new Map((await this.client.stocks(rankings.map((r) => r.symbol)).catch(() => [])).map((s) => [s.symbol.toUpperCase(), s.name]));
+      return rankings.map((r) => ({
+        symbol: r.symbol.toUpperCase(),
+        name: names.get(r.symbol.toUpperCase()) ?? null,
+        price: num(r.price.lastPrice),
+        changeRate: r.price.changeRate === null ? null : num(r.price.changeRate),
+        volume: num(r.tradingVolume),
+        amount: num(r.tradingAmount),
+        currency: r.currency,
+      }));
+    } catch (e) {
+      wrap(e);
+    }
+  }
+
+  async intraday(ref: InstrumentRef): Promise<MinuteBar[]> {
+    try {
+      const zone = isKrSymbol(ref.symbol) ? 'Asia/Seoul' : 'America/New_York';
+      const bars: MinuteBar[] = [];
+      let before: string | undefined;
+      let session: string | null = null;
+      // A regular session is ~390 one-minute bars; 200 per page.
+      for (let page = 0; page < 3; page++) {
+        const r = await this.client.candles(ref.symbol, '1m', 200, before);
+        for (const c of r.candles) {
+          const day = zonedDate(c.timestamp, zone);
+          session ??= day;
+          if (day !== session) return bars.reverse();
+          bars.push({ time: new Date(c.timestamp).toISOString(), close: num(c.closePrice), volume: num(c.volume) });
+        }
+        if (!r.nextBefore || !r.candles.length) break;
+        before = r.nextBefore;
+      }
+      return bars.reverse();
+    } catch (e) {
+      wrap(e);
+    }
+  }
+
+  async orderbook(ref: InstrumentRef): Promise<Orderbook | null> {
+    try {
+      const o = await this.client.orderbook(ref.symbol);
+      return {
+        asks: o.asks.map((a) => ({ price: num(a.price), volume: num(a.volume) })),
+        bids: o.bids.map((b) => ({ price: num(b.price), volume: num(b.volume) })),
+        currency: o.currency,
+        asOf: o.timestamp,
+      };
     } catch (e) {
       wrap(e);
     }
