@@ -455,6 +455,20 @@ const SHOTS: Shot[] = [
     marks: [{ sel: 'button', text: '관점으로 내 포트폴리오 보기' }, { sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-action' }],
   },
   {
+    file: 'ai-research',
+    path: () => '/market?s=NVDA',
+    wait: 5000,
+    steps: [{ click: { sel: '#stock-detail button', text: 'AI 리서치' } }, { until: "!!document.querySelector('.ai-drawer .ai-action') && !document.querySelector('.ai-drawer .ai-steps.live')", timeout: 40_000 }, { wait: 800 }],
+    marks: [{ sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-md h2', text: '리스크' }, { sel: '.ai-drawer .ai-action' }, { sel: '.ai-drawer .ai-sources' }],
+  },
+  {
+    file: 'ai-coach',
+    path: (ids) => `/journal/${ids.nvdaJournal}`,
+    wait: 4000,
+    steps: [{ click: { sel: 'button', text: 'AI와 복기' } }, { until: "!!document.querySelector('.ai-drawer .ai-action') && !document.querySelector('.ai-drawer .ai-steps.live')", timeout: 40_000 }, { wait: 800 }],
+    marks: [{ sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-md table' }, { sel: '.ai-drawer .ai-action' }],
+  },
+  {
     file: 'ai-settings',
     path: () => '/settings',
     wait: 1500,
