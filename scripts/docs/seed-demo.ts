@@ -364,6 +364,10 @@ async function seedKnowledge(uid: string) {
   await createNote(uid, '린치: 내가 쓰는 제품의 회사부터 보기. 매일 쓰는 앱·결제 서비스 목록 만들어 보기 #성장투자', '/sages');
   // AI advisor: morning briefing on (the capture script triggers it), alerts analyzed by hand
   await prisma.aiSettings.create({ data: { userId: uid, briefing: true, briefingHour: 7, briefingWeekdays: false, monthlyLimit: '20.00' } });
+  // Goals, dated from today so the screens stay the same whenever they are taken
+  const year = Number(dash(ago(0)).slice(0, 4));
+  await prisma.goal.create({ data: { userId: uid, name: '은퇴 자금', target: '1000000000', targetDate: new Date(`${year + 20}-12-31`), monthly: '1500000' } });
+  await prisma.goal.create({ data: { userId: uid, name: '주택 마련', target: '300000000', targetDate: new Date(`${year + 4}-06-30`), monthly: '3000000' } });
 }
 
 main()
