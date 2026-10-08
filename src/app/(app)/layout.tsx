@@ -37,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavLink href="/transactions">거래 내역</NavLink>
         <NavLink href="/tax">세금</NavLink>
         <NavLink href="/dividends">배당</NavLink>
+        <NavLink href="/goals">목표</NavLink>
         <NavLink href="/journal">매매일지</NavLink>
         <NavLink href="/traits">자산 성질</NavLink>
         <NavLink href="/notes">투자 노트</NavLink>

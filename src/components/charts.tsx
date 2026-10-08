@@ -230,3 +230,34 @@ export function ReturnChart({ data, series }: { data: Record<string, number | st
     </div>
   );
 }
+
+/** Goal projection: 10–90th percentile band, the median path, the steady path and the target. */
+export function GoalChart({ data, target }: { data: { label: string; p10: number; p50: number; p90: number; expected: number }[]; target: number }) {
+  const rows = data.map((d) => ({ ...d, band: [d.p10, d.p90] as [number, number] }));
+  const names: Record<string, string> = { band: '하위 10% ~ 상위 10%', p50: '중앙값', expected: '변동 없이 갈 때' };
+  return (
+    <div style={{ width: '100%', height: 220 }} className="money">
+      <ResponsiveContainer>
+        <ComposedChart data={rows} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={false} />
+          <YAxis tickFormatter={(v) => krwShort(Number(v))} tick={axis} tickLine={false} axisLine={false} width={60} domain={[0, (max: number) => Math.max(max, target * 1.08)]} />
+          <Tooltip
+            formatter={(v, k) => [Array.isArray(v) ? `${krwShort(Number(v[0]))} ~ ${krwShort(Number(v[1]))}` : krwShort(Number(v)), names[String(k)] ?? String(k)]}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          <ReferenceLine y={target} stroke="var(--series-2)" strokeDasharray="5 4" label={{ value: '목표', position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' }} />
+          <Area type="monotone" dataKey="band" stroke="none" fill="var(--series-1)" fillOpacity={0.15} isAnimationActive={false} />
+          <Line type="monotone" dataKey="expected" stroke="var(--muted)" strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="p50" stroke="var(--series-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Backtest value paths (% from start) per rebalancing rule. */
+export function BacktestChart({ data, series }: { data: Record<string, number | string>[]; series: { key: string; label: string; color: string }[] }) {
+  return <ReturnChart data={data as Record<string, number | string | null>[]} series={series.map((s) => ({ ...s, width: s.key === 'NONE' ? 2.5 : 2 }))} />;
+}

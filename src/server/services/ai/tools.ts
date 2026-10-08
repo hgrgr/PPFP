@@ -16,6 +16,7 @@ import { relatedView, topicsOverview } from '../knowledge';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
 import { dividendReport } from '../dividends';
+import { backtestReport, goalViews } from '../goals';
 import { performanceReport } from '../performance';
 import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
@@ -460,6 +461,41 @@ const performance = tool(
   },
 );
 
+const goals = tool(
+  'get_goals',
+  '사용자가 정한 목표(은퇴·주택 등): 목표 금액과 날짜, 지금 자산, 월 적립액, 가정한 기대수익률·변동성, 2,000개 경로 시뮬레이션의 달성 확률과 기한의 예상 자산(하위 10%·중앙값·상위 10%), 변동 없이 닿기 위한 월 적립액. 금액은 원화(물가 반영 시 오늘 가치).',
+  z.object({}),
+  async (_, { userId }) =>
+    (await goalViews(userId)).map((g) => ({
+      name: g.name,
+      scope: g.scope,
+      targetKrw: g.target,
+      targetDate: g.targetDate,
+      nowKrw: Math.round(g.start),
+      monthlyKrw: g.monthly,
+      realTerms: g.realTerms,
+      assumedReturnPct: Math.round(g.ret * 1000) / 10,
+      assumedVolPct: Math.round(g.vol * 1000) / 10,
+      probabilityPct: Math.round(g.sim.probability * 100),
+      endP10: Math.round(g.sim.years.at(-1)!.p10),
+      endMedian: Math.round(g.sim.years.at(-1)!.p50),
+      endP90: Math.round(g.sim.years.at(-1)!.p90),
+      monthlyNeededKrw: Math.round(g.needed),
+    })),
+);
+
+const rebalanceTest = tool(
+  'get_rebalance_backtest',
+  '지금 보유 비중으로 지난 1년을 다시 굴린 리밸런싱 백테스트: 그대로 두기·매월·분기·허용 오차 규칙별 수익률, 연환산, 변동성, 최대 낙폭, 리밸런싱 횟수, 회전율(거래 비용·세금 제외).',
+  z.object({ portfolio: z.string().optional() }),
+  async ({ portfolio }, { userId }) => {
+    const p = await findPortfolio(userId, portfolio);
+    const r = await backtestReport(userId, p?.id ?? null);
+    if (!r) throw new UserError('시세 기록이 있는 상장 종목이 없어 백테스트할 수 없습니다.');
+    return { period: { start: r.start, end: r.end }, bandPctPoint: r.band * 100, parts: r.parts, results: r.results, skipped: r.skipped };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -573,7 +609,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

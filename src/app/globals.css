@@ -464,3 +464,13 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .contrib .bar.neg { background: var(--down); }
 .contrib .num { text-align: right; }
 .contrib.compact li { grid-template-columns: minmax(120px, 1.4fr) minmax(60px, 1fr) 64px; }
+
+/* goals */
+.goal-kpis > .kpi { display: flex; flex-direction: column; gap: 4px; }
+.value.up-ok { color: var(--ok); }
+.value.warn-text { color: var(--danger); }
+.goal-form { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.goal-edit { flex-basis: 100%; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.goal-card > .spread { flex-wrap: wrap; }
+.bt-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 24px; }
+.bt-parts li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; }
