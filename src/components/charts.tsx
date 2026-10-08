@@ -2,6 +2,9 @@
 
 import {
   Area,
+  Bar,
+  BarChart,
+  ReferenceLine,
   AreaChart,
   CartesianGrid,
   Cell,
@@ -169,6 +172,34 @@ export function WeightChart({ keys, points }: { keys: { key: string; label: stri
             <Area key={k.key} type="monotone" dataKey={k.key} stackId="1" stroke="var(--surface)" strokeWidth={1} fill={k.color} fillOpacity={1} isAnimationActive={false} />
           ))}
         </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Monthly dividend income: received bars, then expected bars in the same hue, lighter and outlined. */
+export function DividendChart({ data }: { data: { month: string; received: number; expected: number; current: boolean }[] }) {
+  const rows = data;
+  const label = (m: string) => (m.endsWith('-01') ? `${m.slice(2, 4)}년 1월` : `${Number(m.slice(5))}월`);
+  const name = (k: string) => (k === 'received' ? '받은 배당' : '예상 배당');
+  return (
+    <div style={{ width: '100%', height: 240 }} className="money">
+      <ResponsiveContainer>
+        <BarChart data={rows} margin={{ top: 16, right: 8, bottom: 0, left: 0 }} barCategoryGap={4}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="month" tickFormatter={(v) => label(String(v))} tick={axis} tickLine={false} axisLine={false} interval={1} />
+          <YAxis tickFormatter={(v) => krwShort(Number(v))} tick={axis} tickLine={false} axisLine={false} width={56} />
+          <Tooltip
+            cursor={{ fill: 'var(--line-soft)' }}
+            formatter={(v, n) => (Number(v) ? [krw(Number(v)), name(String(n))] : [null, null])}
+            labelFormatter={(l) => `${String(l).slice(0, 4)}년 ${Number(String(l).slice(5))}월`}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          <ReferenceLine x={rows.find((r) => r.current)?.month} stroke="var(--muted)" strokeDasharray="3 3" label={{ value: '이번 달', position: 'top', fontSize: 11, fill: 'var(--muted)' }} />
+          <Bar dataKey="received" stackId="d" fill="var(--series-1)" radius={[4, 4, 0, 0]} isAnimationActive={false} maxBarSize={28} />
+          <Bar dataKey="expected" stackId="d" fill="var(--series-1)" fillOpacity={0.3} stroke="var(--series-1)" strokeDasharray="3 2" radius={[4, 4, 0, 0]} isAnimationActive={false} maxBarSize={28} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

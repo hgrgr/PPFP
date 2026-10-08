@@ -15,6 +15,7 @@ import { getJournal, listJournals } from '../journal';
 import { relatedView, topicsOverview } from '../knowledge';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
+import { dividendReport } from '../dividends';
 import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
 
@@ -426,6 +427,16 @@ const tax = tool(
   },
 );
 
+const dividends = tool(
+  'get_dividends',
+  '배당: 지난 12개월 받은 배당, 지금 보유 수량으로 추정한 앞으로 12개월 배당(종목별 주기·다음 예상일·금액·예상 수익률)과 월별 현금흐름. 추정은 지난 배당의 주기와 주당 금액이 이어진다고 본 값입니다. 금액은 원화.',
+  z.object({}),
+  async (_, { userId }) => {
+    const r = await dividendReport(userId);
+    return { totals: r.totals, byAsset: r.rows.map(({ assetId: _id, fx: _fx, ...x }) => x), monthly: r.flow, next: r.projected.slice(0, 30).map((p) => ({ date: p.date, asset: p.name, perShare: p.perShare, qty: p.qty, currency: p.currency, krw: Math.round(p.krw) })) };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -539,7 +550,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, tax, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

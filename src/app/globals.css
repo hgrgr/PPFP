@@ -441,3 +441,13 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .tax-calc td { padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
 .tax-calc tr.total th, .tax-calc tr.total td { font-weight: 700; font-size: 16px; border-bottom: 0; padding-top: 10px; }
 .tax-notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* dividends */
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--series-1); display: inline-block; }
+.legend-swatch.dashed { background: color-mix(in srgb, var(--series-1) 30%, transparent); border: 1px dashed var(--series-1); }
+.div-calendar { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.div-month { border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 84px; }
+.div-month.empty { background: var(--surface-2); }
+.div-month ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.div-month li { display: flex; justify-content: space-between; gap: 8px; }
+.div-month li > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
