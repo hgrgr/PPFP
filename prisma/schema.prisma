@@ -97,6 +97,7 @@ model User {
   aiConversations  AiConversation[]
   aiMessages       AiMessage[]
   aiActions        AiAction[]
+  goals            Goal[]
 }
 
 model Session {
@@ -761,4 +762,26 @@ model AiAction {
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
+}
+
+/// A money goal (은퇴 자금, 주택 등): reach `target` by `targetDate` from a portfolio's value
+/// (null = net worth) plus monthly saving. Return and volatility override the mix-based assumptions.
+model Goal {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  target         Decimal  @db.Decimal(24, 2)
+  targetDate     DateTime @db.Date
+  monthly        Decimal  @default(0) @db.Decimal(24, 2)
+  portfolioId    String?
+  expectedReturn Decimal? @db.Decimal(8, 5)
+  volatility     Decimal? @db.Decimal(8, 5)
+  /// Show and compare in today's money (2.5% a year)
+  realTerms      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

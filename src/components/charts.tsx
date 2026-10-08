@@ -2,6 +2,9 @@
 
 import {
   Area,
+  Bar,
+  BarChart,
+  ReferenceLine,
   AreaChart,
   CartesianGrid,
   Cell,
@@ -172,4 +175,89 @@ export function WeightChart({ keys, points }: { keys: { key: string; label: stri
       </ResponsiveContainer>
     </div>
   );
+}
+
+/** Monthly dividend income: received bars, then expected bars in the same hue, lighter and outlined. */
+export function DividendChart({ data }: { data: { month: string; received: number; expected: number; current: boolean }[] }) {
+  const rows = data;
+  const label = (m: string) => (m.endsWith('-01') ? `${m.slice(2, 4)}년 1월` : `${Number(m.slice(5))}월`);
+  const name = (k: string) => (k === 'received' ? '받은 배당' : '예상 배당');
+  return (
+    <div style={{ width: '100%', height: 240 }} className="money">
+      <ResponsiveContainer>
+        <BarChart data={rows} margin={{ top: 16, right: 8, bottom: 0, left: 0 }} barCategoryGap={4}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="month" tickFormatter={(v) => label(String(v))} tick={axis} tickLine={false} axisLine={false} interval={1} />
+          <YAxis tickFormatter={(v) => krwShort(Number(v))} tick={axis} tickLine={false} axisLine={false} width={56} />
+          <Tooltip
+            cursor={{ fill: 'var(--line-soft)' }}
+            formatter={(v, n) => (Number(v) ? [krw(Number(v)), name(String(n))] : [null, null])}
+            labelFormatter={(l) => `${String(l).slice(0, 4)}년 ${Number(String(l).slice(5))}월`}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          <ReferenceLine x={rows.find((r) => r.current)?.month} stroke="var(--muted)" strokeDasharray="3 3" label={{ value: '이번 달', position: 'top', fontSize: 11, fill: 'var(--muted)' }} />
+          <Bar dataKey="received" stackId="d" fill="var(--series-1)" radius={[4, 4, 0, 0]} isAnimationActive={false} maxBarSize={28} />
+          <Bar dataKey="expected" stackId="d" fill="var(--series-1)" fillOpacity={0.3} stroke="var(--series-1)" strokeDasharray="3 2" radius={[4, 4, 0, 0]} isAnimationActive={false} maxBarSize={28} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Cumulative return (%) of the portfolio against benchmarks over the same days. */
+export function ReturnChart({ data, series }: { data: Record<string, number | string | null>[]; series: { key: string; label: string; color: string; width?: number }[] }) {
+  if (data.length < 2) return <p className="empty">기간 데이터가 아직 부족합니다.</p>;
+  return (
+    <div style={{ width: '100%', height: 280 }} className="money">
+      <ResponsiveContainer>
+        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="date" tickFormatter={(v) => shortDate(String(v))} tick={axis} tickLine={false} axisLine={false} minTickGap={48} />
+          <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}%`} tick={axis} tickLine={false} axisLine={false} width={48} domain={['auto', 'auto']} />
+          <ReferenceLine y={0} stroke="var(--line)" />
+          <Tooltip
+            formatter={(v, k) => [v === null || v === undefined ? '—' : `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(2)}%`, series.find((s) => s.key === k)?.label ?? String(k)]}
+            labelFormatter={(l) => String(l)}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          {series.map((s) => (
+            <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={s.width ?? 2} dot={false} connectNulls isAnimationActive={false} />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Goal projection: 10–90th percentile band, the median path, the steady path and the target. */
+export function GoalChart({ data, target }: { data: { label: string; p10: number; p50: number; p90: number; expected: number }[]; target: number }) {
+  const rows = data.map((d) => ({ ...d, band: [d.p10, d.p90] as [number, number] }));
+  const names: Record<string, string> = { band: '하위 10% ~ 상위 10%', p50: '중앙값', expected: '변동 없이 갈 때' };
+  return (
+    <div style={{ width: '100%', height: 220 }} className="money">
+      <ResponsiveContainer>
+        <ComposedChart data={rows} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={false} />
+          <YAxis tickFormatter={(v) => krwShort(Number(v))} tick={axis} tickLine={false} axisLine={false} width={60} domain={[0, (max: number) => Math.max(max, target * 1.08)]} />
+          <Tooltip
+            formatter={(v, k) => [Array.isArray(v) ? `${krwShort(Number(v[0]))} ~ ${krwShort(Number(v[1]))}` : krwShort(Number(v)), names[String(k)] ?? String(k)]}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          <ReferenceLine y={target} stroke="var(--series-2)" strokeDasharray="5 4" label={{ value: '목표', position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' }} />
+          <Area type="monotone" dataKey="band" stroke="none" fill="var(--series-1)" fillOpacity={0.15} isAnimationActive={false} />
+          <Line type="monotone" dataKey="expected" stroke="var(--muted)" strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="p50" stroke="var(--series-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Backtest value paths (% from start) per rebalancing rule. */
+export function BacktestChart({ data, series }: { data: Record<string, number | string>[]; series: { key: string; label: string; color: string }[] }) {
+  return <ReturnChart data={data as Record<string, number | string | null>[]} series={series.map((s) => ({ ...s, width: s.key === 'NONE' ? 2.5 : 2 }))} />;
 }

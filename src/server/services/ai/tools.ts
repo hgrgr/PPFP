@@ -15,6 +15,10 @@ import { getJournal, listJournals } from '../journal';
 import { relatedView, topicsOverview } from '../knowledge';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
+import { dividendReport } from '../dividends';
+import { backtestReport, goalViews } from '../goals';
+import { performanceReport } from '../performance';
+import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
 
 export interface ToolContext {
@@ -414,6 +418,84 @@ const tradeReview = tool(
   },
 );
 
+const tax = tool(
+  'get_tax_summary',
+  '한 해의 세금 예상(한국 거주 개인, 소액주주 기준): 해외주식 양도차익·손실·과세표준·예상 세액(250만 원 공제, 22%), 국내주식·코인 실현손익, 배당·이자 금융소득과 2,000만 원 종합과세 기준, 올해라면 연말 전 손실 상계 후보와 기본공제를 채울 이익 실현 후보. 금액은 원화.',
+  z.object({ year: z.number().int().min(2000).max(2100).optional().describe('연도, 기본 올해') }),
+  async ({ year }, { userId }) => {
+    const r = await taxReport(userId, year ?? Number(kstDate().slice(0, 4)));
+    const { realized, income, ...rest } = r;
+    return { ...rest, overseasSales: realized.filter((x) => x.bucket === 'OVERSEAS').slice(-30), incomeItems: income.length };
+  },
+);
+
+const dividends = tool(
+  'get_dividends',
+  '배당: 지난 12개월 받은 배당, 지금 보유 수량으로 추정한 앞으로 12개월 배당(종목별 주기·다음 예상일·금액·예상 수익률)과 월별 현금흐름. 추정은 지난 배당의 주기와 주당 금액이 이어진다고 본 값입니다. 금액은 원화.',
+  z.object({}),
+  async (_, { userId }) => {
+    const r = await dividendReport(userId);
+    return { totals: r.totals, byAsset: r.rows.map(({ assetId: _id, fx: _fx, ...x }) => x), monthly: r.flow, next: r.projected.slice(0, 30).map((p) => ({ date: p.date, asset: p.name, perShare: p.perShare, qty: p.qty, currency: p.currency, krw: Math.round(p.krw) })) };
+  },
+);
+
+const performance = tool(
+  'get_performance',
+  '기간 성과: 내 시간가중수익률과 코스피 200·S&P 500·나스닥 100(ETF 종가, 원화 환산) 수익률, 종목별·자산 유형별 수익 기여도(기간 손익과 시작 평가액 대비 %).',
+  z.object({
+    portfolio: z.string().optional().describe('포트폴리오 이름, 비우면 순자산 전체'),
+    period: z.enum(['1M', '3M', '6M', 'YTD', '1Y', '3Y', 'ALL']).optional().describe('기본 1Y'),
+  }),
+  async ({ portfolio, period }, { userId }) => {
+    const p = await findPortfolio(userId, portfolio);
+    const r = await performanceReport(userId, p?.id ?? null, { period: period ?? '1Y' });
+    return {
+      scope: r.scope.name,
+      range: r.range,
+      mineTwrPct: r.mine === null ? null : Math.round(r.mine * 10000) / 100,
+      benchmarks: r.benches.map((b) => ({ name: b.label, etf: b.sub, returnPct: b.total === null ? null : Math.round(b.total * 10000) / 100 })),
+      contributions: r.contributions.rows.slice(0, 20).map((c) => ({ asset: c.label, type: c.group, pnlKrw: c.pnlKrw, contributionPct: c.contributionPct === null ? null : Math.round(c.contributionPct * 100) / 100 })),
+      byType: r.contributions.byGroup,
+      startValueKrw: Math.round(r.startTotal),
+    };
+  },
+);
+
+const goals = tool(
+  'get_goals',
+  '사용자가 정한 목표(은퇴·주택 등): 목표 금액과 날짜, 지금 자산, 월 적립액, 가정한 기대수익률·변동성, 2,000개 경로 시뮬레이션의 달성 확률과 기한의 예상 자산(하위 10%·중앙값·상위 10%), 변동 없이 닿기 위한 월 적립액. 금액은 원화(물가 반영 시 오늘 가치).',
+  z.object({}),
+  async (_, { userId }) =>
+    (await goalViews(userId)).map((g) => ({
+      name: g.name,
+      scope: g.scope,
+      targetKrw: g.target,
+      targetDate: g.targetDate,
+      nowKrw: Math.round(g.start),
+      monthlyKrw: g.monthly,
+      realTerms: g.realTerms,
+      assumedReturnPct: Math.round(g.ret * 1000) / 10,
+      assumedVolPct: Math.round(g.vol * 1000) / 10,
+      probabilityPct: Math.round(g.sim.probability * 100),
+      endP10: Math.round(g.sim.years.at(-1)!.p10),
+      endMedian: Math.round(g.sim.years.at(-1)!.p50),
+      endP90: Math.round(g.sim.years.at(-1)!.p90),
+      monthlyNeededKrw: Math.round(g.needed),
+    })),
+);
+
+const rebalanceTest = tool(
+  'get_rebalance_backtest',
+  '지금 보유 비중으로 지난 1년을 다시 굴린 리밸런싱 백테스트: 그대로 두기·매월·분기·허용 오차 규칙별 수익률, 연환산, 변동성, 최대 낙폭, 리밸런싱 횟수, 회전율(거래 비용·세금 제외).',
+  z.object({ portfolio: z.string().optional() }),
+  async ({ portfolio }, { userId }) => {
+    const p = await findPortfolio(userId, portfolio);
+    const r = await backtestReport(userId, p?.id ?? null);
+    if (!r) throw new UserError('시세 기록이 있는 상장 종목이 없어 백테스트할 수 없습니다.');
+    return { period: { start: r.start, end: r.end }, bandPctPoint: r.band * 100, parts: r.parts, results: r.results, skipped: r.skipped };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -527,7 +609,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

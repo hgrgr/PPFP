@@ -5,7 +5,7 @@
 import type { AssetType } from '@prisma/client';
 import { Dec } from '@/domain/decimal';
 import { effectiveWeights, type Edge } from '@/domain/portfolio-graph';
-import { combineSeries, downsample, indexAtOrBefore, summarize, type SeriesPoint } from '@/domain/performance';
+import { combineSeries, downsample, indexAtOrBefore, summarize, twrIndex, type SeriesPoint } from '@/domain/performance';
 import { resolveRange, type ResolvedRange } from '@/domain/period';
 import { dbDate, dec, kstDate, prisma } from '../db';
 import { fxRate, getQuotes } from '../market';
@@ -171,6 +171,7 @@ export interface Dashboard {
   realized: Dec;
   income: Dec;
   chart: { date: string; value: number; invested: number }[];
+  twrDaily: { date: string; twr: number }[];
   allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[] };
   weightChange: { keys: { key: string; label: string; color: string }[]; points: Record<string, number | string>[]; start: Record<string, number>; end: Record<string, number> };
   children: ChildRow[];
@@ -306,6 +307,9 @@ export async function dashboard(
     return { date: p.date, value: p.value.toNumber(), invested: invested.toNumber() };
   });
   const chart = downsample(chartFull, 160);
+  // Time-weighted return from the start of the range, day by day (benchmark comparison)
+  const idx = twrIndex(inRange);
+  const twrDaily = inRange.map((p, i) => ({ date: p.date, twr: idx[i].toNumber() - 1 }));
 
   // Weight change by asset type (from snapshots) — first and last available days plus samples
   const holdingType = new Map(state.holdings.map((h) => [h.holdingId, h.type as string]));
@@ -408,6 +412,7 @@ export async function dashboard(
     realized,
     income,
     chart,
+    twrDaily,
     allocation,
     weightChange: { keys: keyList, points, start: pick(points[0]), end: pick(points.at(-1)) },
     children: children.sort((a, b) => b.value.cmp(a.value)),
