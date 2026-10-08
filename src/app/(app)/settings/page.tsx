@@ -1,3 +1,4 @@
+import { saveAiSettingsAction } from '@/app/ai-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { ActionForm, Submit } from '@/components/forms';
@@ -6,13 +7,14 @@ import { BROKERS, UNSUPPORTED_BROKERS } from '@/lib/brokers';
 import { requireUser } from '@/server/auth';
 import { mask } from '@/server/crypto';
 import { listConnections } from '@/server/services/brokers';
+import { aiStatus } from '@/server/services/ai/agent';
 
 export const metadata = { title: '연동 · 설정' };
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const connections = await listConnections(user.id);
+  const [connections, ai] = await Promise.all([listConnections(user.id), aiStatus(user.id)]);
 
   return (
     <>
@@ -115,6 +117,42 @@ export default async function SettingsPage() {
             </a>
           </div>
         </div>
+      </section>
+
+      <section className="card" id="ai">
+        <h2>AI 어드바이저</h2>
+        <p className="sub">
+          AI 어드바이저는 Anthropic의 Claude를 씁니다. 질문할 때 필요한 보유 내역·거래·일지·투자 노트가 Anthropic API로 전송됩니다. 사용료는 API 키 계정으로 청구되며, 아래 금액은 토큰 사용량으로 추정한 값입니다.
+        </p>
+        <ActionForm action={saveAiSettingsAction} className="grid">
+          <label className="field">
+            Anthropic API 키
+            <input name="apiKey" type="password" autoComplete="off" placeholder={ai.source === 'user' ? `저장됨 ${ai.keyHint ?? ''}` : ai.source === 'server' ? '서버 기본 키 사용 중' : 'sk-ant-…'} />
+            <span className="sub">
+              {ai.source === 'user' ? '바꾸려면 새 키를 넣으세요.' : ai.source === 'server' ? '내 키를 넣으면 그 키를 대신 씁니다.' : (
+                <>
+                  <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic 콘솔</a>에서 만든 키를 넣으세요. 암호화해 저장합니다.
+                </>
+              )}
+            </span>
+          </label>
+          <label className="field">
+            월 사용 한도 (USD)
+            <input name="monthlyLimit" inputMode="decimal" defaultValue={ai.monthlyLimit ?? ''} placeholder="비우면 한도 없음" />
+            <span className="sub">이번 달 약 ${ai.spent.toFixed(2)} 사용 · 한도에 닿으면 다음 달까지 질문을 받지 않습니다.</span>
+          </label>
+          <label className="check">
+            <input type="checkbox" name="webSearch" defaultChecked={ai.webSearch} /> 웹 검색 허용 (최신 실적·뉴스 확인, 검색 1회 약 $0.01)
+          </label>
+          {ai.source === 'user' && (
+            <label className="check">
+              <input type="checkbox" name="clearKey" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
       </section>
 
       <section className="row">

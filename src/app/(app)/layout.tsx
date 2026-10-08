@@ -6,12 +6,16 @@ import { prisma } from '@/server/db';
 import { requireUser } from '@/server/auth';
 import { kstDateTime } from '@/lib/format';
 import { unreadCount } from '@/server/services/notify';
+import { AiLauncher } from '@/components/ai/launcher';
+import { aiStatus } from '@/server/services/ai/agent';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const [links, unread] = await Promise.all([
+  const [links, unread, sages, ai] = await Promise.all([
     prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { label: true, lastSyncAt: true, lastError: true } }),
     unreadCount(user.id),
+    prisma.sage.findMany({ where: { userId: user.id }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    aiStatus(user.id),
   ]);
   const failing = links.filter((l) => l.lastError);
   const lastSync = links.map((l) => l.lastSyncAt).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
@@ -33,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavLink href="/journal">매매일지</NavLink>
         <NavLink href="/traits">자산 성질</NavLink>
         <NavLink href="/notes">투자 노트</NavLink>
+        <NavLink href="/ai">AI 어드바이저</NavLink>
         <NavLink href="/alerts">
           알림
           {unread > 0 && (
@@ -71,6 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="main">{children}</main>
       <Suspense>
         <QuickMemo />
+        <AiLauncher sages={sages} configured={ai.configured} />
       </Suspense>
     </div>
   );

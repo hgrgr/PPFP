@@ -11,6 +11,7 @@ import { journalCounts } from '@/server/services/journal';
 import { assetTraitMap, traitGroups } from '@/server/services/traits';
 import { traitAllocation } from '@/domain/traits';
 import { userGraph } from '@/server/services/portfolios';
+import { AskAiButton } from '@/components/ai/launcher';
 
 export const metadata = { title: '대시보드' };
 export const dynamic = 'force-dynamic';
@@ -96,6 +97,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
         <div className="inline">
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
           <PrivacyToggle />
+          <AskAiButton label="AI 점검" prompt={`${d.scope.name} 범위의 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지와 그 근거를 알려 줘.`} />
           <a className="btn" href={`/export?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
             Export
           </a>
