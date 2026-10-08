@@ -88,6 +88,11 @@ model User {
   priceAlerts      PriceAlert[]
   notifications    Notification[]
   pushSubs         PushSubscription[]
+  notes            Note[]
+  books            Book[]
+  sages            Sage[]
+  topics           Topic[]
+  knowledgeLinks   KnowledgeLink[]
 }
 
 model Session {
@@ -572,4 +577,102 @@ model PushSubscription {
 model AppSetting {
   key   String @id
   value String
+}
+
+/// A quick note. `#키워드` in the body links the note to that topic.
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  body      String
+  pinned    Boolean  @default(false)
+  /// Page the note was written on
+  sourceUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+enum BookStatus {
+  WANT
+  READING
+  DONE
+}
+
+/// A book and the reader's summary of it.
+model Book {
+  id            String     @id @default(cuid())
+  userId        String
+  title         String
+  author        String?
+  publisher     String?
+  publishedYear Int?
+  status        BookStatus @default(READING)
+  rating        Int?
+  startedAt     DateTime?  @db.Date
+  finishedAt    DateTime?  @db.Date
+  oneLine       String?
+  content       Json       @default("[]")
+  contentText   String     @default("")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+/// An investor whose philosophy the user keeps notes on.
+model Sage {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  nameEn      String?
+  lived       String?
+  affiliation String?
+  oneLine     String?
+  /// Built-in profile it started from, if any
+  preset      String?
+  content     Json     @default("[]")
+  contentText String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+}
+
+/// A keyword such as 가치투자 or 안전마진. Linked to traits it implies (가치투자 → 가치주).
+model Topic {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  color       String   @default("#2a78d6")
+  description String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+}
+
+/// An undirected link between two things the user keeps: note, book, sage, topic, trait, asset.
+/// Stored once with the pair in a fixed order (see domain/knowledge.ts).
+model KnowledgeLink {
+  id        String   @id @default(cuid())
+  userId    String
+  aType     String
+  aId       String
+  bType     String
+  bId       String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, aType, aId, bType, bId])
+  @@index([userId, aType, aId])
+  @@index([userId, bType, bId])
 }

@@ -1,5 +1,7 @@
 import { logoutAction } from '@/app/actions';
+import { Suspense } from 'react';
 import { NavLink } from '@/components/client-bits';
+import { QuickMemo } from '@/components/knowledge/quick-memo';
 import { prisma } from '@/server/db';
 import { requireUser } from '@/server/auth';
 import { kstDateTime } from '@/lib/format';
@@ -30,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavLink href="/transactions">거래 내역</NavLink>
         <NavLink href="/journal">매매일지</NavLink>
         <NavLink href="/traits">자산 성질</NavLink>
+        <NavLink href="/notes">투자 노트</NavLink>
         <NavLink href="/alerts">
           알림
           {unread > 0 && (
@@ -66,6 +69,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </nav>
       <main className="main">{children}</main>
+      <Suspense>
+        <QuickMemo />
+      </Suspense>
     </div>
   );
 }
