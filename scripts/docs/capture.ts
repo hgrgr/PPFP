@@ -1,0 +1,457 @@
+/**
+ * Regenerates the screenshots in docs/images for docs/user-guide.md.
+ *
+ *   npm run build && npm run docs:screenshots
+ *
+ * 1. Recreates a throwaway database next to DATABASE_URL (same server, name + "_docs").
+ * 2. Seeds the fictional demo account (seed-demo.ts) against fake broker servers.
+ * 3. Starts the built app on DOCS_PORT (default 3100) with the fakes preloaded.
+ * 4. Drives headless Chrome over the DevTools protocol, marks numbered callouts
+ *    and saves each shot as WebP. Then stops everything and drops the database.
+ *
+ * Real accounts, keys and the main database are never touched. Set CHROME_PATH
+ * if Chrome is not in the default location, DOCS_PORT to move the demo server,
+ * or DOCS_ONLY=market,login to retake only some shots.
+ */
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { PrismaClient } from '@prisma/client';
+
+const ROOT = path.resolve(__dirname, '../..');
+const OUT = path.join(ROOT, 'docs/images');
+const PORT = Number(process.env.DOCS_PORT ?? 3100);
+const BASE = `http://localhost:${PORT}`;
+const ONLY = process.env.DOCS_ONLY?.split(',').filter(Boolean);
+const CHROME =
+  process.env.CHROME_PATH ??
+  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => existsSync(p));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------- shots
+/** An element on the page: CSS selector, optionally narrowed by its own text, then widened to an ancestor. */
+interface Find {
+  sel?: string;
+  text?: string;
+  closest?: string;
+  nth?: number;
+  within?: Find;
+}
+/** click, set a form value, pause, or wait until a page expression is true */
+type Step = { click: Find } | { set: Find; value: string } | { wait: number } | { until: string; timeout?: number };
+interface Shot {
+  file: string;
+  path: (ids: Ids) => string;
+  /** Leave out the session cookie (login page) */
+  anonymous?: boolean;
+  width?: number;
+  height?: number;
+  scale?: number;
+  dark?: boolean;
+  mobile?: boolean;
+  wait?: number;
+  steps?: Step[];
+  /** Numbered callouts, 1-based in order */
+  marks?: Find[];
+  /** Elements to crop to (their union, padded). Omit for the first screen. */
+  clip?: Find[];
+  pad?: number;
+}
+interface Ids {
+  root: string;
+  us: string;
+  aapl: string;
+}
+
+const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
+
+const SHOTS: Shot[] = [
+  { file: 'login', path: () => '/login', anonymous: true, width: 1100, height: 760, scale: 2, clip: [{ sel: '.auth .card' }], pad: 28 },
+  {
+    file: 'dashboard',
+    path: () => '/dashboard',
+    wait: 2200,
+    marks: [
+      { sel: 'span', text: '보기 범위', closest: 'label' },
+      { sel: 'button', text: '금액 가리기' },
+      { sel: '[aria-label="기간 선택"]' },
+      { sel: 'section[aria-label="요약"]' },
+      card('평가액 추이'),
+      card('자산 배분'),
+    ],
+  },
+  { file: 'dashboard-tables', path: () => '/dashboard', wait: 2200, width: 1680, clip: [{ sel: 'h2', text: '비중 변화', closest: 'section' }, { sel: 'h2', text: '보유 종목', closest: 'section' }] },
+  { file: 'dashboard-dark', path: () => '/dashboard', wait: 2200, dark: true },
+  {
+    file: 'portfolios',
+    path: () => '/portfolios',
+    wait: 1200,
+    clip: [{ sel: '.page-head' }, card('구조'), card('새 포트폴리오')],
+    marks: [{ sel: '.badge', text: '포함' }, { sel: 'a', text: '분석' }, { sel: 'button', text: '분리' }, card('새 포트폴리오'), card('기존 포트폴리오 연결')],
+  },
+  {
+    file: 'portfolio-detail',
+    path: (ids) => `/portfolios/${ids.us}`,
+    wait: 1500,
+    clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목')],
+    marks: [{ sel: 'a', text: '보유종목 가져오기', within: { sel: '.page-head' } }, { sel: 'a', text: '+ 거래 추가' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목')],
+  },
+  {
+    file: 'portfolio-add',
+    path: (ids) => `/portfolios/${ids.us}`,
+    wait: 1500,
+    clip: [{ sel: '#add' }],
+    marks: [{ sel: '[aria-label="자산 종류"]' }, { sel: 'label', text: '이 포트폴리오의 현금으로 결제' }, { sel: 'select[name="type"]', within: card('입출금 · 배당 · 이자') }],
+  },
+  {
+    file: 'holding-sell',
+    path: (ids) => `/holdings/${ids.aapl}`,
+    wait: 1500,
+    steps: [{ set: { sel: 'input[aria-describedby="qty-help"]' }, value: '12' }, { wait: 600 }],
+    clip: [card('보유 Lot'), card('매도 · Lot 선택')],
+    marks: [card('보유 Lot'), { sel: '[aria-label="Lot 선택 방식"]' }, { sel: 'input[aria-describedby="qty-help"]', closest: 'label' }, { sel: 'span', text: '예상 실현손익', closest: 'div' }],
+  },
+  { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
+  {
+    file: 'import-broker',
+    path: () => '/import',
+    wait: 2500,
+    clip: [{ sel: '.page-head' }, card('한국투자 데모 계좌')],
+    marks: [{ sel: 'input', text: '카카오 선택' }, { sel: 'select', text: '카카오 넣을 포트폴리오' }, { sel: 'button', text: '가져오기', within: card('한국투자 데모 계좌') }],
+  },
+  {
+    file: 'import-crypto',
+    path: () => '/import',
+    wait: 2500,
+    clip: [card('코인 거래소 거래내역')],
+    marks: [
+      { sel: 'span', text: '업비트 데모', closest: '.spread' },
+      { sel: 'button', text: '새 거래내역 동기화' },
+      { sel: 'span', text: '넣을 포트폴리오', closest: 'label' },
+      { sel: 'span', text: '시작일', closest: 'label' },
+      { sel: 'button', text: '거래내역 가져오기' },
+    ],
+  },
+  { file: 'import-paste', path: () => '/import', wait: 2500, clip: [card('잔고 붙여넣기 · 파일')] },
+  {
+    file: 'settings',
+    path: () => '/settings',
+    wait: 1500,
+    steps: [{ set: { sel: 'select[name="broker"]' }, value: 'UPBIT' }, { wait: 400 }],
+    clip: [card('연결된 증권사 · 코인 거래소'), card('증권사 · 거래소 추가')],
+    marks: [{ sel: 'table', within: card('연결된 증권사 · 코인 거래소') }, { sel: 'button', text: '연결 확인' }, { sel: 'select[name="broker"]', closest: 'label' }, { sel: 'a', text: 'API 관리' }],
+  },
+  {
+    file: 'market',
+    path: () => '/market',
+    wait: 3000,
+    // Mini charts fill in the background after the first board
+    steps: [{ until: "document.querySelectorAll('tbody tr.pick svg path').length >= 10", timeout: 30_000 }, { wait: 500 }],
+    clip: [{ sel: 'main' }],
+    pad: 0,
+    marks: [{ sel: '.ticker' }, { sel: 'form[aria-label="관심종목 추가"]' }, card('내 종목'), card('실시간 랭킹')],
+  },
+  {
+    file: 'market-candles',
+    path: () => '/market?s=005930',
+    wait: 5500,
+    scale: 2,
+    width: 1280,
+    clip: [{ sel: '#stock-detail' }],
+    marks: [{ sel: '[aria-label="봉 간격"]' }, { sel: 'span', text: '묶어 만듦' }, { sel: '.book' }],
+  },
+  {
+    file: 'market-coin',
+    path: () => '/market?s=KRW-BTC',
+    wait: 5000,
+    scale: 2,
+    width: 1280,
+    steps: [{ click: { sel: 'button', text: '4시간' } }, { wait: 2500 }],
+    clip: [{ sel: '#stock-detail' }],
+    marks: [{ sel: 'button', text: '4시간' }],
+  },
+  {
+    file: 'market-rankings-coin',
+    path: () => '/market',
+    wait: 4000,
+    scale: 2,
+    steps: [{ click: { sel: 'button', text: '코인', within: { sel: '[aria-label="시장"]' } } }, { wait: 2500 }],
+    clip: [card('실시간 랭킹')],
+    marks: [{ sel: '[aria-label="시장"]' }, { sel: '[aria-label="랭킹 기준"]' }],
+  },
+  { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
+  { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
+];
+
+// ---------------------------------------------------------------- page helpers (run in the browser)
+const PAGE_HELPERS = String.raw`
+window.__docs = {
+  find(f, root = document) {
+    const scope = f.within ? this.find(f.within) : root;
+    let list = [...scope.querySelectorAll(f.sel || '*')];
+    if (f.text) {
+      const t = f.text;
+      list = list.filter((e) =>
+        [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.replace(/\s+/g, ' ').includes(t)) ||
+        (e.getAttribute('aria-label') || '').includes(t));
+    }
+    let el = list[f.nth || 0] || null;
+    if (el && f.closest) el = el.closest(f.closest);
+    if (!el) throw new Error('element not found: ' + JSON.stringify(f));
+    return el;
+  },
+  box(fs, pad) {
+    const rs = fs.map((f) => this.find(f).getBoundingClientRect());
+    const x = Math.max(0, Math.min(...rs.map((r) => r.left)) - pad + scrollX);
+    const y = Math.max(0, Math.min(...rs.map((r) => r.top)) - pad + scrollY);
+    const right = Math.min(document.documentElement.scrollWidth, Math.max(...rs.map((r) => r.right)) + pad + scrollX);
+    const bottom = Math.max(...rs.map((r) => r.bottom)) + pad + scrollY;
+    return { x, y, width: right - x, height: bottom - y };
+  },
+  click(f) { this.find(f).click(); },
+  set(f, value) {
+    const el = this.find(f);
+    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  },
+  mark(fs) {
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none';
+    fs.forEach((f, i) => {
+      const r = this.find(f).getBoundingClientRect();
+      const box = document.createElement('div');
+      box.style.cssText = 'position:absolute;border:2.5px solid #FF5A1F;border-radius:10px;box-shadow:0 0 0 3px rgba(255,90,31,.18)';
+      Object.assign(box.style, { left: r.left + scrollX - 5 + 'px', top: r.top + scrollY - 5 + 'px', width: r.width + 10 + 'px', height: r.height + 10 + 'px' });
+      const badge = document.createElement('div');
+      badge.textContent = String(i + 1);
+      badge.style.cssText = 'position:absolute;width:26px;height:26px;border-radius:13px;background:#FF5A1F;color:#fff;font:700 14px/26px system-ui,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3)';
+      Object.assign(badge.style, { left: Math.max(2, r.left + scrollX - 24) + 'px', top: Math.max(2, r.top + scrollY - 20) + 'px' });
+      layer.append(box, badge);
+    });
+    document.body.append(layer);
+  },
+};
+`;
+
+// ---------------------------------------------------------------- DevTools protocol
+class Cdp {
+  private id = 0;
+  private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+  private listeners: ((m: any) => void)[] = [];
+  private constructor(private ws: WebSocket) {
+    ws.addEventListener('close', () => {
+      for (const p of this.pending.values()) p.reject(new Error('DevTools connection closed'));
+      this.pending.clear();
+    });
+    ws.addEventListener('message', (ev) => {
+      const msg = JSON.parse(String(ev.data));
+      if (msg.id && this.pending.has(msg.id)) {
+        const p = this.pending.get(msg.id)!;
+        this.pending.delete(msg.id);
+        if (msg.error) p.reject(new Error(`${msg.error.message} (${msg.error.code})`));
+        else p.resolve(msg.result);
+      } else for (const l of this.listeners) l(msg);
+    });
+  }
+  static connect(url: string): Promise<Cdp> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      ws.addEventListener('open', () => resolve(new Cdp(ws)));
+      ws.addEventListener('error', () => reject(new Error('DevTools connection failed')));
+    });
+  }
+  send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<any> {
+    const id = ++this.id;
+    this.ws.send(JSON.stringify({ id, method, params, sessionId }));
+    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+  }
+  once(method: string, sessionId: string, timeout = 30_000): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`timeout waiting for ${method}`)), timeout);
+      const l = (m: any) => {
+        if (m.method === method && m.sessionId === sessionId) {
+          clearTimeout(t);
+          this.listeners = this.listeners.filter((x) => x !== l);
+          resolve(m.params);
+        }
+      };
+      this.listeners.push(l);
+    });
+  }
+  close() {
+    this.ws.close();
+  }
+}
+
+async function launchChrome(): Promise<{ proc: ChildProcess; cdp: Cdp; dir: string }> {
+  if (!CHROME) throw new Error('Chrome not found: set CHROME_PATH.');
+  const dir = mkdtempSync(path.join(tmpdir(), 'ppfp-docs-chrome-'));
+  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--force-color-profile=srgb', '--lang=ko-KR', 'about:blank'], { stdio: 'ignore' });
+  const portFile = path.join(dir, 'DevToolsActivePort');
+  for (let i = 0; i < 100 && !existsSync(portFile); i++) await sleep(100);
+  const [port, wsPath] = readFileSync(portFile, 'utf8').trim().split('\n');
+  const cdp = await Cdp.connect(`ws://127.0.0.1:${port}${wsPath}`);
+  // Headless Chrome quits when its last page closes: keep one blank page open throughout
+  await cdp.send('Target.createTarget', { url: 'about:blank' });
+  return { proc, cdp, dir };
+}
+
+async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
+  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+  const s = (method: string, params: Record<string, unknown> = {}) => cdp.send(method, params, sessionId);
+  try {
+    await s('Page.enable');
+    await s('Runtime.enable');
+    await s('Network.enable');
+    if (!shot.anonymous) await s('Network.setCookie', { name: 'ppfp_session', value: token, url: BASE, httpOnly: true, sameSite: 'Lax' });
+    const width = shot.width ?? 1440;
+    const height = shot.height ?? 900;
+    const scale = shot.scale ?? 1;
+    await s('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile: !!shot.mobile });
+    if (shot.mobile) await s('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: shot.dark ? 'dark' : 'light' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await s('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Seoul' });
+    await s('Emulation.setLocaleOverride', { locale: 'ko-KR' });
+    const loaded = cdp.once('Page.loadEventFired', sessionId);
+    await s('Page.navigate', { url: BASE + shot.path(ids) });
+    await loaded;
+    await sleep(shot.wait ?? 1200);
+    const run = async (expr: string) => {
+      const r = await s('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(`${shot.file}: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
+      return r.result.value;
+    };
+    await run(PAGE_HELPERS);
+    for (const step of shot.steps ?? []) {
+      if ('wait' in step) await sleep(step.wait);
+      else if ('until' in step) {
+        const end = Date.now() + (step.timeout ?? 15_000);
+        while (!(await run(step.until))) {
+          if (Date.now() > end) throw new Error(`${shot.file}: timed out waiting for ${step.until}`);
+          await sleep(250);
+        }
+      } else if ('click' in step) await run(`__docs.click(${JSON.stringify(step.click)})`);
+      else await run(`__docs.set(${JSON.stringify(step.set)}, ${JSON.stringify(step.value)})`);
+    }
+    // Lay the whole page out at once for crops, so nothing depends on scrolling
+    if (shot.clip) {
+      const full = await run('Math.ceil(document.documentElement.scrollHeight)');
+      await s('Emulation.setDeviceMetricsOverride', { width, height: Math.min(full, 6000), deviceScaleFactor: scale, mobile: !!shot.mobile });
+      // Charts that just came into view lay out and animate
+      await sleep(2000);
+      await run(PAGE_HELPERS);
+    }
+    if (shot.marks?.length) await run(`__docs.mark(${JSON.stringify(shot.marks)})`);
+    const clip = shot.clip ? { ...(await run(`__docs.box(${JSON.stringify(shot.clip)}, ${shot.pad ?? 28})`)), scale: 1 } : undefined;
+    const { data } = await s('Page.captureScreenshot', { format: 'webp', quality: 92, captureBeyondViewport: !!clip, ...(clip ? { clip } : {}) });
+    const file = path.join(OUT, `${shot.file}.webp`);
+    writeFileSync(file, Buffer.from(data, 'base64'));
+    console.log(`  ${shot.file}.webp  ${(Buffer.byteLength(data, 'base64') / 1024).toFixed(0)} KB`);
+  } finally {
+    await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------- orchestration
+function demoUrl(): { main: string; demo: string; name: string } {
+  const main = process.env.DATABASE_URL;
+  if (!main) throw new Error('DATABASE_URL is not set (run through npm run docs:screenshots, which loads .env).');
+  const u = new URL(main);
+  const name = `${u.pathname.slice(1) || 'ppfp'}_docs`;
+  u.pathname = '/' + name;
+  return { main, demo: u.toString(), name };
+}
+
+async function waitForServer(proc: ChildProcess) {
+  for (let i = 0; i < 120; i++) {
+    if (proc.exitCode !== null) throw new Error('The demo server exited; see its output above.');
+    try {
+      const r = await fetch(`${BASE}/login`);
+      if (r.ok) return;
+    } catch {}
+    await sleep(500);
+  }
+  throw new Error('The demo server did not start.');
+}
+
+async function main() {
+  if (!existsSync(path.join(ROOT, '.next/BUILD_ID'))) throw new Error('No production build: run npm run build first.');
+  const { main: mainUrl, demo, name } = demoUrl();
+  const admin = new PrismaClient({ datasourceUrl: mainUrl });
+  const env = { ...process.env, DATABASE_URL: demo, COOKIE_SECURE: 'false' };
+  let server: ChildProcess | null = null;
+  let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
+  try {
+    console.log(`demo database ${name}`);
+    await admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    await admin.$executeRawUnsafe(`CREATE DATABASE "${name}"`);
+    const bin = (b: string) => path.join(ROOT, 'node_modules/.bin', b);
+    const migrate = spawnSync(bin('prisma'), ['migrate', 'deploy'], { cwd: ROOT, env, encoding: 'utf8' });
+    if (migrate.status !== 0) throw new Error(`prisma migrate deploy failed:\n${migrate.stderr || migrate.stdout}`);
+
+    console.log('seeding the demo account');
+    const seed = spawnSync(bin('tsx'), [path.join(__dirname, 'seed-demo.ts')], { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    if (seed.status !== 0) throw new Error(`seed failed:\n${seed.stderr}\n${seed.stdout}`);
+    const token = seed.stdout.trim().split('\n').at(-1)!;
+
+    const db = new PrismaClient({ datasourceUrl: demo });
+    const pf = await db.portfolio.findMany({ select: { id: true, name: true } });
+    const pid = (n: string) => pf.find((p) => p.name === n)!.id;
+    const aapl = await db.holding.findFirstOrThrow({ where: { portfolioId: pid('미국 주식'), asset: { symbol: 'AAPL' } } });
+    const ids: Ids = { root: pid('순자산'), us: pid('미국 주식'), aapl: aapl.id };
+    await db.$disconnect();
+
+    console.log(`starting the demo server on ${BASE}`);
+    server = spawn(process.execPath, ['--require', path.join(__dirname, 'fake-market.cjs'), path.join(ROOT, 'node_modules/next/dist/bin/next'), 'start', '-p', String(PORT)], {
+      cwd: ROOT,
+      env: { ...env, NODE_ENV: 'production' },
+      stdio: ['ignore', 'inherit', 'inherit'],
+    });
+    await waitForServer(server);
+
+    mkdirSync(OUT, { recursive: true });
+    chrome = await launchChrome();
+    console.log('capturing');
+    for (const shot of SHOTS.filter((x) => !ONLY || ONLY.includes(x.file))) await capture(chrome.cdp, shot, ids, token);
+
+  } finally {
+    // Every step runs even if an earlier one fails, so nothing is left behind
+    const quietly = async (what: string, f: () => unknown) => {
+      try {
+        await f();
+      } catch (e) {
+        console.error(`cleanup: ${what}: ${e instanceof Error ? e.message : e}`);
+      }
+    };
+    if (chrome) {
+      const { cdp, proc, dir } = chrome;
+      await quietly('chrome', async () => {
+        cdp.close();
+        const exited = new Promise((r) => proc.once('exit', r));
+        proc.kill();
+        await Promise.race([exited, sleep(5000)]);
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      });
+    }
+    if (server) {
+      const proc = server;
+      await quietly('server', async () => {
+        const exited = new Promise((r) => proc.once('exit', r));
+        proc.kill();
+        await Promise.race([exited, sleep(5000)]);
+      });
+    }
+    await quietly('database', () => admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`));
+    await quietly('disconnect', () => admin.$disconnect());
+  }
+}
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exitCode = 1;
+});
