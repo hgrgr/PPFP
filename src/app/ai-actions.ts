@@ -45,6 +45,10 @@ export async function saveAiSettingsAction(_prev: AiResult, form: FormData): Pro
       clearKey: form.get('clearKey') === 'on',
       monthlyLimit: String(form.get('monthlyLimit') ?? ''),
       webSearch: form.get('webSearch') === 'on',
+      briefing: form.get('briefing') === 'on',
+      briefingHour: String(form.get('briefingHour') ?? '8'),
+      briefingWeekdays: form.get('briefingWeekdays') === 'on',
+      alertAnalysis: form.get('alertAnalysis') === 'on',
     });
     return 'AI 설정을 저장했습니다';
   });

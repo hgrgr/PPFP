@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { pushToUser } from '../push';
 
-export type NotificationKind = 'PRICE' | 'DRIFT' | 'TEST';
+export type NotificationKind = 'PRICE' | 'DRIFT' | 'TEST' | 'BRIEFING';
 
 /** Put a message in the user's inbox and push it to their devices. */
 export async function notify(userId: string, n: { kind: NotificationKind; title: string; body: string; url?: string }) {
@@ -10,6 +10,11 @@ export async function notify(userId: string, n: { kind: NotificationKind; title:
     await pushToUser(userId, { title: n.title, body: n.body, url: n.url ?? '/alerts', tag: row.id });
   } catch (e) {
     console.error('[notify] push failed', e instanceof Error ? e.message : e);
+  }
+  if (n.kind === 'PRICE' || n.kind === 'DRIFT') {
+    const ai = await prisma.aiSettings.findUnique({ where: { userId }, select: { alertAnalysis: true } });
+    // Loaded only when asked for: the advisor pulls in the Claude client
+    if (ai?.alertAnalysis) void import('./ai/background').then((m) => m.analyzeAlert(userId, row.id)).catch((e) => console.error('[notify] AI analysis failed', e));
   }
   return row;
 }

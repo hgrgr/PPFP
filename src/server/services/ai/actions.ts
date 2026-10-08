@@ -112,13 +112,26 @@ export async function dismissAction(userId: string, id: string) {
   if (!r.count) throw new UserError('이미 처리한 제안입니다.');
 }
 
-export async function saveAiSettings(userId: string, input: { apiKey?: string; clearKey?: boolean; monthlyLimit: string; webSearch: boolean }) {
+export async function saveAiSettings(
+  userId: string,
+  input: { apiKey?: string; clearKey?: boolean; monthlyLimit: string; webSearch: boolean; briefing?: boolean; briefingHour?: string; briefingWeekdays?: boolean; alertAnalysis?: boolean },
+) {
   const key = input.apiKey?.trim();
   if (key && !/^sk-ant-[\w-]{20,}$/.test(key)) throw new UserError('Anthropic API 키는 sk-ant- 로 시작합니다.');
   const limitText = input.monthlyLimit.trim().replace(/^\$/, '');
   const limit = limitText === '' ? null : Number(limitText);
   if (limit !== null && (!Number.isFinite(limit) || limit < 0 || limit > 10_000)) throw new UserError('월 한도는 0~10,000 달러 사이로 입력하세요. 비우면 한도가 없습니다.');
   const keyData = key ? { apiKeyEnc: encryptSecret(key), apiKeyHint: mask(key) } : input.clearKey ? { apiKeyEnc: null, apiKeyHint: null } : {};
-  const data = { monthlyLimit: limit === null ? null : limit.toFixed(2), webSearch: input.webSearch, ...keyData };
+  const hour = Number(input.briefingHour ?? 8);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new UserError('브리핑 시각을 고르세요.');
+  const data = {
+    monthlyLimit: limit === null ? null : limit.toFixed(2),
+    webSearch: input.webSearch,
+    briefing: !!input.briefing,
+    briefingHour: hour,
+    briefingWeekdays: !!input.briefingWeekdays,
+    alertAnalysis: !!input.alertAnalysis,
+    ...keyData,
+  };
   await prisma.aiSettings.upsert({ where: { userId }, create: { userId, ...data }, update: data });
 }

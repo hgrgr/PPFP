@@ -429,3 +429,8 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .ai-history li[aria-current='true'] { background: var(--surface-2); }
 .ai-history a { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 6px 8px; color: inherit; }
 .ai-history a .strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.ai-schedule { border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 14px 12px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 0; }
+.ai-schedule legend { padding: 0 4px; }
+.ai-schedule > .sub { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ai-inbox-btn { align-self: flex-start; margin-top: 2px; }
+.ai-schedule label { white-space: nowrap; }

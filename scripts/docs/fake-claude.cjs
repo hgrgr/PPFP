@@ -114,7 +114,75 @@ function stockScript(turn, results, name, symbol) {
   return { blocks: [text('확인 카드의 **실행**을 누르면 알림이 만들어집니다.')], stop: 'end_turn', usage: { input: 500, cached: 12000, output: 30 } };
 }
 
+function briefingScript(turn, results) {
+  const done = turn.filter((x) => x.role === 'assistant').length;
+  if (done === 0) {
+    return { blocks: [text('지난 1주 포트폴리오와 목표 비중, 진행 중인 일지를 확인하고 이번 주 일정을 찾아볼게요.'), call('get_portfolio_overview', { period: '1M' }), call('get_target_drift', {}), call('get_journals', { status: 'OPEN' })], stop: 'tool_use', usage: { input: 10100, cached: 0, output: 150 } };
+  }
+  if (done === 1) {
+    const o = results.get_portfolio_overview ?? { holdings: [], period: {} };
+    const d = (results.get_target_drift?.portfolios ?? [])[0];
+    const out = d ? d.rows.filter((r) => r.outOfBand) : [];
+    const js = (results.get_journals ?? []).filter((j) => j.progressPct !== null).sort((a, b) => (b.progressPct ?? 0) - (a.progressPct ?? 0));
+    const s1 = { type: 'server_tool_use', id: id('srvtoolu'), name: 'web_search', input: { query: '이번 주 실적 발표 일정 애플 엔비디아 삼성전자' } };
+    const art = { url: 'https://news.example.com/earnings-week', title: '[가상 기사] 이번 주 실적 발표 일정 정리' };
+    const res = { type: 'web_search_tool_result', tool_use_id: s1.id, content: [{ type: 'web_search_result', url: art.url, title: art.title, encrypted_content: 'demo', page_age: '2026-10-07' }] };
+    const cite = { type: 'web_search_result_location', url: art.url, title: art.title, cited_text: '이번 주 실적 발표', encrypted_index: 'demo' };
+    const top = o.holdings.slice(0, 3);
+    const lines = [
+      `## 오늘의 요약`,
+      `순자산 **${won(o.totalKrw)}**, 최근 1개월 ${p1(o.period.twrPct)}. ${top.map((h) => `${h.name} ${h.returnPct === null ? '' : `${h.returnPct > 0 ? '+' : ''}${h.returnPct.toFixed(1)}%`}`).join(', ')}.`,
+      ``,
+      `## 살펴볼 곳`,
+      `- **목표 비중**: ${out.length ? out.map((r) => `${r.label} ${p1(r.sharePct)}(목표 ${p1(r.targetPct)})`).join(', ') : '모두 허용 오차 안입니다'}.`,
+      `- **일지 목표가**: ${js.slice(0, 2).map((j) => `${j.asset} ${j.progressPct.toFixed(0)}% 진행`).join(', ') || '가까운 일지가 없습니다'}.`,
+      `- **이번 주 일정**: `,
+    ].join('\n');
+    return {
+      blocks: [
+        s1,
+        res,
+        text(lines),
+        text('보유 종목 중 두 곳의 실적 발표가 이번 주에 있습니다', [cite]),
+        text(`.\n\n## 오늘 할 일\n1. ${out[0] ? `${out[0].label} 비중 조정 계획 세우기` : '목표 비중 확인'}\n2. 실적 발표 전 해당 종목 일지의 근거 다시 읽기\n3. 새 거래가 있으면 일지 남기기`),
+      ],
+      stop: 'end_turn',
+      usage: { input: 2600, cached: 10100, output: 520, searches: 1 },
+    };
+  }
+  return { blocks: [text('좋은 하루 보내세요.')], stop: 'end_turn', usage: { input: 300, cached: 12000, output: 10 } };
+}
+
+function alertScript(turn, results, asked) {
+  const done = turn.filter((x) => x.role === 'assistant').length;
+  const name = (asked.match(/"(.+?)"/)?.[1] ?? '').split(' ')[0];
+  if (done === 0) {
+    return { blocks: [text(`${name} 알림을 확인할게요.`), call('get_holding', { asset: name })], stop: 'tool_use', usage: { input: 9700, cached: 0, output: 90 } };
+  }
+  const h = results.get_holding ?? { journals: [], linkedSages: [] };
+  const j = (h.journals ?? [])[0];
+  return {
+    blocks: [
+      text(
+        [
+          `## ${name} 알림 분석`,
+          `- 가격이 정한 값에 닿았습니다. 일지${j ? ` '${j.title}'의 목표가 ${j.targetPrice}` : ''} 기준으로 보면 계획한 구간입니다.`,
+          `- 큰 뉴스는 없고 업종 전체가 함께 움직였습니다.`,
+          `- **검토할 것**: 계획대로 분할 매수할지, 근거가 바뀌었는지 일지를 다시 읽어 보세요.`,
+        ].join('\n'),
+      ),
+    ],
+    stop: 'end_turn',
+    usage: { input: 1800, cached: 9700, output: 260 },
+  };
+}
+
 function managerScript(turn, results) {
+  {
+    const first = turn[0].content.filter((b) => b.type === 'text').at(-1).text;
+    if (first.startsWith('오늘 아침 브리핑')) return briefingScript(turn, results);
+    if (first.startsWith('알림이 왔어')) return alertScript(turn, results, first);
+  }
   const asked = turn[0].content.filter((b) => b.type === 'text').at(-1).text;
   const done = turn.filter((m) => m.role === 'assistant').length;
   const ctx = turn[0].content.find((b) => b.type === 'text' && b.text.startsWith('<page-context>'))?.text ?? '';

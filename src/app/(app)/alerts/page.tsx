@@ -4,6 +4,10 @@ import { requireUser } from '@/server/auth';
 import { dec, prisma } from '@/server/db';
 import { listAlerts } from '@/server/services/alerts';
 import { journalAssets } from '@/server/services/journal';
+import { AskAiButton } from '@/components/ai/launcher';
+import { alertAgent, alertPrompt } from '@/domain/ai';
+
+const KIND_LABEL: Record<string, string> = { PRICE: '가격', DRIFT: '목표 비중', BRIEFING: 'AI 브리핑', TEST: '테스트' };
 
 export const metadata = { title: '알림' };
 export const dynamic = 'force-dynamic';
@@ -29,7 +33,7 @@ export default async function AlertsPage() {
       <header className="page-head">
         <div className="stack" style={{ gap: 6 }}>
           <h1>알림</h1>
-          <p className="sub">가격 도달과 포트폴리오 목표 비중 이탈을 알려 줍니다. 알림은 여기 알림함에 쌓이고, 켜 둔 기기로 푸시도 보냅니다.</p>
+          <p className="sub">가격 도달, 포트폴리오 목표 비중 이탈, AI 아침 브리핑을 알려 줍니다. 알림은 여기 알림함에 쌓이고, 켜 둔 기기로 푸시도 보냅니다.</p>
         </div>
       </header>
 
@@ -42,9 +46,16 @@ export default async function AlertsPage() {
           <ul className="inbox">
             {inbox.map((n) => (
               <li key={n.id} className={n.readAt ? '' : 'unread'}>
-                <span className="sub">{kstDateTime(n.createdAt)} · {n.kind === 'PRICE' ? '가격' : n.kind === 'DRIFT' ? '목표 비중' : '테스트'}</span>
+                <span className="sub">{kstDateTime(n.createdAt)} · {KIND_LABEL[n.kind] ?? n.kind}</span>
                 {n.url ? <a className="strong" href={n.url}>{n.title}</a> : <span className="strong">{n.title}</span>}
                 <span style={{ whiteSpace: 'pre-line', fontSize: 13.5, color: 'var(--ink-2)' }}>{n.body}</span>
+                {n.kind === 'BRIEFING' && n.aiConversationId ? (
+                  <a className="btn small ai-inbox-btn" href={`/ai?c=${n.aiConversationId}`}>✦ 브리핑 전체 보기</a>
+                ) : n.aiConversationId ? (
+                  <a className="btn small ai-inbox-btn" href={`/ai?c=${n.aiConversationId}`}>✦ AI 분석 보기</a>
+                ) : n.kind === 'PRICE' || n.kind === 'DRIFT' ? (
+                  <AskAiButton className="btn small ai-inbox-btn" label="AI로 분석" agent={alertAgent(n.url)} prompt={alertPrompt(n)} />
+                ) : null}
               </li>
             ))}
           </ul>

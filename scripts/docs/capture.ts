@@ -80,6 +80,8 @@ interface Ids {
   book: string;
   /** A finished AI advisor conversation, prepared through the demo server before capturing */
   aiChat: string;
+  /** Today's morning briefing conversation */
+  aiBriefing: string;
 }
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
@@ -328,7 +330,7 @@ const SHOTS: Shot[] = [
     file: 'alerts',
     path: () => '/alerts',
     wait: 2500,
-    marks: [{ sel: '.nav-badge', closest: 'a' }, { sel: '.inbox li' }, { sel: 'button', text: '모두 읽음' }],
+    marks: [{ sel: '.nav-badge', closest: 'a' }, { sel: '.inbox li' }, { sel: 'button', text: '모두 읽음' }, { sel: 'a', text: '브리핑 전체 보기' }, { sel: 'button', text: 'AI로 분석' }],
   },
   {
     file: 'alerts-price',
@@ -469,12 +471,22 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '.ai-drawer select' }, { sel: '.ai-drawer .ai-md table' }, { sel: '.ai-drawer .ai-action' }],
   },
   {
+    file: 'ai-briefing',
+    path: (ids) => `/ai?c=${ids.aiBriefing}`,
+    wait: 2500,
+    width: 1280,
+    steps: [{ until: "(document.querySelector('.ai-log').scrollTop = 0, true)" }, { wait: 300 }],
+    clip: [{ sel: '.ai-main' }],
+    pad: 12,
+    marks: [{ sel: '.ai-main h2' }, { sel: '.ai-turn.user' }, { sel: '.ai-md h2', text: '오늘 할 일' }],
+  },
+  {
     file: 'ai-settings',
     path: () => '/settings',
     wait: 1500,
     width: 1280,
     clip: [{ sel: '#ai' }],
-    marks: [{ sel: 'input[name="apiKey"]', closest: 'label' }, { sel: 'input[name="monthlyLimit"]', closest: 'label' }, { sel: 'input[name="webSearch"]', closest: 'label' }],
+    marks: [{ sel: 'input[name="apiKey"]', closest: 'label' }, { sel: 'input[name="monthlyLimit"]', closest: 'label' }, { sel: 'input[name="webSearch"]', closest: 'label' }, { sel: 'input[name="briefing"]', closest: 'label' }, { sel: 'input[name="alertAnalysis"]', closest: 'label' }, { sel: 'button', text: '지금 브리핑 받아 보기' }],
   },
   { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
@@ -696,7 +708,14 @@ async function main() {
   const { main: mainUrl, demo, name } = demoUrl();
   const admin = new PrismaClient({ datasourceUrl: mainUrl });
   // The AI advisor talks to the scripted fake in fake-claude.cjs, never to the real API
-  const env = { ...process.env, DATABASE_URL: demo, COOKIE_SECURE: 'false', ANTHROPIC_API_KEY: 'sk-ant-docs-demo-not-a-real-key', ANTHROPIC_BASE_URL: 'https://api.anthropic.com' };
+  const env = {
+    ...process.env,
+    DATABASE_URL: demo,
+    COOKIE_SECURE: 'false',
+    ANTHROPIC_API_KEY: 'sk-ant-docs-demo-not-a-real-key',
+    ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+    CRON_SECRET: 'docs-demo-cron-secret',
+  };
   let server: ChildProcess | null = null;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
   try {
@@ -731,6 +750,7 @@ async function main() {
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
       aiChat: '',
+      aiBriefing: '',
     };
 
     console.log(`starting the demo server on ${BASE}`);
@@ -750,6 +770,20 @@ async function main() {
     const events = await chat.text();
     if (!events.includes('"t":"done"')) throw new Error(`AI conversation failed:\n${events}`);
     ids.aiChat = (await db.aiConversation.findFirstOrThrow()).id;
+    // The scheduled-job endpoint sends the morning briefing that is due (from midnight, whatever the time now)
+    await db.aiSettings.updateMany({ data: { briefingHour: 0 } });
+    const cron = await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { authorization: `Bearer ${env.CRON_SECRET}` } });
+    if (!cron.ok) throw new Error(`cron failed: ${await cron.text()}`);
+    // The server's own timer may have claimed it first: wait for whichever ran
+    for (let i = 0; i < 120 && !ids.aiBriefing; i++) {
+      const n = await db.notification.findFirst({ where: { kind: 'BRIEFING', aiConversationId: { not: null } } });
+      if (n) ids.aiBriefing = n.aiConversationId!;
+      else await sleep(500);
+    }
+    if (!ids.aiBriefing) throw new Error('The morning briefing did not arrive.');
+    // Read already, so the unread badge on every screen stays as before
+    await db.notification.updateMany({ where: { kind: 'BRIEFING' }, data: { readAt: new Date() } });
+    await db.aiSettings.updateMany({ data: { briefingHour: 7 } });
     await db.$disconnect();
 
     mkdirSync(OUT, { recursive: true });
