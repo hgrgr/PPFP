@@ -8,6 +8,7 @@ import {
   updatePortfolioAction,
 } from '@/app/actions';
 import { AddAssetForm } from '@/components/add-asset-form';
+import { PortfolioTargets } from '@/components/alerts';
 import { ActionForm, DateTimeField, Submit } from '@/components/forms';
 import { Dec } from '@/domain/decimal';
 import { LOT_METHOD_LABEL, LOT_METHODS } from '@/domain/lots';
@@ -15,6 +16,7 @@ import { effectiveWeights } from '@/domain/portfolio-graph';
 import { krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
+import { portfolioTargets } from '@/server/services/alerts';
 import { currentState } from '@/server/services/analytics';
 import { ASSET_TYPE_LABEL } from '@/server/services/assets';
 import { userGraph } from '@/server/services/portfolios';
@@ -24,13 +26,15 @@ export const dynamic = 'force-dynamic';
 export default async function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [{ portfolios, edges }, state, linked] = await Promise.all([
+  const [graph, state, linked] = await Promise.all([
     userGraph(user.id),
     currentState(user.id),
     prisma.brokerConnection.count({ where: { userId: user.id } }),
   ]);
+  const { portfolios, edges } = graph;
   const p = portfolios.find((x) => x.id === id);
   if (!p) notFound();
+  const targets = await portfolioTargets(user.id, id, state, graph);
   const names = new Map(portfolios.map((x) => [x.id, x.name]));
   const parents = edges.filter((e) => e.childId === id);
   const children = edges.filter((e) => e.parentId === id);
@@ -118,6 +122,18 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
           <p className="empty">
             아직 직접 보유한 자산이 없습니다. 아래에서 매수를 기록하거나 <a href={`/import?p=${id}`}>증권사 보유종목을 가져오세요</a>.
           </p>
+        )}
+      </section>
+
+      <section className="card" id="targets">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>목표 비중 · 리밸런싱 알림</h2>
+          <p className="sub">하위 포트폴리오(할당만큼), 직접 보유 종목, 현금이 이 포트폴리오에서 차지할 목표 비중을 정합니다. 비워 둔 항목은 목표가 없습니다.</p>
+        </div>
+        {targets.report.rows.length ? (
+          <PortfolioTargets portfolioId={id} report={targets.report} tolerance={targets.tolerance} alert={targets.alert} />
+        ) : (
+          <p className="empty">아직 보유 자산이나 하위 포트폴리오가 없습니다.</p>
         )}
       </section>
 

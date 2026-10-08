@@ -85,6 +85,9 @@ model User {
   journalTemplates JournalTemplate[]
   journalImages    JournalImage[]
   traitGroups      TraitGroup[]
+  priceAlerts      PriceAlert[]
+  notifications    Notification[]
+  pushSubs         PushSubscription[]
 }
 
 model Session {
@@ -148,6 +151,11 @@ model Portfolio {
   lotMethod    LotMethod @default(FIFO)
   archived     Boolean   @default(false)
   sortOrder    Int       @default(0)
+  /// Notify when a target weight is off by more than `driftTolerance` (fraction, 0.05 = 5%p).
+  driftAlert     Boolean  @default(false)
+  driftTolerance Decimal  @default(0.05) @db.Decimal(20, 10)
+  /// Target keys out of band at the last check, so each breach is told once.
+  driftBreaches  String[] @default([])
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -158,6 +166,7 @@ model Portfolio {
   cash         CashBalance[]
   transactions Transaction[]
   snapshots    Snapshot[]
+  targets      PortfolioTarget[]
 
   @@index([userId])
 }
@@ -193,6 +202,7 @@ model Asset {
   holdings Holding[]
   journals JournalEntry[]
   traits   AssetTrait[]
+  alerts   PriceAlert[]
 
   @@unique([userId, symbol])
   @@index([userId])
@@ -377,9 +387,10 @@ model JournalEntry {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  asset Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
-  txns  JournalTxn[]
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset  Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  txns   JournalTxn[]
+  alerts PriceAlert[]
 
   @@index([userId, assetId])
   @@index([userId, entryDate])
@@ -474,4 +485,91 @@ model AssetTrait {
 
   @@id([assetId, traitId])
   @@index([traitId])
+}
+
+enum AlertDirection {
+  ABOVE
+  BELOW
+}
+
+enum AlertSource {
+  MANUAL
+  JOURNAL_TARGET
+  JOURNAL_STOP
+}
+
+/// Fires once when the asset's price reaches `price` in `direction`; re-arm it to use again.
+/// Journal entries keep one alert per source in sync with their target and stop prices.
+model PriceAlert {
+  id             String         @id @default(cuid())
+  userId         String
+  assetId        String
+  journalEntryId String?
+  source         AlertSource    @default(MANUAL)
+  direction      AlertDirection
+  /// In the asset's trading currency
+  price          Decimal        @db.Decimal(24, 6)
+  currency       String
+  note           String?
+  active         Boolean        @default(true)
+  triggeredAt    DateTime?
+  triggeredPrice Decimal?       @db.Decimal(24, 6)
+  createdAt      DateTime       @default(now())
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset   Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  journal JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([journalEntryId, source])
+  @@index([active])
+  @@index([userId])
+}
+
+/// Target weight of one part of a portfolio: a held asset (its id), "CASH", or a child portfolio ("P:<id>").
+model PortfolioTarget {
+  portfolioId String
+  key         String
+  weight      Decimal @db.Decimal(20, 10)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, key])
+}
+
+/// In-app inbox; the same message also goes to the user's push subscriptions.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  body      String
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// A browser or phone that accepted Web Push for this user.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  lastError String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Server-wide settings the app creates for itself (Web Push VAPID keys; secrets encrypted).
+model AppSetting {
+  key   String @id
+  value String
 }

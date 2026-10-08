@@ -54,6 +54,8 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
   const [basePrice, setBasePrice] = useState(entry?.basePrice ?? prefill.price ?? '');
   const [stopPrice, setStopPrice] = useState(entry?.stopPrice ?? '');
   const [targetDate, setTargetDate] = useState(entry?.targetDate ?? '');
+  const [alertTarget, setAlertTarget] = useState(entry ? entry.alerts.target !== null : true);
+  const [alertStop, setAlertStop] = useState(entry ? entry.alerts.stop !== null || !entry.stopPrice : true);
   const [template, setTemplate] = useState(entry?.template ?? firstFormat?.id ?? '');
   const [defs, setDefs] = useState<FieldDef[]>(entry?.fields.map(({ value: _v, ...d }) => d) ?? firstFormat?.fields ?? []);
   const [values, setValues] = useState<Record<string, string>>(Object.fromEntries(entry?.fields.map((f) => [f.key, f.value]) ?? []));
@@ -132,6 +134,8 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
       values,
       content: editorRef.current?.document ?? content.current,
       txnIds,
+      alertTarget,
+      alertStop,
     });
     if (r.error) {
       setDirty(true);
@@ -139,7 +143,7 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
     }
     setState({ savedAt: r.at });
     if (isNew && r.id) router.replace(`/journal/${r.id}`);
-  }, [asset?.name, assetId, basePrice, currentFormat?.name, defs, entry?.id, entryDate, isNew, router, status, stopPrice, targetDate, targetPrice, template, title, txnIds, values]);
+  }, [alertStop, alertTarget, asset?.name, assetId, basePrice, currentFormat?.name, defs, entry?.id, entryDate, isNew, router, status, stopPrice, targetDate, targetPrice, template, title, txnIds, values]);
 
   // Existing entries save themselves shortly after the last change
   useEffect(() => {
@@ -246,6 +250,7 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
               {progress.reached ? '목표 도달' : `현재가에서 ${pct(progress.remaining, 1)}`}
             </span>
           )}
+          <AlertSwitch on={alertTarget} onChange={touch(setAlertTarget)} state={entry?.alerts.target ?? null} label="닿으면 알림" />
         </dd>
 
         <dt><label htmlFor="j-base">기준 가격</label></dt>
@@ -259,6 +264,7 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
         <dt><label htmlFor="j-stop">손절가</label></dt>
         <dd>
           <input id="j-stop" inputMode="decimal" value={stopPrice} placeholder="비어 있음" onChange={(e) => touch(setStopPrice)(e.target.value.replace(/[^\d.]/g, ''))} />
+          {stopPrice && <AlertSwitch on={alertStop} onChange={touch(setAlertStop)} state={entry?.alerts.stop ?? null} label="닿으면 알림" />}
         </dd>
 
         <dt><label htmlFor="j-tdate">목표 기한</label></dt>
@@ -378,5 +384,17 @@ function FieldRow({ def, value, onChange }: { def: FieldDef; value: string; onCh
       <dt><label htmlFor={id}>{def.label || '이름 없음'}</label></dt>
       <dd><FieldInput id={id} def={def} value={value} onChange={onChange} /></dd>
     </>
+  );
+}
+
+/** Switch for a journal price alert, with what the alert is doing now. */
+function AlertSwitch({ on, onChange, state, label }: { on: boolean; onChange: (v: boolean) => void; state: { active: boolean; triggeredAt: string | null } | null; label: string }) {
+  const note = !on || !state ? null : state.active ? '대기 중' : state.triggeredAt ? `${state.triggeredAt.slice(0, 10)} 도달 — 가격을 바꾸면 다시 켜짐` : '일지 종료로 쉬는 중';
+  return (
+    <label className="inline sub" style={{ gap: 5, flexWrap: 'nowrap' }} title="가격에 닿으면 알림함과 푸시로 알립니다">
+      <input type="checkbox" checked={on} onChange={(e) => onChange(e.target.checked)} />
+      🔔 {label}
+      {note && <span className="badge" style={{ height: 20, fontSize: 11 }}>{note}</span>}
+    </label>
   );
 }

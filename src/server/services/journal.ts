@@ -16,6 +16,7 @@ import {
 } from '@/domain/journal';
 import { dbDate, dec, kstDate, prisma } from '../db';
 import { getQuotes } from '../market';
+import { syncJournalAlerts } from './alerts';
 import { UserError } from './portfolios';
 
 const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
@@ -79,7 +80,14 @@ export interface JournalSummary {
   updatedAt: string;
 }
 
+export interface JournalAlertState {
+  active: boolean;
+  triggeredAt: string | null;
+}
+
 export interface JournalDetail extends JournalSummary {
+  /** Price alerts on the target and the stop, null when switched off */
+  alerts: { target: JournalAlertState | null; stop: JournalAlertState | null };
   template: string | null;
   fields: FieldValue[];
   content: unknown[];
@@ -140,12 +148,17 @@ export async function listJournals(userId: string, filter: { assetId?: string; s
 export async function getJournal(userId: string, id: string): Promise<JournalDetail | null> {
   const r = await prisma.journalEntry.findFirst({
     where: { id, userId },
-    include: { ...summaryInclude, txns: { include: { transaction: { include: { portfolio: true } } } } },
+    include: { ...summaryInclude, txns: { include: { transaction: { include: { portfolio: true } } } }, alerts: true },
   });
   if (!r) return null;
+  const alertOf = (source: string) => {
+    const a = r.alerts.find((x) => x.source === source);
+    return a ? { active: a.active, triggeredAt: a.triggeredAt?.toISOString() ?? null } : null;
+  };
   const quotes = await quotesFor(userId, [r]);
   return {
     ...toSummary(r, quotes.get(r.assetId)?.price ?? null),
+    alerts: { target: alertOf('JOURNAL_TARGET'), stop: alertOf('JOURNAL_STOP') },
     template: r.template,
     fields: (Array.isArray(r.fields) ? r.fields : []) as unknown as FieldValue[],
     content: Array.isArray(r.content) ? (r.content as unknown[]) : [],
@@ -230,6 +243,9 @@ export interface JournalInput {
   values: Record<string, string>;
   content: unknown;
   txnIds: string[];
+  /** Notify when the target / stop price is reached (default on) */
+  alertTarget?: boolean;
+  alertStop?: boolean;
 }
 
 export async function saveJournal(userId: string, input: JournalInput): Promise<string> {
@@ -269,12 +285,14 @@ export async function saveJournal(userId: string, input: JournalInput): Promise<
       content: content as Prisma.InputJsonValue,
       contentText: plainText(content),
     };
-    return prisma.$transaction(async (tx) => {
+    const id = await prisma.$transaction(async (tx) => {
       const entry = existing ? await tx.journalEntry.update({ where: { id: existing.id }, data }) : await tx.journalEntry.create({ data: { ...data, userId } });
       await tx.journalTxn.deleteMany({ where: { entryId: entry.id, transactionId: { notIn: txnIds } } });
       if (txnIds.length) await tx.journalTxn.createMany({ data: txnIds.map((transactionId) => ({ entryId: entry.id, transactionId })), skipDuplicates: true });
       return entry.id;
     });
+    await syncJournalAlerts(userId, id, { target: input.alertTarget !== false, stop: input.alertStop !== false });
+    return id;
   });
 }
 
