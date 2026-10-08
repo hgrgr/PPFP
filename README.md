@@ -4,6 +4,8 @@
 
 명세서 1단계(MVP) 범위를 구현했습니다. 실주문은 포함하지 않습니다.
 
+화면별 사용법은 **[사용설명서](docs/user-guide.md)**에 화면 캡처와 함께 정리돼 있습니다. 기능이 언제 추가되거나 사라졌는지(커밋 기준)도 거기에 있습니다.
+
 ## 기능
 
 | 영역 | 내용 |
@@ -132,6 +134,8 @@ src/server/                  서버 전용
   market.ts                  연결된 증권사 순서대로 시세·환율 조회, 일봉 저장
   services/                  거래 기록, 스냅샷, 분석, 증권사 연결, 보유종목 가져오기, 거래소 내역 동기화, Export
 src/app/                     Next.js 화면과 API
+docs/user-guide.md           사용설명서 (docs/images: 화면 캡처)
+scripts/docs/                사용설명서 화면 캡처: 데모 데이터, 가짜 시세 서버, 헤드리스 크롬 캡처 (npm run docs:screenshots)
 ```
 
 ## 계산 규칙 요약

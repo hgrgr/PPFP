@@ -13,6 +13,7 @@ const BROKER_LABEL: Record<string, string> = {
   UPBIT: '업비트', BITHUMB: '빗썸', COINONE: '코인원', KORBIT: '코빗',
 };
 const MINUTE_UNITS: CandleUnit[] = ['1m', '5m', '15m', '60m', '240m'];
+const priceTick = (v: number) => v.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 const pollMs = (u: CandleUnit) => (u === '1m' ? 5_000 : u === '5m' || u === '15m' ? 10_000 : u === '1d' || u === '1w' ? 60_000 : 20_000);
 
 /** KST label for a bar start. */
@@ -20,7 +21,8 @@ function label(iso: string, unit: CandleUnit, long = false) {
   const k = new Date(Date.parse(iso) + 9 * 3_600_000).toISOString();
   if (unit === '1w') return long ? `${k.slice(0, 10)} 주` : k.slice(2, 10).replace(/-/g, '.');
   if (unit === '1d') return long ? k.slice(0, 10) : k.slice(5, 10).replace('-', '/');
-  return long ? `${k.slice(5, 10).replace('-', '/')} ${k.slice(11, 16)}` : k.slice(11, 16);
+  // Hourly and 4-hour bars span several days: keep the date on the axis too
+  return long || unit === '60m' || unit === '240m' ? `${k.slice(5, 10).replace('-', '/')} ${k.slice(11, 16)}` : k.slice(11, 16);
 }
 
 /** One candle drawn inside the [low, high] bar Recharts lays out. */
@@ -101,6 +103,9 @@ export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: s
 
   const rows: Row[] = (data?.candles ?? []).map((c) => ({ ...c, range: [c.l, c.h] }));
   const intradayUnit = MINUTE_UNITS.includes(unit);
+  // Wide enough for the longest price label: coins run to hundreds of millions of won
+  const longest = Math.max(0, ...rows.map((r) => priceTick(r.h).length), prevClose === null ? 0 : priceTick(prevClose).length);
+  const axisWidth = Math.max(56, 16 + 7 * (longest + 1));
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="spread">
@@ -124,7 +129,7 @@ export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: s
               <ComposedChart data={rows} syncId={`candles-${symbol}`} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="var(--line-soft)" vertical={false} />
                 <XAxis dataKey="t" hide />
-                <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={72} tickFormatter={(v) => Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 4 })} />
+                <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={axisWidth} tickFormatter={(v) => priceTick(Number(v))} />
                 {intradayUnit && prevClose !== null && (
                   <ReferenceLine y={prevClose} stroke="var(--muted)" strokeDasharray="4 4" ifOverflow="extendDomain" label={{ value: '전일 종가', position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' }} />
                 )}
@@ -137,7 +142,7 @@ export function CandleChart({ symbol, currency, prevClose, paused }: { symbol: s
             <ResponsiveContainer>
               <ComposedChart data={rows} syncId={`candles-${symbol}`} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <XAxis dataKey="t" tickFormatter={(v) => label(String(v), unit)} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} minTickGap={48} />
-                <YAxis tick={false} tickLine={false} axisLine={false} width={72} />
+                <YAxis tick={false} tickLine={false} axisLine={false} width={axisWidth} />
                 <Tooltip content={() => null} cursor={{ fill: 'var(--line-soft)', opacity: 0.6 }} />
                 <Bar dataKey="v" isAnimationActive={false} radius={[2, 2, 0, 0]}>
                   {rows.map((r) => (

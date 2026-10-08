@@ -11,7 +11,8 @@
     "test": "tsx --test src/domain/__tests__/*.test.ts src/server/__tests__/*.test.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "job:daily": "tsx scripts/daily.ts"
+    "job:daily": "tsx scripts/daily.ts",
+    "docs:screenshots": "tsx --env-file=.env scripts/docs/capture.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
