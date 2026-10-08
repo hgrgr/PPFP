@@ -204,3 +204,29 @@ export function DividendChart({ data }: { data: { month: string; received: numbe
     </div>
   );
 }
+
+/** Cumulative return (%) of the portfolio against benchmarks over the same days. */
+export function ReturnChart({ data, series }: { data: Record<string, number | string | null>[]; series: { key: string; label: string; color: string; width?: number }[] }) {
+  if (data.length < 2) return <p className="empty">기간 데이터가 아직 부족합니다.</p>;
+  return (
+    <div style={{ width: '100%', height: 280 }} className="money">
+      <ResponsiveContainer>
+        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <XAxis dataKey="date" tickFormatter={(v) => shortDate(String(v))} tick={axis} tickLine={false} axisLine={false} minTickGap={48} />
+          <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}%`} tick={axis} tickLine={false} axisLine={false} width={48} domain={['auto', 'auto']} />
+          <ReferenceLine y={0} stroke="var(--line)" />
+          <Tooltip
+            formatter={(v, k) => [v === null || v === undefined ? '—' : `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(2)}%`, series.find((s) => s.key === k)?.label ?? String(k)]}
+            labelFormatter={(l) => String(l)}
+            itemStyle={{ color: 'var(--ink)' }}
+            contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
+          />
+          {series.map((s) => (
+            <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={s.width ?? 2} dot={false} connectNulls isAnimationActive={false} />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}

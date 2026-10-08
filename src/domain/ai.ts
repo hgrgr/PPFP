@@ -62,6 +62,7 @@ export const TOOL_LABEL: Record<string, string> = {
   get_price_history: '주가 흐름 확인',
   get_tax_summary: '세금 예상 확인',
   get_dividends: '배당 확인',
+  get_performance: '성과·기여도 확인',
   get_journal: '매매일지 읽기',
   get_trade_review: '실현 매매 통계 확인',
   propose_journal_review: '일지 복기 제안',

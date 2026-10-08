@@ -16,6 +16,7 @@ import { relatedView, topicsOverview } from '../knowledge';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
 import { dividendReport } from '../dividends';
+import { performanceReport } from '../performance';
 import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
 
@@ -437,6 +438,28 @@ const dividends = tool(
   },
 );
 
+const performance = tool(
+  'get_performance',
+  '기간 성과: 내 시간가중수익률과 코스피 200·S&P 500·나스닥 100(ETF 종가, 원화 환산) 수익률, 종목별·자산 유형별 수익 기여도(기간 손익과 시작 평가액 대비 %).',
+  z.object({
+    portfolio: z.string().optional().describe('포트폴리오 이름, 비우면 순자산 전체'),
+    period: z.enum(['1M', '3M', '6M', 'YTD', '1Y', '3Y', 'ALL']).optional().describe('기본 1Y'),
+  }),
+  async ({ portfolio, period }, { userId }) => {
+    const p = await findPortfolio(userId, portfolio);
+    const r = await performanceReport(userId, p?.id ?? null, { period: period ?? '1Y' });
+    return {
+      scope: r.scope.name,
+      range: r.range,
+      mineTwrPct: r.mine === null ? null : Math.round(r.mine * 10000) / 100,
+      benchmarks: r.benches.map((b) => ({ name: b.label, etf: b.sub, returnPct: b.total === null ? null : Math.round(b.total * 10000) / 100 })),
+      contributions: r.contributions.rows.slice(0, 20).map((c) => ({ asset: c.label, type: c.group, pnlKrw: c.pnlKrw, contributionPct: c.contributionPct === null ? null : Math.round(c.contributionPct * 100) / 100 })),
+      byType: r.contributions.byGroup,
+      startValueKrw: Math.round(r.startTotal),
+    };
+  },
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -550,7 +573,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

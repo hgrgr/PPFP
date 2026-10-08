@@ -451,3 +451,16 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .div-month ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 .div-month li { display: flex; justify-content: space-between; gap: 8px; }
 .div-month li > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* performance */
+.legend-line { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+.contrib { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.contrib li { display: grid; grid-template-columns: minmax(110px, 1.2fr) minmax(120px, 2fr) 72px 72px; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line-soft); font-size: 13.5px; }
+.contrib .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contrib .track { position: relative; height: 12px; }
+.contrib .track::before { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--line); }
+.contrib .bar { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.contrib .bar.pos { background: var(--up); }
+.contrib .bar.neg { background: var(--down); }
+.contrib .num { text-align: right; }
+.contrib.compact li { grid-template-columns: minmax(120px, 1.4fr) minmax(60px, 1fr) 64px; }
