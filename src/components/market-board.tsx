@@ -267,7 +267,7 @@ function Rankings({ paused, onSelect }: { paused: boolean; onSelect: (s: string)
   const [type, setType] = useState<RankType>('AMOUNT');
   const { data, error } = usePoll<RankingView>(`/api/market/rankings?market=${market}&type=${type}`, 15_000, paused);
   return (
-    <div className="card">
+    <div className="card rank-card">
       <div className="spread">
         <h2>실시간 랭킹</h2>
         <div className="seg" role="group" aria-label="시장">
@@ -292,12 +292,11 @@ function Rankings({ paused, onSelect }: { paused: boolean; onSelect: (s: string)
         <p className="empty">연결된 증권사 중 이 랭킹을 제공하는 곳이 없거나, 아직 집계된 값이 없습니다.</p>
       ) : (
         <div className="table-wrap">
-          <table>
+          <table className="rank">
             <thead>
               <tr>
                 <th scope="col">순위 · 종목</th>
-                <th scope="col">현재가</th>
-                <th scope="col">등락률</th>
+                <th scope="col">현재가 · 등락률</th>
                 <th scope="col">{type === 'VOLUME' ? '거래량' : '거래대금'}</th>
               </tr>
             </thead>
@@ -308,14 +307,16 @@ function Rankings({ paused, onSelect }: { paused: boolean; onSelect: (s: string)
                     <span className="inline" style={{ flexWrap: 'nowrap', gap: 10 }}>
                       <span className="muted" style={{ width: 18, textAlign: 'right' }}>{r.rank}</span>
                       <span style={{ minWidth: 0 }}>
-                        <span className="strong" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>{r.name ?? r.symbol}</span>
+                        <span className="strong rank-name">{r.name ?? r.symbol}</span>
                         <span className="sub">{r.symbol}</span>
                       </span>
                     </span>
                   </td>
-                  <td className="money">{money(r.price, r.currency)}</td>
                   <td>
-                    <Change rate={r.changeRate} />
+                    <span className="money" style={{ display: 'block' }}>{money(r.price, r.currency)}</span>
+                    <span className="sub">
+                      <Change rate={r.changeRate} />
+                    </span>
                   </td>
                   <td className="muted">{type === 'VOLUME' ? compact(r.volume) : amountText(r.amount, r.currency)}</td>
                 </tr>
