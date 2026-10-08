@@ -11,7 +11,7 @@ import { Dec } from '@/domain/decimal';
 import { isKrSymbol, usMarketOf } from '@/domain/broker-format';
 import { dbDate, dec, kstDate, out, prisma } from './db';
 import { BrokerApiError, type InstrumentRef } from './brokers';
-import { marketProviders } from './services/brokers';
+import { kindOf, marketProviders } from './services/brokers';
 
 const QUOTE_TTL_MS = 10_000;
 const FX_TTL_MS = 60_000;
@@ -65,9 +65,10 @@ export async function getQuotes(userId: string, assets: Asset[]): Promise<Map<st
 
   if (missing.size) {
     for (const { adapter } of await marketProviders(userId)) {
-      if (!adapter.quotes || !missing.size) continue;
+      const mine = [...missing.values()].filter((a) => kindOf(a.symbol) === adapter.kind);
+      if (!adapter.quotes || !mine.length) continue;
       try {
-        const quotes = await adapter.quotes([...missing.values()].map(refOf));
+        const quotes = await adapter.quotes(mine.map(refOf));
         for (const q of quotes) {
           const s = q.symbol.toUpperCase();
           const asset = missing.get(s);
@@ -108,7 +109,7 @@ export async function fxRate(userId: string, currency: string): Promise<Dec> {
   const c = fxCache.get(key);
   if (c && Date.now() - c.fetchedAt < FX_TTL_MS) return c.rate;
   if (currency === 'USD') {
-    for (const { adapter } of await marketProviders(userId)) {
+    for (const { adapter } of await marketProviders(userId, 'stock')) {
       if (!adapter.usdKrw) continue;
       try {
         const r = await adapter.usdKrw();
@@ -152,8 +153,8 @@ export async function backfillCloses(
   assets: { symbol: string | null; market: string | null; currency: string }[],
   since: string,
 ): Promise<number> {
-  const providers = (await marketProviders(userId)).filter((p) => p.adapter.dailyCloses);
-  if (!providers.length) return 0;
+  const all = (await marketProviders(userId)).filter((p) => p.adapter.dailyCloses);
+  if (!all.length) return 0;
   let n = 0;
   const seen = new Set<string>();
   for (const a of assets) {
@@ -164,7 +165,7 @@ export async function backfillCloses(
     const have = await prisma.priceDaily.findFirst({ where: { symbol: ref.symbol }, orderBy: { date: 'asc' }, select: { date: true } });
     // Already covered back to `since`: only refresh the last two weeks.
     const fetchFrom = have && kstDate(have.date) <= since ? kstDate(new Date(Date.now() - 14 * 86_400_000)) : since;
-    for (const { adapter } of providers) {
+    for (const { adapter } of all.filter((p) => p.adapter.kind === kindOf(ref.symbol))) {
       try {
         const closes = await adapter.dailyCloses!(ref, fetchFrom);
         if (!closes.length) continue;

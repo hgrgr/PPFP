@@ -32,6 +32,8 @@ import {
   type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type OrderbookLevel,
@@ -93,6 +95,7 @@ export function parseLsOverseas(out4: unknown): BrokerHolding[] {
 
 export class LsAdapter implements BrokerAdapter {
   readonly broker = 'LS' as const;
+  readonly kind = 'stock' as const;
   private readonly tokens: TokenManager;
 
   constructor(private readonly cfg: ConnectionConfig, store: TokenStore) {
@@ -359,5 +362,41 @@ export class LsAdapter implements BrokerAdapter {
       if (book.asks.length || book.bids.length) return book;
     }
     return null;
+  }
+
+  /** N-minute (t8412/g3203) and daily/weekly (t8410/g3204) bars; 4-hour bars are rolled up. */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    const kr = isKrSymbol(ref.symbol);
+    const ncnt = { '1m': 1, '5m': 5, '15m': 15, '60m': 60 }[unit as string];
+    if (!ncnt && unit !== '1d' && unit !== '1w') return null;
+    const exch = EXCH[usMarketOf(ref.market) ?? 'NASDAQ'];
+    const qrycnt = Math.min(500, count);
+    const r = ncnt
+      ? kr
+        ? await this.call('/stock/chart', 't8412', {
+            t8412InBlock: { shcode: ref.symbol, ncnt, qrycnt, nday: '0', sdate: '', stime: '', edate: '99999999', etime: '', cts_date: '', cts_time: '', comp_yn: 'N' },
+          })
+        : await this.call('/overseas-stock/chart', 'g3203', {
+            g3203InBlock: { delaygb: 'R', keysymbol: exch + ref.symbol, exchcd: exch, symbol: ref.symbol, ncnt, qrycnt, comp_yn: 'N', sdate: '', edate: '', cts_date: '', cts_time: '' },
+          })
+      : kr
+        ? await this.call('/stock/chart', 't8410', {
+            t8410InBlock: { shcode: ref.symbol, gubun: unit === '1d' ? '2' : '3', qrycnt, sdate: '', edate: '99999999', cts_date: '', comp_yn: 'N', sujung: 'Y' },
+          })
+        : await this.call('/overseas-stock/chart', 'g3204', {
+            g3204InBlock: {
+              delaygb: 'R', keysymbol: exch + ref.symbol, exchcd: exch, symbol: ref.symbol, gubun: unit === '1d' ? '2' : '3', qrycnt,
+              comp_yn: 'N', sdate: '', edate: '', cts_date: '', cts_info: '', sujung: 'Y',
+            },
+          });
+    const block = ncnt ? (kr ? 't8412OutBlock1' : 'g3203OutBlock1') : kr ? 't8410OutBlock1' : 'g3204OutBlock1';
+    const zone = kr ? 'Asia/Seoul' : 'America/New_York';
+    const bars: Candle[] = [];
+    for (const x of rows(r.body[block])) {
+      const time = zonedIso(str(x.date), ncnt ? str(kr ? x.time : x.loctime).slice(0, 6) : '000000', zone);
+      if (!time || num(x.close) === '0') continue;
+      bars.push({ time, open: num(x.open), high: num(x.high), low: num(x.low), close: num(x.close), volume: num(x.jdiff_vol ?? x.exevol ?? x.volume) });
+    }
+    return bars.sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
   }
 }

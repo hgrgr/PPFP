@@ -31,6 +31,8 @@ import {
   type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type OrderbookLevel,
@@ -88,6 +90,7 @@ export function parseKisOverseas(output1: unknown): BrokerHolding[] {
 
 export class KisAdapter implements BrokerAdapter {
   readonly broker = 'KIS' as const;
+  readonly kind = 'stock' as const;
   private readonly base: string;
   private readonly tokens: TokenManager;
 
@@ -350,6 +353,7 @@ export class KisAdapter implements BrokerAdapter {
   }
 
   async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market === 'CRYPTO') return null;
     if (market === 'KR') {
       if (type === 'AMOUNT' || type === 'VOLUME') {
         const r = await this.get('/uapi/domestic-stock/v1/quotations/volume-rank', 'FHPST01710000', {
@@ -513,5 +517,109 @@ export class KisAdapter implements BrokerAdapter {
       if (book.asks.length || book.bids.length) return book;
     }
     return null;
+  }
+
+  /**
+   * Domestic: 1-minute bars across past sessions (inquire-time-dailychartprice, 120 per call) and
+   * daily/weekly bars; other minute intervals are rolled up. US: N-minute, daily and weekly bars directly.
+   */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    const bars = new Map<string, Candle>();
+    const put = (c: Candle | null) => c && bars.set(c.time, c);
+    if (isKrSymbol(ref.symbol)) {
+      if (unit === '1m') {
+        let date = ymd(todayKst());
+        let hour = '153000';
+        for (let i = 0; i < 12 && bars.size < count; i++) {
+          const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice', 'FHKST03010230', {
+            FID_COND_MRKT_DIV_CODE: 'J',
+            FID_INPUT_ISCD: ref.symbol,
+            FID_INPUT_HOUR_1: hour,
+            FID_INPUT_DATE_1: date,
+            FID_PW_DATA_INCU_YN: 'Y',
+            FID_FAKE_TICK_INCU_YN: '',
+          });
+          const page = rows(r.body.output2).filter((x) => str(x.stck_bsop_date) && num(x.stck_prpr) !== '0');
+          if (!page.length) break;
+          let oldest = '';
+          for (const x of page) {
+            const d = str(x.stck_bsop_date);
+            const t = str(x.stck_cntg_hour);
+            const time = zonedIso(d, t, 'Asia/Seoul');
+            if (time) put({ time, open: num(x.stck_oprc), high: num(x.stck_hgpr), low: num(x.stck_lwpr), close: num(x.stck_prpr), volume: num(x.cntg_vol) });
+            if (!oldest || d + t < oldest) oldest = d + t;
+          }
+          // Continue one minute before the oldest bar; before the open, the previous session's close
+          const prev = new Date(Date.parse(zonedIso(oldest.slice(0, 8), oldest.slice(8), 'Asia/Seoul')!) - 60_000);
+          const kst = new Date(prev.getTime() + 9 * 3_600_000).toISOString();
+          date = ymd(kst.slice(0, 10));
+          hour = kst.slice(11, 19).replace(/:/g, '');
+          if (hour < '090000') hour = '153000';
+          if (hour === '153000' && kst.slice(11, 19) < '09:00:00') date = ymd(addDays(kst.slice(0, 10), -1));
+        }
+        return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
+      }
+      if (unit !== '1d' && unit !== '1w') return null;
+      let end = todayKst();
+      const step = unit === '1d' ? 140 : 700;
+      for (let i = 0; i < 6 && bars.size < count; i++) {
+        const start = addDays(end, -step);
+        const r = await this.get('/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice', 'FHKST03010100', {
+          FID_COND_MRKT_DIV_CODE: 'J',
+          FID_INPUT_ISCD: ref.symbol,
+          FID_INPUT_DATE_1: ymd(start),
+          FID_INPUT_DATE_2: ymd(end),
+          FID_PERIOD_DIV_CODE: unit === '1d' ? 'D' : 'W',
+          FID_ORG_ADJ_PRC: '0',
+        });
+        const page = rows(r.body.output2).filter((x) => str(x.stck_bsop_date) && num(x.stck_clpr) !== '0');
+        for (const x of page) {
+          const time = zonedIso(str(x.stck_bsop_date), '000000', 'Asia/Seoul');
+          if (time) put({ time, open: num(x.stck_oprc), high: num(x.stck_hgpr), low: num(x.stck_lwpr), close: num(x.stck_clpr), volume: num(x.acml_vol) });
+        }
+        if (!page.length) break;
+        end = addDays(start, -1);
+      }
+      return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
+    }
+    const m = usMarketOf(ref.market) ?? 'NASDAQ';
+    if (unit === '1d' || unit === '1w') {
+      let bymd = '';
+      for (let i = 0; i < 4 && bars.size < count; i++) {
+        const r = await this.get('/uapi/overseas-price/v1/quotations/dailyprice', 'HHDFS76240000', { AUTH: '', EXCD: EXCD[m], SYMB: ref.symbol, GUBN: unit === '1d' ? '0' : '1', BYMD: bymd, MODP: '1' });
+        const page = rows(r.body.output2).filter((x) => fromYmd(x.xymd) && num(x.clos) !== '0');
+        for (const x of page) {
+          const time = zonedIso(str(x.xymd), '000000', 'America/New_York');
+          if (time) put({ time, open: num(x.open), high: num(x.high), low: num(x.low), close: num(x.clos), volume: num(x.tvol) });
+        }
+        const oldest = page.map((x) => fromYmd(x.xymd)!).sort()[0];
+        if (!oldest) break;
+        bymd = ymd(addDays(oldest, -1));
+      }
+      return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
+    }
+    const n = { '1m': '1', '5m': '5', '15m': '15', '60m': '60' }[unit as string];
+    if (!n) return null;
+    let keyb = '';
+    for (let i = 0; i < 4 && bars.size < count; i++) {
+      const r = await this.get('/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice', 'HHDFS76950200', {
+        AUTH: '', EXCD: EXCD[m], SYMB: ref.symbol, NMIN: n, PINC: '1', NEXT: keyb ? '1' : '', NREC: '120', FILL: '', KEYB: keyb,
+      });
+      const page = rows(r.body.output2).filter((x) => str(x.kymd) && num(x.last) !== '0');
+      if (!page.length) break;
+      let oldest = '';
+      for (const x of page) {
+        const time = zonedIso(str(x.kymd), str(x.khms), 'Asia/Seoul');
+        if (time) put({ time, open: num(x.open), high: num(x.high), low: num(x.low), close: num(x.last), volume: num(x.evol) });
+        const stamp = str(x.xymd) + str(x.xhms);
+        if (!oldest || stamp < oldest) oldest = stamp;
+      }
+      if (str(obj(r.body.output1).next) !== '1') break;
+      const prev = zonedIso(oldest.slice(0, 8), oldest.slice(8), 'America/New_York');
+      if (!prev) break;
+      const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      keyb = fmt.format(new Date(Date.parse(prev) - 60_000)).replace(/\D/g, '');
+    }
+    return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
   }
 }

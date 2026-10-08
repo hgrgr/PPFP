@@ -3,7 +3,8 @@
  * whose access tokens persist (encrypted) across restarts.
  */
 import type { BrokerConnection } from '@prisma/client';
-import { BROKERS, BROKER_IDS, type BrokerId } from '@/lib/brokers';
+import { isCryptoSymbol } from '@/domain/broker-format';
+import { BROKERS, BROKER_IDS, type BrokerId, type BrokerKind } from '@/lib/brokers';
 import { prisma } from '../db';
 import { decryptSecret, encryptSecret, mask } from '../crypto';
 import { BrokerApiError, createAdapter, MARKET_DATA_ORDER, memoryTokenStore, type BrokerAdapter, type TokenStore } from '../brokers';
@@ -131,10 +132,14 @@ export interface Provider {
   adapter: BrokerAdapter;
 }
 
-/** Linked brokers in the order to ask for market data. */
-export async function marketProviders(userId: string): Promise<Provider[]> {
+/** Stock brokers answer for listed stocks, exchanges for "KRW-*" coins. */
+export const kindOf = (symbol: string | null | undefined): BrokerKind => (isCryptoSymbol(symbol) ? 'crypto' : 'stock');
+
+/** Linked brokers (optionally only stock brokers or only exchanges) in the order to ask for market data. */
+export async function marketProviders(userId: string, kind?: BrokerKind): Promise<Provider[]> {
   const conns = await listConnections(userId);
   return conns
+    .filter((c) => !kind || BROKERS[c.broker].kind === kind)
     .sort((a, b) => MARKET_DATA_ORDER.indexOf(a.broker) - MARKET_DATA_ORDER.indexOf(b.broker))
     .map((conn) => ({ conn, adapter: adapterFor(conn) }));
 }

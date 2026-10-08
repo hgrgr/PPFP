@@ -31,6 +31,8 @@ import {
   type IndexQuote,
   type Instrument,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type OrderbookLevel,
@@ -112,6 +114,7 @@ export function parseKiwoomUs(list: unknown): BrokerHolding[] {
 
 export class KiwoomAdapter implements BrokerAdapter {
   readonly broker = 'KIWOOM' as const;
+  readonly kind = 'stock' as const;
   private readonly base: string;
   private readonly tokens: TokenManager;
 
@@ -287,6 +290,7 @@ export class KiwoomAdapter implements BrokerAdapter {
   }
 
   async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market === 'CRYPTO') return null;
     if (market === 'KR') {
       const spec = KR_RANKING[type];
       const r = await this.post('/api/dostk/rkinfo', spec.apiId, spec.body);
@@ -379,5 +383,44 @@ export class KiwoomAdapter implements BrokerAdapter {
       }
     }
     return null;
+  }
+
+  /** Native 1/5/15/60-minute, daily and weekly bars for KRX and US stocks; 4-hour bars are rolled up. */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    const kr = isKrSymbol(ref.symbol);
+    const tic = { '1m': '1', '5m': '5', '15m': '15', '60m': '60' }[unit as string];
+    if (!tic && unit !== '1d' && unit !== '1w') return null;
+    const stex = STEX[usMarketOf(ref.market) ?? 'NASDAQ'];
+    const zone = kr ? 'Asia/Seoul' : 'America/New_York';
+    const call = (next?: { contYn: string; nextKey: string }) =>
+      tic
+        ? kr
+          ? this.post('/api/dostk/chart', 'ka10080', { stk_cd: ref.symbol, tic_scope: tic, upd_stkpc_tp: '1' }, next)
+          : this.post('/api/us/chart', 'usa06011', { stex_tp: stex, stk_cd: ref.symbol, tic_scope: tic, upd_stkpc_tp: '1', exrt_appl_tp: '0' }, next)
+        : kr
+          ? this.post('/api/dostk/chart', unit === '1d' ? 'ka10081' : 'ka10082', { stk_cd: ref.symbol, base_dt: ymd(todayKst()), upd_stkpc_tp: '1' }, next)
+          : this.post('/api/us/chart', unit === '1d' ? 'usa06012' : 'usa06013', { stex_tp: stex, stk_cd: ref.symbol, upd_stkpc_tp: '1', exrt_appl_tp: '0' }, next);
+    const list = (b: Record<string, unknown>) => rows(b.stk_min_pole_chart_qry ?? b.stk_dt_pole_chart_qry ?? b.stk_stk_pole_chart_qry ?? b.result_list);
+    const bars = new Map<string, Candle>();
+    let next: { contYn: string; nextKey: string } | undefined;
+    for (let page = 0; page < 5 && bars.size < count; page++) {
+      const r = await call(next);
+      for (const x of list(r.body)) {
+        const stamp = str(x.cntr_tm);
+        const time = tic ? (stamp.length >= 12 ? zonedIso(stamp.slice(0, 8), stamp.slice(8, 14), zone) : null) : zonedIso(str(x.dt), '000000', zone);
+        if (!time || absNum(x.cur_prc) === '0') continue;
+        bars.set(time, {
+          time,
+          open: absNum(x.open_pric),
+          high: absNum(x.high_pric),
+          low: absNum(x.low_pric),
+          close: absNum(x.cur_prc),
+          volume: absNum(x.trde_qty ?? x.acc_trde_qty),
+        });
+      }
+      if (r.contYn !== 'Y' || !r.nextKey) break;
+      next = { contYn: 'Y', nextKey: r.nextKey };
+    }
+    return [...bars.values()].sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
   }
 }

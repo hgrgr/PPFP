@@ -5,7 +5,7 @@ import type { RankingMarket, RankingType } from '@/server/brokers';
 
 export const dynamic = 'force-dynamic';
 
-const MARKETS: RankingMarket[] = ['KR', 'US'];
+const MARKETS: RankingMarket[] = ['KR', 'US', 'CRYPTO'];
 const TYPES: RankingType[] = ['AMOUNT', 'VOLUME', 'GAINERS', 'LOSERS'];
 
 export async function GET(req: Request) {

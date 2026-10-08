@@ -26,10 +26,11 @@ export default async function SettingsPage() {
       </header>
 
       <section className="card">
-        <h2>연결된 증권사</h2>
+        <h2>연결된 증권사 · 코인 거래소</h2>
         <p className="sub">
-          증권사 Open API로 계좌 보유종목, 상장 종목 시세, 환율, 일별 종가를 조회합니다. 주문은 내지 않습니다. Secret과 접근토큰은 서버에서 암호화해 저장하며 화면이나 내보내기에
-          다시 표시되지 않습니다. 시세는 연결된 증권사 중 토스 → 한국투자 → 키움 → 메리츠 → LS → DB 순으로 응답하는 곳에서 받습니다.
+          증권사 Open API로 계좌 보유종목, 상장 종목 시세, 환율, 일별 종가를 조회하고, 코인 거래소 API로 코인 잔고·시세와 체결·입출금 내역을 조회합니다. 주문은 내지 않습니다.
+          Secret과 접근토큰은 서버에서 암호화해 저장하며 화면이나 내보내기에 다시 표시되지 않습니다. 주식 시세는 토스 → 한국투자 → 키움 → 메리츠 → LS → DB, 코인 시세는 업비트 →
+          빗썸 → 코인원 → 코빗 순으로 응답하는 곳에서 받습니다.
         </p>
         {connections.length ? (
           <div className="table-wrap">
@@ -51,7 +52,10 @@ export default async function SettingsPage() {
                     <td className="strong">
                       {c.label} {c.paper && <span className="badge">모의</span>}
                     </td>
-                    <td>{BROKERS[c.broker].label}</td>
+                    <td>
+                      {BROKERS[c.broker].label}
+                      {BROKERS[c.broker].kind === 'crypto' && <span className="sub">코인 거래소</span>}
+                    </td>
                     <td className="muted">
                       {mask(c.appKey)}
                       {c.accountNo ? ` · ${c.broker === 'TOSS' ? '#' : ''}${c.accountNo}` : ''}
@@ -91,7 +95,7 @@ export default async function SettingsPage() {
 
       <section className="row">
         <div className="card wide">
-          <h2>증권사 추가</h2>
+          <h2>증권사 · 거래소 추가</h2>
           <BrokerConnectForm action={saveBrokerAction} />
           <p className="sub">키를 바꾸려면 새로 추가한 뒤 예전 연결을 해제하세요. 같은 계좌로 가져온 Lot 기록은 이어집니다.</p>
         </div>

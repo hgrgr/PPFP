@@ -150,3 +150,17 @@ export function zonedDate(iso: string, zone: MarketZone): string {
   const ms = Date.parse(iso);
   return new Date(ms + zoneOffsetMs(ms, zone)).toISOString().slice(0, 10);
 }
+
+/** Crypto assets are stored as their KRW market code, e.g. "KRW-BTC" (a bare "BTC" would clash with a US ticker). */
+export function isCryptoSymbol(symbol: string | null | undefined): boolean {
+  return !!symbol && /^KRW-[A-Z0-9]{1,15}$/.test(symbol.toUpperCase());
+}
+
+export function cryptoSymbol(coin: string): string {
+  return `KRW-${coin.trim().toUpperCase()}`;
+}
+
+/** "KRW-BTC" -> "BTC" */
+export function coinOf(symbol: string): string {
+  return symbol.toUpperCase().replace(/^KRW-/, '');
+}

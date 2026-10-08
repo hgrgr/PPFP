@@ -1,6 +1,8 @@
-import { importHoldingsAction, readPasteAction } from '@/app/actions';
+import { importHoldingsAction, readPasteAction, syncExchangeAction } from '@/app/actions';
+import { ActionForm, Submit } from '@/components/forms';
 import { ImportTable, PasteImport } from '@/components/import-table';
-import { BROKERS } from '@/lib/brokers';
+import { kstDateTime } from '@/lib/format';
+import { BROKERS, isCryptoBroker } from '@/lib/brokers';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { loadBrokerSources } from '@/server/services/imports';
@@ -17,7 +19,11 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
     select: { id: true, name: true },
   });
   const defaultPortfolioId = portfolios.some((x) => x.id === p) ? p! : (portfolios[0]?.id ?? '');
-  const sources = portfolios.length ? await loadBrokerSources(user.id) : [];
+  const [sources, exchanges] = portfolios.length
+    ? await Promise.all([loadBrokerSources(user.id), prisma.brokerConnection.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } }).then((l) => l.filter((c) => isCryptoBroker(c.broker)))])
+    : [[], []];
+  const yearAgo = new Date(Date.now() + 9 * 3_600_000 - 365 * 86_400_000).toISOString().slice(0, 10);
+  const nameOf = new Map(portfolios.map((x) => [x.id, x.name]));
 
   return (
     <>
@@ -47,7 +53,8 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
         <>
           {sources.length === 0 && (
             <p className="callout">
-              연결된 증권사가 없습니다. <a href="/settings">설정</a>에서 한국투자·키움·LS·DB·메리츠·토스증권 Open API를 연결하거나, 아래에서 잔고를 붙여넣으세요.
+              연결된 증권사가 없습니다. <a href="/settings">설정</a>에서 한국투자·키움·LS·DB·메리츠·토스증권 Open API를 연결하거나, 아래에서 잔고를 붙여넣으세요. 코인 거래소는 연결하면
+              아래에 거래내역 동기화가 나타납니다.
             </p>
           )}
           {sources.map((s) => (
@@ -65,6 +72,52 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
               )}
             </section>
           ))}
+
+          {exchanges.length > 0 && (
+            <section className="card" id="crypto">
+              <h2>코인 거래소 거래내역</h2>
+              <p className="sub">
+                거래소의 체결·원화 입출금·코인 입출고를 같은 날짜·가격·수수료로 포트폴리오에 기록해 Lot·실현손익·수익률을 계산합니다. 시작일 이전부터 갖고 있던 코인과 원화는 시작
+                시점에 거래소 평균단가로 넣고, 외부 지갑과 주고받은 코인은 그날 종가로 평가합니다. 한 번 가져온 뒤에는 새로 생긴 내역만 이어서 가져옵니다.
+              </p>
+              {exchanges.map((c) => (
+                <div key={c.id} className="callout stack" style={{ gap: 10 }}>
+                  <div className="spread">
+                    <span className="strong">{c.label}</span>
+                    <span className="sub">
+                      {c.historySyncedTo
+                        ? `${nameOf.get(c.historyPortfolioId ?? '') ?? '포트폴리오'} · ${c.historySince ? kstDateTime(c.historySince).slice(0, 10) : ''}부터 · 마지막 동기화 ${kstDateTime(c.historySyncedTo)}`
+                        : '아직 가져오지 않음'}
+                    </span>
+                  </div>
+                  {c.lastError && <p className="msg err">{c.lastError}</p>}
+                  <ActionForm action={syncExchangeAction} className="inline">
+                    <input type="hidden" name="id" value={c.id} />
+                    {!c.historySyncedTo && (
+                      <>
+                        <label className="field" style={{ minWidth: 200 }}>
+                          <span className="sub">넣을 포트폴리오</span>
+                          <select name="portfolioId" defaultValue={defaultPortfolioId} required>
+                            {portfolios.map((x) => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span className="sub">시작일</span>
+                          <input type="date" name="since" defaultValue={yearAgo} required />
+                        </label>
+                      </>
+                    )}
+                    <Submit pendingText="내역을 가져오는 중… (주문이 많으면 몇 분 걸릴 수 있음)">{c.historySyncedTo ? '새 거래내역 동기화' : '거래내역 가져오기'}</Submit>
+                  </ActionForm>
+                  {c.broker === 'KORBIT' && <p className="sub">코빗(디지털엑스) API는 체결 내역을 최근 36시간만 주므로, 그 이전 보유분은 시작 시점에 평균단가로 넣습니다.</p>}
+                </div>
+              ))}
+            </section>
+          )}
 
           <section className="card" id="paste">
             <h2>잔고 붙여넣기 · 파일</h2>

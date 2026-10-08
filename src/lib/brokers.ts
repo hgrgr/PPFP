@@ -1,9 +1,11 @@
-/** Brokerages the app can link, as shown in the settings screen. Safe to import from client components. */
+/** Brokerages and crypto exchanges the app can link, as shown in the settings screen. Safe to import from client components. */
 
-export type BrokerId = 'TOSS' | 'KIS' | 'KIWOOM' | 'LS' | 'DB' | 'MERITZ';
+export type BrokerId = 'TOSS' | 'KIS' | 'KIWOOM' | 'LS' | 'DB' | 'MERITZ' | 'UPBIT' | 'BITHUMB' | 'COINONE' | 'KORBIT';
+export type BrokerKind = 'stock' | 'crypto';
 
 export interface BrokerMeta {
   id: BrokerId;
+  kind: BrokerKind;
   label: string;
   portal: string;
   keyLabel: string;
@@ -20,6 +22,7 @@ export interface BrokerMeta {
 export const BROKERS: Record<BrokerId, BrokerMeta> = {
   TOSS: {
     id: 'TOSS',
+    kind: 'stock',
     label: '토스증권',
     portal: 'https://developers.tossinvest.com',
     keyLabel: 'Client ID',
@@ -31,6 +34,7 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
   },
   KIS: {
     id: 'KIS',
+    kind: 'stock',
     label: '한국투자증권',
     portal: 'https://apiportal.koreainvestment.com',
     keyLabel: 'App Key',
@@ -42,6 +46,7 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
   },
   KIWOOM: {
     id: 'KIWOOM',
+    kind: 'stock',
     label: '키움증권',
     portal: 'https://openapi.kiwoom.com',
     keyLabel: 'App Key',
@@ -53,6 +58,7 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
   },
   LS: {
     id: 'LS',
+    kind: 'stock',
     label: 'LS증권',
     portal: 'https://openapi.ls-sec.co.kr',
     keyLabel: 'App Key',
@@ -64,6 +70,7 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
   },
   DB: {
     id: 'DB',
+    kind: 'stock',
     label: 'DB증권',
     portal: 'https://openapi.dbsec.co.kr',
     keyLabel: 'App Key',
@@ -75,6 +82,7 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
   },
   MERITZ: {
     id: 'MERITZ',
+    kind: 'stock',
     label: '메리츠증권',
     portal: 'https://openapi.imeritz.com',
     keyLabel: 'App Key',
@@ -84,9 +92,58 @@ export const BROKERS: Record<BrokerId, BrokerMeta> = {
     overseas: true,
     note: '메리츠증권 Open API(베타)에서 발급합니다. 앱키에 묶인 계좌를 조회합니다.',
   },
+  UPBIT: {
+    id: 'UPBIT',
+    kind: 'crypto',
+    label: '업비트',
+    portal: 'https://upbit.com/mypage/open_api_management',
+    keyLabel: 'Access Key',
+    secretLabel: 'Secret Key',
+    needsAccount: false,
+    paper: false,
+    overseas: false,
+    note: '업비트 Open API 관리에서 [자산조회]·[주문조회]·[입금조회]·[출금조회] 권한으로 발급하고, 이 서버의 공인 IP를 허용 IP로 등록하세요. 주문 권한은 필요 없습니다.',
+  },
+  BITHUMB: {
+    id: 'BITHUMB',
+    kind: 'crypto',
+    label: '빗썸',
+    portal: 'https://www.bithumb.com/react/api-support/management-api',
+    keyLabel: 'API Key',
+    secretLabel: 'Secret Key',
+    needsAccount: false,
+    paper: false,
+    overseas: false,
+    note: '빗썸 API 관리에서 자산·주문·입출금 조회 권한으로 발급하고, 허용 IP에 이 서버의 공인 IP를 넣으세요.',
+  },
+  COINONE: {
+    id: 'COINONE',
+    kind: 'crypto',
+    label: '코인원',
+    portal: 'https://coinone.co.kr/developer',
+    keyLabel: 'Access Token',
+    secretLabel: 'Secret Key',
+    needsAccount: false,
+    paper: false,
+    overseas: false,
+    note: '코인원 Open API에서 잔고·주문·입출금 조회 권한으로 발급합니다.',
+  },
+  KORBIT: {
+    id: 'KORBIT',
+    kind: 'crypto',
+    label: '코빗 (디지털엑스)',
+    portal: 'https://developers.digitalx.miraeasset.com',
+    keyLabel: 'API Key',
+    secretLabel: 'Secret Key (HMAC-SHA256)',
+    needsAccount: false,
+    paper: false,
+    overseas: false,
+    note: '코빗은 디지털엑스로 이름이 바뀌었습니다. HMAC-SHA256 키를 조회 권한(잔고·주문·입출금)으로 발급하세요. 이 거래소 API는 주문·체결 내역을 최근 36시간만 주므로, 그 이전 보유분은 평균단가로 보충합니다.',
+  },
 };
 
 export const BROKER_IDS = Object.keys(BROKERS) as BrokerId[];
+export const isCryptoBroker = (id: BrokerId) => BROKERS[id].kind === 'crypto';
 
 /** Brokerages people often ask about that cannot be linked from a web server, and why. */
 export const UNSUPPORTED_BROKERS: { label: string; reason: string }[] = [

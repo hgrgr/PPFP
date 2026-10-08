@@ -12,6 +12,8 @@ import {
   type IndexCode,
   type IndexQuote,
   type InstrumentRef,
+  type Candle,
+  type CandleUnit,
   type MinuteBar,
   type Orderbook,
   type PriceQuote,
@@ -51,6 +53,7 @@ function wrap(e: unknown): never {
 
 export class TossAdapter implements BrokerAdapter {
   readonly broker = 'TOSS' as const;
+  readonly kind = 'stock' as const;
   private readonly client: TossClient;
 
   constructor(private readonly cfg: ConnectionConfig, store: TokenStore) {
@@ -149,6 +152,7 @@ export class TossAdapter implements BrokerAdapter {
   }
 
   async rankings(market: RankingMarket, type: RankingType): Promise<RankingRow[] | null> {
+    if (market === 'CRYPTO') return null;
     try {
       const { type: t, duration } = TOSS_RANKING[type];
       const { rankings } = await this.client.rankings(t, market, duration, 30);
@@ -202,6 +206,28 @@ export class TossAdapter implements BrokerAdapter {
         currency: o.currency,
         asOf: o.timestamp,
       };
+    } catch (e) {
+      wrap(e);
+    }
+  }
+
+  /** Toss publishes 1-minute and daily candles only; other intervals are rolled up from these. */
+  async candles(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null> {
+    if (unit !== '1m' && unit !== '1d') return null;
+    try {
+      const out: Candle[] = [];
+      let before: string | undefined;
+      for (let page = 0; page < 6 && out.length < count; page++) {
+        const r = await this.client.candles(ref.symbol, unit, 200, before);
+        for (const c of r.candles) {
+          // 1m timestamps mark the end of the bar; daily ones the trading date at local midnight
+          const start = unit === '1m' ? new Date(Date.parse(c.timestamp) - 60_000).toISOString() : new Date(c.timestamp).toISOString();
+          out.push({ time: start, open: num(c.openPrice), high: num(c.highPrice), low: num(c.lowPrice), close: num(c.closePrice), volume: num(c.volume) });
+        }
+        if (!r.nextBefore || !r.candles.length) break;
+        before = r.nextBefore;
+      }
+      return out.sort((a, b) => a.time.localeCompare(b.time)).slice(-count);
     } catch (e) {
       wrap(e);
     }

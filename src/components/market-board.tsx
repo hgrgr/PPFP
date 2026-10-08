@@ -1,17 +1,20 @@
 'use client';
 
 import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ActionState } from '@/app/actions';
 import { krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
 import type { Board, BoardRow, RankingView, StockDetail } from '@/server/services/market-board';
+import { CandleChart } from './candle-chart';
 
 type Action = (s: ActionState, f: FormData) => Promise<ActionState>;
-type Market = 'KR' | 'US';
+type Market = 'KR' | 'US' | 'CRYPTO';
 type RankType = 'AMOUNT' | 'VOLUME' | 'GAINERS' | 'LOSERS';
 
 const RANK_LABEL: Record<RankType, string> = { AMOUNT: '거래대금', VOLUME: '거래량', GAINERS: '급상승', LOSERS: '급하락' };
-const BROKER_LABEL: Record<string, string> = { TOSS: '토스증권', KIS: '한국투자증권', KIWOOM: '키움증권', LS: 'LS증권', DB: 'DB증권', MERITZ: '메리츠증권' };
+const BROKER_LABEL: Record<string, string> = {
+  TOSS: '토스증권', KIS: '한국투자증권', KIWOOM: '키움증권', LS: 'LS증권', DB: 'DB증권', MERITZ: '메리츠증권',
+  UPBIT: '업비트', BITHUMB: '빗썸', COINONE: '코인원', KORBIT: '코빗',
+};
 
 /** Fetch `url` every `ms` while the tab is visible; refetch at once when it comes back. */
 function usePoll<T>(url: string | null, ms: number, paused: boolean) {
@@ -153,7 +156,7 @@ function WatchForm({ action, onAdded }: { action: Action; onAdded: () => void })
   }, [state, onAdded]);
   return (
     <form ref={ref} action={formAction} className="inline" aria-label="관심종목 추가">
-      <input name="symbol" required placeholder="종목코드 또는 티커 (005930, AAPL)" pattern="[A-Za-z0-9.\-]{1,20}" autoCapitalize="characters" style={{ width: 240 }} aria-label="종목코드" />
+      <input name="symbol" required placeholder="종목코드·티커·코인 (005930, AAPL, KRW-BTC)" pattern="[A-Za-z0-9.\-]{1,20}" autoCapitalize="characters" style={{ width: 280 }} aria-label="종목코드" />
       <button className="btn" type="submit" disabled={pending} aria-busy={pending}>
         {pending ? '찾는 중…' : '관심종목 추가'}
       </button>
@@ -268,9 +271,9 @@ function Rankings({ paused, onSelect }: { paused: boolean; onSelect: (s: string)
       <div className="spread">
         <h2>실시간 랭킹</h2>
         <div className="seg" role="group" aria-label="시장">
-          {(['KR', 'US'] as Market[]).map((m) => (
+          {(['KR', 'US', 'CRYPTO'] as Market[]).map((m) => (
             <button key={m} type="button" aria-pressed={market === m} onClick={() => setMarket(m)}>
-              {m === 'KR' ? '국내' : '미국'}
+              {m === 'KR' ? '국내' : m === 'US' ? '미국' : '코인'}
             </button>
           ))}
         </div>
@@ -326,8 +329,6 @@ function Rankings({ paused, onSelect }: { paused: boolean; onSelect: (s: string)
   );
 }
 
-const kstTime = (iso: string) => new Date(Date.parse(iso) + 9 * 3_600_000).toISOString().slice(11, 16);
-
 function Detail({ symbol, paused, onClose, watchAction, unwatchAction, onChanged }: { symbol: string; paused: boolean; onClose: () => void; watchAction: Action; unwatchAction: Action; onChanged: () => void }) {
   const { data: d, error, reload } = usePoll<StockDetail>(`/api/market/stock?symbol=${encodeURIComponent(symbol)}`, 3_000, paused);
   const [pending, start] = useTransition();
@@ -343,7 +344,6 @@ function Detail({ symbol, paused, onClose, watchAction, unwatchAction, onChanged
     });
   const q = d?.quote;
   const prev = q?.prevClose ? Number(q.prevClose) : null;
-  const lineColor = q?.changeRate && Number(q.changeRate) < 0 ? 'var(--down)' : q?.changeRate && Number(q.changeRate) > 0 ? 'var(--up)' : 'var(--ink)';
   const maxVol = Math.max(1, ...(d?.orderbook ? [...d.orderbook.asks, ...d.orderbook.bids].map((l) => Number(l.volume)) : [1]));
   return (
     <div className="card" aria-live="polite">
@@ -377,27 +377,7 @@ function Detail({ symbol, paused, onClose, watchAction, unwatchAction, onChanged
       {msg && <p className="msg err">{msg}</p>}
       <div className="row" style={{ alignItems: 'stretch' }}>
         <div className="wide" style={{ minHeight: 240 }}>
-          {d && d.bars.length > 1 ? (
-            <div style={{ width: '100%', height: 240 }} className="money">
-              <ResponsiveContainer>
-                <LineChart data={d.bars} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="var(--line-soft)" vertical={false} />
-                  <XAxis dataKey="t" tickFormatter={(v) => kstTime(String(v))} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} minTickGap={56} />
-                  <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11.5, fill: 'var(--muted)' }} tickLine={false} axisLine={false} width={64} tickFormatter={(v) => Number(v).toLocaleString('ko-KR')} />
-                  {prev !== null && <ReferenceLine y={prev} stroke="var(--muted)" strokeDasharray="4 4" ifOverflow="extendDomain" label={{ value: '전일 종가', position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' }} />}
-                  <Tooltip
-                    formatter={(v) => [money(Number(v), d.currency), '가격']}
-                    labelFormatter={(l) => `${kstTime(String(l))} (KST)`}
-                    contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
-                  />
-                  <Line type="monotone" dataKey="p" stroke={lineColor} strokeWidth={2} dot={false} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="empty">{d ? '오늘 분봉이 아직 없습니다. 장 시작 전이거나 이 종목의 분봉을 주는 증권사가 연결되어 있지 않습니다.' : '차트를 불러오는 중…'}</p>
-          )}
-          <p className="sub">1분봉 · 시간은 한국 시간</p>
+          <CandleChart symbol={symbol} currency={d?.currency ?? q?.currency ?? 'KRW'} prevClose={prev} paused={paused} />
         </div>
         <div style={{ flex: '1 1 240px' }}>
           <h3 style={{ margin: '0 0 6px', fontSize: 14 }}>호가</h3>

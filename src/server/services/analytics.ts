@@ -15,6 +15,7 @@ import { userGraph } from './portfolios';
 export const TYPE_COLOR: Record<AssetType | 'CASH_BAL', string> = {
   KR_STOCK: '#2F4FC9',
   US_STOCK: '#8FA8F5',
+  CRYPTO: '#E8A200',
   BOND: '#14A38B',
   CASH: '#AEB4BE',
   CASH_BAL: '#C9CED6',
