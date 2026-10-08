@@ -2,7 +2,8 @@
  * Fills an empty database with the fictional demo account used for the user
  * guide's screenshots: a portfolio tree, a year of stock trades, an imported
  * brokerage account, a replayed 업비트 history, a manual deposit, a few
- * trade journal entries, asset trait groups, price alerts and target weights.
+ * trade journal entries, asset trait groups, price alerts and target weights,
+ * and investment notes (memos, a book summary, investor profiles).
  *
  * Run by scripts/docs/capture.ts against its own throwaway database; never
  * against real data. Broker calls go to the fake servers in fake-market.cjs.
@@ -19,6 +20,7 @@ import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings } from '@/server/services/imports';
 import { runDailyForUser } from '@/server/services/jobs';
 import { saveJournal, saveTemplate } from '@/server/services/journal';
+import { addLink, addPresetSage, createBook, createNote, saveBook } from '@/server/services/knowledge';
 import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
@@ -133,6 +135,7 @@ async function main() {
   await seedJournals(uid);
   await seedTraits(uid);
   await seedAlerts(uid, { root: root.id, us: us.id });
+  await seedKnowledge(uid);
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D) } });
@@ -324,6 +327,41 @@ async function seedAlerts(uid: string, p: { root: string; us: string }) {
   await savePortfolioTargets(uid, p.us, { targets: { [await id('AAPL')]: '35', [await id('VOO')]: '35', [await id('NVDA')]: '20', CASH: '10' }, tolerance: '3', alert: true });
   await checkPriceAlerts(uid);
   await checkDrift(uid);
+}
+
+// ---------------------------------------------------------------- investment notes
+async function seedKnowledge(uid: string) {
+  for (const k of ['buffett', 'graham', 'lynch', 'bogle', 'dalio']) await addPresetSage(uid, k);
+  const graham = await prisma.sage.findFirstOrThrow({ where: { userId: uid, preset: 'graham' } });
+  const book = await createBook(uid, '현명한 투자자');
+  await saveBook(uid, book, {
+    title: '현명한 투자자',
+    author: '벤저민 그레이엄',
+    publisher: '국일증권경제연구소',
+    publishedYear: '1949',
+    status: 'DONE',
+    rating: '5',
+    startedAt: dash(ago(60)),
+    finishedAt: dash(ago(30)),
+    oneLine: '시장의 기분에 휘둘리지 말고, 안전마진을 두고 산다.',
+    content: [
+      { type: 'quote', content: '주식은 기업의 일부다. 미스터 마켓의 제안은 받아들일 수도, 무시할 수도 있다.' },
+      h2('핵심 아이디어'),
+      li('투자와 투기를 구분한다: 철저한 분석, 원금의 안전, 적절한 수익'),
+      li('미스터 마켓: 시장 가격은 매일 바뀌는 제안일 뿐, 따를 의무가 없다'),
+      li('안전마진: 내재가치보다 충분히 싸게 사서 판단 실수에 대비한다'),
+      h2('내 투자에 적용할 점'),
+      todo('매수 전에 일지에 내재가치 추정과 안전마진을 적는다', true),
+      todo('급락 때 공포가 아니라 가격 대비 가치로 판단한다'),
+    ],
+  });
+  const ref = { type: 'book' as const, id: book };
+  await addLink(uid, ref, { type: 'sage', id: graham.id });
+  for (const name of ['가치투자', '안전마진']) await addLink(uid, ref, { type: 'topic', id: (await prisma.topic.findFirstOrThrow({ where: { userId: uid, name } })).id });
+  const samsung = await prisma.holding.findFirstOrThrow({ where: { asset: { userId: uid, symbol: '005930' } } });
+  await createNote(uid, '반도체 업황 바닥 신호. PBR 1배 아래면 분할 매수 검토 #가치투자 #안전마진', `/holdings/${samsung.id}`);
+  await createNote(uid, '비중이 커진 종목은 감정이 아니라 목표 비중표로 정리하기 #리스크_관리 #자산배분', '/dashboard');
+  await createNote(uid, '린치: 내가 쓰는 제품의 회사부터 보기. 매일 쓰는 앱·결제 서비스 목록 만들어 보기 #성장투자', '/sages');
 }
 
 main()
