@@ -3,10 +3,14 @@ import { NavLink } from '@/components/client-bits';
 import { prisma } from '@/server/db';
 import { requireUser } from '@/server/auth';
 import { kstDateTime } from '@/lib/format';
+import { unreadCount } from '@/server/services/notify';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const links = await prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { label: true, lastSyncAt: true, lastError: true } });
+  const [links, unread] = await Promise.all([
+    prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { label: true, lastSyncAt: true, lastError: true } }),
+    unreadCount(user.id),
+  ]);
   const failing = links.filter((l) => l.lastError);
   const lastSync = links.map((l) => l.lastSyncAt).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
   return (
@@ -26,6 +30,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavLink href="/transactions">거래 내역</NavLink>
         <NavLink href="/journal">매매일지</NavLink>
         <NavLink href="/traits">자산 성질</NavLink>
+        <NavLink href="/alerts">
+          알림
+          {unread > 0 && (
+            <span className="nav-badge" aria-label={`새 알림 ${unread}개`}>
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+        </NavLink>
         <NavLink href="/export">Export</NavLink>
         <NavLink href="/settings">연동 · 설정</NavLink>
         <div className="side-foot">

@@ -2,7 +2,7 @@
  * Fills an empty database with the fictional demo account used for the user
  * guide's screenshots: a portfolio tree, a year of stock trades, an imported
  * brokerage account, a replayed 업비트 history, a manual deposit, a few
- * trade journal entries and asset trait groups.
+ * trade journal entries, asset trait groups, price alerts and target weights.
  *
  * Run by scripts/docs/capture.ts against its own throwaway database; never
  * against real data. Broker calls go to the fake servers in fake-market.cjs.
@@ -19,6 +19,7 @@ import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings } from '@/server/services/imports';
 import { runDailyForUser } from '@/server/services/jobs';
 import { saveJournal, saveTemplate } from '@/server/services/journal';
+import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
 import { BUILTIN_FORMATS } from '@/domain/journal';
@@ -131,6 +132,7 @@ async function main() {
   await runDailyForUser(uid, { fullRebuild: true });
   await seedJournals(uid);
   await seedTraits(uid);
+  await seedAlerts(uid, { root: root.id, us: us.id });
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D) } });
@@ -306,6 +308,22 @@ async function seedTraits(uid: string) {
   for (const sym of ['KRW-BTC', 'KRW-ETH', 'KRW-XRP', 'KRW-SOL']) {
     if (await prisma.asset.findFirst({ where: { userId: uid, symbol: sym } })) await tag(sym, role, ['위성'], roles);
   }
+}
+
+// ---------------------------------------------------------------- alerts
+async function seedAlerts(uid: string, p: { root: string; us: string }) {
+  const id = async (symbol: string) => (await prisma.asset.findFirstOrThrow({ where: { userId: uid, symbol } })).id;
+  const now = (symbol: string) => Number(sessionTrade(symbol, 0).price);
+  await createAlert(uid, { assetId: await id('005930'), price: String(won(now('005930') * 0.95)), note: '분할 매수 2차' });
+  await createAlert(uid, { assetId: await id('TSLA'), price: (now('TSLA') * 0.9).toFixed(2), note: '관심종목 — 이 가격이면 첫 매수' });
+  // Already below the current price, so the first check fires it into the inbox
+  await createAlert(uid, { assetId: await id('VOO'), price: (now('VOO') * 0.99).toFixed(2), direction: 'ABOVE', note: '전고점 돌파 확인' });
+  const children = await prisma.portfolioEdge.findMany({ where: { parentId: p.root }, include: { child: true } });
+  const share: Record<string, string> = { '국내 주식': '25', '미국 주식': '45', 코인: '5', '예금 · 현금': '25' };
+  await savePortfolioTargets(uid, p.root, { targets: Object.fromEntries(children.map((e) => [`P:${e.childId}`, share[e.child.name] ?? ''])), tolerance: '5', alert: true });
+  await savePortfolioTargets(uid, p.us, { targets: { [await id('AAPL')]: '35', [await id('VOO')]: '35', [await id('NVDA')]: '20', CASH: '10' }, tolerance: '3', alert: true });
+  await checkPriceAlerts(uid);
+  await checkDrift(uid);
 }
 
 main()
