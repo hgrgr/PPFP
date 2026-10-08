@@ -158,7 +158,7 @@ export default async function SettingsPage() {
             </label>
             <label className="check">
               <select name="briefingHour" defaultValue={String(ai.briefingHour)} aria-label="브리핑 시각">
-                {[5, 6, 7, 8, 9, 10, 11, 12].map((h) => (
+                {[...new Set([5, 6, 7, 8, 9, 10, 11, 12, ai.briefingHour])].sort((a, b) => a - b).map((h) => (
                   <option key={h} value={h}>
                     {h}시
                   </option>
