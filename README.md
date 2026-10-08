@@ -103,6 +103,25 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/dai
 
 과거 거래를 입력한 직후에는 대시보드의 **과거 기록 계산** 버튼이 과거 종가를 받아 첫 거래일부터 스냅샷을 만듭니다.
 
+## 알림
+
+가격 알림(직접 만든 것과 매매일지 목표가·손절가)과 포트폴리오 목표 비중 이탈은 서버가 직접 확인합니다. `next start`로 띄우면 서버 프로세스 안의 타이머가 가격을 1분마다, 비중을 10분마다 확인하므로 따로 설정할 것이 없습니다.
+
+| 환경 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `ALERT_POLL_SECONDS` | 60 | 가격 알림 확인 주기(초, 최소 15) |
+| `DRIFT_POLL_SECONDS` | 600 | 목표 비중 확인 주기(초, 최소 60) |
+| `ALERTS` | (켜짐) | `off`면 타이머를 끕니다. 서버가 여러 대이거나 서버리스처럼 백그라운드 타이머가 멈추는 곳에서는 끄고 아래 주소를 스케줄러로 부르세요. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | (자동 생성) | Web Push 키. 비워 두면 처음 쓸 때 만들어 DB에 암호화해 둡니다. 서버를 옮겨도 DB를 그대로 쓰면 기기를 다시 등록할 필요가 없습니다. |
+| `VAPID_SUBJECT` | `mailto:admin@localhost` | 푸시 서비스에 알리는 연락처 |
+
+```bash
+# 타이머 대신 외부 스케줄러로 (1분마다)
+* * * * *  curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/alerts
+```
+
+휴대폰·PC 푸시 알림은 HTTPS로 서비스할 때만 켤 수 있습니다(`localhost` 제외). 아이폰은 iOS 16.4 이상에서 홈 화면에 추가한 앱에서만 됩니다.
+
 ## 테스트
 
 ```bash
