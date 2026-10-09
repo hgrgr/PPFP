@@ -51,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
           )}
         </NavLink>
-        <NavLink href="/export">Export</NavLink>
+        <NavLink href="/data">가져오기 · 내보내기</NavLink>
         <NavLink href="/settings">연동 · 설정</NavLink>
         <div className="side-foot">
           <div>

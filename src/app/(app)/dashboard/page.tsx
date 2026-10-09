@@ -98,8 +98,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
           <PrivacyToggle />
           <AskAiButton label="AI 점검" prompt={`${d.scope.name} 범위의 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지와 그 근거를 알려 줘.`} />
-          <a className="btn" href={`/export?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
-            Export
+          <a className="btn" href={`/data?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
+            내보내기
           </a>
           {d.scope.id && (
             <a className="btn primary" href={`/portfolios/${d.scope.id}#add`}>
