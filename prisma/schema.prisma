@@ -95,6 +95,7 @@ model User {
   knowledgeLinks   KnowledgeLink[]
   aiSettings       AiSettings?
   apiKeys          ApiKey[]
+  aiSkills         AiSkill[]
   aiConversations  AiConversation[]
   aiMessages       AiMessage[]
   aiActions        AiAction[]
@@ -718,6 +719,40 @@ model AiSettings {
   updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A skill an advisor agent reads when a question fits (Agent Skills SKILL.md format): written by
+/// the user or imported from a community catalog. Only text is kept; scripts are never run.
+model AiSkill {
+  id           String   @id @default(cuid())
+  userId       String
+  /// SKILL.md name: lowercase letters, digits and hyphens, unique per user
+  name         String
+  /// When to use it; the agent sees this before reading the instructions
+  description  String
+  instructions String
+  /// Other markdown files from the skill's folder: [{ path, content }]
+  resources    Json     @default("[]")
+  /// Agents that use it (AgentKind)
+  agents       String[]
+  enabled      Boolean  @default(true)
+  /// custom, or skills.sh for a community skill
+  source       String   @default("custom")
+  /// skills.sh id (owner/repo/skill), the SKILL.md path in that repository, and its GitHub page
+  sourceId     String?
+  sourcePath   String?
+  sourceUrl    String?
+  license      String?
+  /// Installs on skills.sh when it was imported
+  installs     Int?
+  /// Files of the original folder that were left out (scripts and the like)
+  skipped      Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
 }
 
 /// One chat with an advisor agent. `agent` is MANAGER (포트폴리오 매니저) or SAGE (an investor's lens, sageId).

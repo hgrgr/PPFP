@@ -50,6 +50,9 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
       ) : (
         <div className="ai-layout">
           <aside className="stack" style={{ gap: 12 }}>
+            <a className="btn small" href="/ai/skills" style={{ alignSelf: 'flex-start' }}>
+              ✦ 스킬 관리
+            </a>
             <nav className="stack ai-new" aria-label="새 대화">
               <span className="sub strong">새 대화</span>
               {(['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN'] as const).map((k) => (

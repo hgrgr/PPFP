@@ -449,6 +449,16 @@ function librarianScript(turn) {
 
 /** The scripted next step for a conversation (Messages API shape), picked by the agent's system prompt. */
 function scriptFor(system, msgs) {
+  // The research analyst reads its first skill before its usual run
+  const skill = system.includes('리서치 애널리스트') ? system.match(/## 설치된 스킬[\s\S]*?\n- `([^`]+)`/)?.[1] : undefined;
+  if (skill) {
+    const t = lastTurn(msgs);
+    const read = t.find((m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.some((b) => b.type === 'tool_use' && b.name === 'use_skill'));
+    if (!read) return { blocks: [text(`설치된 스킬 ‘${skill}’의 지침을 먼저 읽을게요.`), call('use_skill', { name: skill })], stop: 'tool_use', usage: { input: 9800, cached: 0, output: 60 } };
+    // The scripts below count their own steps: leave the skill step out
+    const i = msgs.indexOf(read);
+    msgs = [...msgs.slice(0, i), ...msgs.slice(i + 2)];
+  }
   const turn = lastTurn(msgs);
   const results = toolResults(turn);
   return system.includes('리서치 애널리스트')

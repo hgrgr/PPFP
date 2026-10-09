@@ -12,7 +12,9 @@ import { choiceLabel, claudeHasDynamicWebTools, claudeHasFallbacks, DEFAULT_CHOI
 import { dec, kstDate, prisma } from '../../db';
 import { UserError } from '../portfolios';
 import { anthropicClient, compatStep, ProviderError, providerKeys } from './providers';
-import { runTool, sageSummary, toolDefs } from './tools';
+import { skillsPrompt } from '@/domain/ai-skills';
+import { skillsFor } from './skills';
+import { runTool, sageSummary, skillToolDefs, toolDefs } from './tools';
 
 /** Events streamed to the chat, one JSON object per line */
 export type ChatEvent =
@@ -236,7 +238,9 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
     const kind = (conv.agent in SYSTEM ? conv.agent : 'MANAGER') as AgentKind;
     const research = kind === 'RESEARCH';
     const web = status.webSearch && PROVIDERS[provider].webSearch;
-    const system = web ? SYSTEM[kind] : SYSTEM[kind] + NO_WEB;
+    const skills = await skillsFor(userId, kind);
+    const system = (web ? SYSTEM[kind] : SYSTEM[kind] + NO_WEB) + skillsPrompt(skills, web);
+    const appTools = skills.length ? [...toolDefs, ...skillToolDefs] : toolDefs;
     const stored = () => prisma.aiMessage.findMany({ where: { conversationId: conv.id }, orderBy: { seq: 'asc' }, select: { role: true, content: true } });
 
     let wroteText = false;
@@ -258,7 +262,7 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
     let next: () => Promise<Step | null>;
     if (provider === 'anthropic') {
       const client = await anthropicClient(userId);
-      const tools: Anthropic.Beta.BetaToolUnion[] = [...toolDefs];
+      const tools: Anthropic.Beta.BetaToolUnion[] = [...appTools];
       if (web) {
         const where = { type: 'approximate' as const, country: 'KR', timezone: 'Asia/Seoul' };
         const searches = research ? 10 : 5;
@@ -320,7 +324,7 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
         let inText = false;
         const r = await compatStep(
           userId,
-          { provider, model, system, tools: toolDefs, messages: await stored(), signal },
+          { provider, model, system, tools: appTools, messages: await stored(), signal },
           (d) => {
             if (!inText) textStarted();
             inText = true;

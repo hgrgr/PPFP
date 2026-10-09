@@ -14,6 +14,7 @@ import { listAlerts, portfolioTargets } from '../alerts';
 import { getJournal, listJournals } from '../journal';
 import { linkedItems, relatedView, topicsOverview } from '../knowledge';
 import { searchBooks } from '../book-search';
+import { readSkill } from './skills';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
 import { dividendReport } from '../dividends';
@@ -683,9 +684,20 @@ const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performa
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 
+const useSkill = tool(
+  'use_skill',
+  '설치된 스킬의 지침을 읽습니다. 질문이 스킬 설명에 맞으면 답하기 전에 부릅니다. 지침이 참고 파일을 가리키면 file에 그 파일 이름을 넣어 다시 부릅니다.',
+  z.object({ name: z.string().min(1).describe('설치된 스킬 이름'), file: z.string().optional().describe('스킬의 참고 파일, 예: references/checklist.md') }),
+  async ({ name, file }, { userId }) => readSkill(userId, name, file),
+);
+
+/** Given to an agent only when it has skills. */
+export const skillToolDefs: Anthropic.Beta.BetaTool[] = [useSkill.def];
+const ALL_TOOLS = [...TOOLS, useSkill as Tool<z.ZodType>];
+
 /** Runs one client tool call. Never throws: errors go back to the model as is_error results. */
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<{ content: string; isError: boolean }> {
-  const t = TOOLS.find((x) => x.def.name === name);
+  const t = ALL_TOOLS.find((x) => x.def.name === name);
   if (!t) return { content: `알 수 없는 도구: ${name}`, isError: true };
   const parsed = t.schema.safeParse(input);
   if (!parsed.success) return { content: JSON.stringify({ INVALID_INPUT: JSON.stringify(input), issues: parsed.error.issues.map((i) => i.message) }), isError: true };

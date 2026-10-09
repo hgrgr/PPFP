@@ -5,6 +5,7 @@ import { AGENT_ORDER } from '@/domain/ai';
 import { PROVIDER_ORDER } from '@/domain/ai-providers';
 import { requireUser } from '@/server/auth';
 import { deleteConversation, dismissAction, executeAction, saveAiSettings } from '@/server/services/ai/actions';
+import { communitySkill, deleteSkill, installCommunitySkill, refreshSkill, saveSkill, updateSkillUse, type CommunitySkill, type SkillInput } from '@/server/services/ai/skills';
 import { UserError } from '@/server/services/portfolios';
 
 export interface AiResult {
@@ -56,4 +57,44 @@ export async function saveAiSettingsAction(_prev: AiResult, form: FormData): Pro
     });
     return 'AI 설정을 저장했습니다';
   });
+}
+
+// ---------------------------------------------------------------- skills
+
+export async function saveSkillAction(id: string | null, input: SkillInput): Promise<AiResult & { id?: string }> {
+  const user = await requireUser();
+  let saved: string | undefined;
+  const r = await run(async () => ((saved = await saveSkill(user.id, id, input)), id ? '스킬을 저장했습니다' : '스킬을 만들었습니다'));
+  return { ...r, id: saved };
+}
+
+export async function updateSkillUseAction(id: string, input: { enabled?: boolean; agents?: string[] }) {
+  const user = await requireUser();
+  return run(async () => (await updateSkillUse(user.id, id, input), '저장했습니다'));
+}
+
+export async function deleteSkillAction(id: string) {
+  const user = await requireUser();
+  return run(async () => (await deleteSkill(user.id, id), '스킬을 지웠습니다'));
+}
+
+export async function communitySkillAction(id: string): Promise<{ skill?: CommunitySkill; error?: string }> {
+  await requireUser();
+  try {
+    return { skill: await communitySkill(id) };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    console.error('[skills]', e);
+    return { error: '스킬을 읽지 못했습니다. 잠시 후 다시 시도하세요.' };
+  }
+}
+
+export async function installSkillAction(id: string, agents: string[]) {
+  const user = await requireUser();
+  return run(async () => (await installCommunitySkill(user.id, id, agents), '내 스킬에 추가했습니다'));
+}
+
+export async function refreshSkillAction(id: string) {
+  const user = await requireUser();
+  return run(async () => (await refreshSkill(user.id, id), '원본에서 다시 가져왔습니다'));
 }
