@@ -554,5 +554,6 @@ globalThis.fetch = async function demoFetch(input, init) {
 
 module.exports = { KR, US, COINS, KIS_ACCOUNT, USDKRW, ANCHOR, priceAt, stockMeta, dayBar, quoteOf, ledger, smooth, sessionOnOrBefore, parts };
 
-// The AI advisor's Claude calls go to a scripted fake as well
+// The AI advisor's Claude calls and the book search go to scripted fakes as well
 require('./fake-claude.cjs');
+require('./fake-books.cjs');

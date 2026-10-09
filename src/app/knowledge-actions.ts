@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { BookHit } from '@/domain/book-search';
 import { isKType, type KRef } from '@/domain/knowledge';
 import { requireUser } from '@/server/auth';
 import {
@@ -20,6 +21,7 @@ import {
   saveTopic,
   updateNote,
 } from '@/server/services/knowledge';
+import { saveBookSearchKey, searchBooks } from '@/server/services/book-search';
 import { UserError } from '@/server/services/portfolios';
 
 export interface KResult {
@@ -59,9 +61,34 @@ export async function deleteNoteAction(id: string) {
   return run(() => deleteNote(user.id, id).then(() => '메모를 지웠습니다.'));
 }
 
-export async function createBookAction(title: string) {
+export async function createBookAction(title: string, info?: { author?: string | null; publisher?: string | null; year?: number | null }) {
   const user = await requireUser();
-  return run(async () => ({ ok: '책을 추가했습니다.', id: await createBook(user.id, title) }));
+  return run(async () => ({ ok: '책을 추가했습니다.', id: await createBook(user.id, title, info) }));
+}
+
+export async function saveBookSearchKeyAction(_prev: { ok?: string; error?: string }, form: FormData) {
+  const user = await requireUser();
+  try {
+    await saveBookSearchKey(user.id, { key: String(form.get('kakaoKey') ?? ''), clear: form.get('clearKakao') === 'on' });
+    revalidatePath('/settings');
+    return { ok: '책 검색 설정을 저장했습니다' };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    console.error('[books]', e);
+    return { error: '저장하지 못했습니다.' };
+  }
+}
+
+/** Candidates for a title, to fill in author, publisher and year. */
+export async function searchBooksAction(query: string): Promise<{ hits?: BookHit[]; needsKey?: boolean; error?: string }> {
+  const user = await requireUser();
+  try {
+    return await searchBooks(user.id, query);
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    console.error('[books]', e);
+    return { error: '책 정보를 찾지 못했습니다.' };
+  }
 }
 export async function saveBookAction(id: string, input: Parameters<typeof saveBook>[2]) {
   const user = await requireUser();

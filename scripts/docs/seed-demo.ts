@@ -15,6 +15,7 @@ import { prisma } from '@/server/db';
 import { newToken, sha256 } from '@/server/crypto';
 import { storeFx } from '@/server/market';
 import { createManualAsset, ensureListedAsset } from '@/server/services/assets';
+import { setServiceKey } from '@/server/services/api-keys';
 import { saveConnection, sourceKey } from '@/server/services/brokers';
 import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings } from '@/server/services/imports';
@@ -362,8 +363,12 @@ async function seedKnowledge(uid: string) {
   await createNote(uid, '반도체 업황 바닥 신호. PBR 1배 아래면 분할 매수 검토 #가치투자 #안전마진', `/holdings/${samsung.id}`);
   await createNote(uid, '비중이 커진 종목은 감정이 아니라 목표 비중표로 정리하기 #리스크_관리 #자산배분', '/dashboard');
   await createNote(uid, '린치: 내가 쓰는 제품의 회사부터 보기. 매일 쓰는 앱·결제 서비스 목록 만들어 보기 #성장투자', '/sages');
-  // AI advisor: morning briefing on (the capture script triggers it), alerts analyzed by hand
-  await prisma.aiSettings.create({ data: { userId: uid, briefing: true, briefingHour: 7, briefingWeekdays: false, monthlyLimit: '20.00' } });
+  // AI advisor: morning briefing on (the capture script triggers it), alerts analyzed by hand.
+  // The journal coach answers with a ChatGPT model on a made-up key (fake-claude.cjs answers it).
+  await setServiceKey(uid, 'openai', 'sk-docs-demo-openai-not-a-real-key');
+  await prisma.aiSettings.create({
+    data: { userId: uid, briefing: true, briefingHour: 7, briefingWeekdays: false, monthlyLimit: '20.00', agentModels: { COACH: { provider: 'openai', model: 'gpt-6.1-sol' } } },
+  });
   // Goals, dated from today so the screens stay the same whenever they are taken
   const year = Number(dash(ago(0)).slice(0, 4));
   await prisma.goal.create({ data: { userId: uid, name: '은퇴 자금', target: '1000000000', targetDate: new Date(`${year + 20}-12-31`), monthly: '1500000' } });

@@ -94,6 +94,7 @@ model User {
   topics           Topic[]
   knowledgeLinks   KnowledgeLink[]
   aiSettings       AiSettings?
+  apiKeys          ApiKey[]
   aiConversations  AiConversation[]
   aiMessages       AiMessage[]
   aiActions        AiAction[]
@@ -684,12 +685,26 @@ model KnowledgeLink {
   @@index([userId, bType, bId])
 }
 
-/// AI advisor settings: the user's own Anthropic API key (AES-256-GCM, like broker secrets)
-/// and a monthly spending cap. Without a key here the server's ANTHROPIC_API_KEY is used.
+/// A user's key for an outside service other than brokers (AI companies: anthropic, openai,
+/// gemini, xai, deepseek; 카카오 책 검색: kakao), AES-256-GCM like
+/// broker secrets. `hint` shows the last characters. Without one, the server's env key is used.
+model ApiKey {
+  userId    String
+  service   String
+  keyEnc    String
+  hint      String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, service])
+}
+
+/// AI advisor settings: which model each agent uses (`{ MANAGER: { provider, model }, … }`),
+/// a monthly spending cap, and what runs by itself. API keys for each AI company are in ApiKey.
 model AiSettings {
   userId       String   @id
-  apiKeyEnc    String?
-  apiKeyHint   String?
+  agentModels  Json     @default("{}")
   /// Monthly cap in USD, estimated from token usage; null = no cap
   monthlyLimit Decimal? @db.Decimal(10, 2)
   webSearch    Boolean  @default(true)
@@ -711,6 +726,9 @@ model AiConversation {
   userId    String
   agent     String
   sageId    String?
+  /// The AI company and model the conversation runs on, fixed when it starts (null = Claude, the default model)
+  provider  String?
+  model     String?
   title     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

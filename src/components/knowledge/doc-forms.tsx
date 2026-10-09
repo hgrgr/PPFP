@@ -10,8 +10,10 @@ import {
   deleteSageAction,
   saveBookAction,
   saveSageAction,
+  searchBooksAction,
   type KResult,
 } from '@/app/knowledge-actions';
+import { hitLine, type BookHit } from '@/domain/book-search';
 import { BOOK_STATUS_LABEL } from '@/domain/knowledge';
 import type { JournalEditor } from '@/components/journal/editor';
 import { LazyEditor, Stars } from '@/components/journal/fields';
@@ -55,6 +57,48 @@ function useAutosave(save: () => Promise<KResult>) {
 
 // ── books ───────────────────────────────────────────
 
+/** Search results for a title; picking one fills in author, publisher and year. */
+function useBookSearch() {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<{ hits: BookHit[]; needsKey: boolean; error?: string; query: string } | null>(null);
+  const search = (query: string) =>
+    start(async () => {
+      const r = await searchBooksAction(query);
+      setResult({ hits: r.hits ?? [], needsKey: !!r.needsKey, error: r.error, query });
+    });
+  return { pending, result, search, close: () => setResult(null) };
+}
+
+function BookHits({ result, onPick, onClose }: { result: NonNullable<ReturnType<typeof useBookSearch>['result']>; onPick: (h: BookHit) => void; onClose: () => void }) {
+  return (
+    <div className="book-hits" role="region" aria-label="책 검색 결과">
+      <div className="spread">
+        <span className="sub strong">‘{result.query}’ 검색 결과 · 고르면 저자·출판사·연도를 채웁니다</span>
+        <button type="button" className="btn small" onClick={onClose} aria-label="검색 결과 닫기">✕</button>
+      </div>
+      {result.error && <p className="msg err">{result.error}</p>}
+      {result.hits.length > 0 && (
+        <ul>
+          {result.hits.map((h, i) => (
+            <li key={`${h.isbn ?? h.title}:${i}`}>
+              <button type="button" onClick={() => onPick(h)}>
+                <span className="strong">{h.title}</span>
+                <span className="sub">{hitLine(h) || '정보 없음'}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!result.error && !result.hits.length && <p className="sub">찾은 책이 없습니다. 제목을 줄이거나 저자 이름을 함께 넣어 보세요.</p>}
+      {result.needsKey && (
+        <p className="sub">
+          한국 책은 카카오 책 검색으로 찾습니다. <a href="/settings#books">연동 · 설정</a>에서 카카오 REST API 키를 넣으면 쓸 수 있습니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export interface BookData {
   id: string;
   title: string;
@@ -90,6 +134,12 @@ export function BookForm({ book, children }: { book: BookData; children?: React.
     setF((x) => ({ ...x, [k]: v }));
     touch();
   };
+  const lookup = useBookSearch();
+  const pick = (h: BookHit) => {
+    setF((x) => ({ ...x, title: h.title, author: h.authors.join(', ') || x.author, publisher: h.publisher ?? x.publisher, publishedYear: h.year ? String(h.year) : x.publishedYear }));
+    touch();
+    lookup.close();
+  };
   return (
     <article className="journal-doc">
       <div className="spread doc-bar">
@@ -112,7 +162,15 @@ export function BookForm({ book, children }: { book: BookData; children?: React.
         <dd>
           <input id="b-pub" value={f.publisher} placeholder="출판사" onChange={(e) => set('publisher')(e.target.value)} style={{ maxWidth: 180 }} />
           <input aria-label="출간 연도" inputMode="numeric" value={f.publishedYear} placeholder="연도" onChange={(e) => set('publishedYear')(e.target.value.replace(/\D/g, '').slice(0, 4))} style={{ maxWidth: 90 }} />
+          <button type="button" className="btn small" disabled={lookup.pending || !f.title.trim()} onClick={() => lookup.search(f.title)}>
+            {lookup.pending ? '찾는 중…' : '제목으로 찾아 채우기'}
+          </button>
         </dd>
+        {lookup.result && (
+          <dd className="full">
+            <BookHits result={lookup.result} onPick={pick} onClose={lookup.close} />
+          </dd>
+        )}
         <dt>상태</dt>
         <dd>
           <div className="seg" role="group" aria-label="읽은 상태">
@@ -145,23 +203,30 @@ export function NewBook() {
   const [title, setTitle] = useState('');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const lookup = useBookSearch();
+  const add = (t: string, h?: BookHit) =>
+    start(async () => {
+      const r = await createBookAction(t, h ? { author: h.authors.join(', '), publisher: h.publisher, year: h.year } : undefined);
+      if (r.error) setError(r.error);
+      else router.push(`/books/${r.id}`);
+    });
   return (
-    <form
-      className="inline"
-      style={{ gap: 8 }}
-      onSubmit={(e) => {
-        e.preventDefault();
-        start(async () => {
-          const r = await createBookAction(title);
-          if (r.error) setError(r.error);
-          else router.push(`/books/${r.id}`);
-        });
-      }}
-    >
-      <input value={title} placeholder="책 제목 (예: 현명한 투자자)" onChange={(e) => setTitle(e.target.value)} style={{ maxWidth: 320 }} required />
-      <button className="btn primary" type="submit" disabled={pending}>+ 책 추가</button>
-      {error && <span className="msg err">{error}</span>}
-    </form>
+    <div className="stack" style={{ gap: 8, flex: '1 1 360px', maxWidth: 640 }}>
+      <form
+        className="inline"
+        style={{ gap: 8 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          lookup.search(title);
+        }}
+      >
+        <input value={title} aria-label="책 제목" placeholder="책 제목 (예: 현명한 투자자)" onChange={(e) => setTitle(e.target.value)} style={{ maxWidth: 320 }} required />
+        <button className="btn primary" type="submit" disabled={lookup.pending || pending}>{lookup.pending ? '찾는 중…' : '찾기'}</button>
+        <button className="btn" type="button" disabled={pending || !title.trim()} onClick={() => add(title)}>그냥 추가</button>
+        {error && <span className="msg err">{error}</span>}
+      </form>
+      {lookup.result && <BookHits result={lookup.result} onPick={(h) => add(h.title, h)} onClose={lookup.close} />}
+    </div>
   );
 }
 

@@ -372,6 +372,11 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .book-card { position: relative; }
 .book-card .stretched::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .book-card .kchip { position: relative; z-index: 1; }
+.props dd.full { grid-column: 1 / -1; display: block; }
+.book-hits { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.book-hits ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.book-hits li button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; color: var(--ink); cursor: pointer; font: inherit; }
+.book-hits li button:hover, .book-hits li button:focus-visible { background: var(--surface-2); }
 
 /* AI advisor */
 .ai-fab { position: fixed; right: 20px; bottom: 76px; z-index: 30; display: inline-flex; align-items: center; gap: 6px; height: 46px; padding: 0 18px; border-radius: 23px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; font-size: 15px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16); cursor: pointer; }
@@ -434,6 +439,21 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .ai-schedule > .sub { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ai-inbox-btn { align-self: flex-start; margin-top: 2px; }
 .ai-schedule label { white-space: nowrap; }
+.ai-box { border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; margin: 0; min-width: 0; }
+.ai-box legend { padding: 0 4px; }
+.ai-box > .sub { margin: 0; }
+.ai-box table th, .ai-box table td { text-align: left; white-space: normal; vertical-align: middle; padding: 8px 10px; }
+.ai-box table th[scope='row'] { color: var(--ink); font-size: 13.5px; font-weight: 500; }
+.ai-box table th[scope='row'] .sub { font-weight: 400; }
+.ai-key-table input:not([type='checkbox']) { min-width: 180px; }
+.ai-box table th[scope='row'], .ai-key-table td:nth-child(2), .ai-key-table td:last-child { white-space: nowrap; }
+.ai-key-table td:last-child .check { display: inline-flex; gap: 6px; }
+.ai-model-table select { min-width: 170px; }
+.ai-model-table input { min-width: 200px; }
+.ai-model-table td .sub { margin-top: 4px; white-space: normal; }
+.ai-model-all { gap: 8px; flex-wrap: wrap; }
+.ai-model-all select { width: auto; min-width: 170px; }
+.ai-model-all input { width: auto; min-width: 200px; flex: 0 1 240px; }
 
 /* tax */
 .tax-calc { width: 100%; border-collapse: collapse; font-size: 14px; }

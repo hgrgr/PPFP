@@ -37,7 +37,7 @@ function Md({ text }: { text: string }) {
 }
 
 const STATUS_LABEL: Record<string, string> = { DONE: '실행함', DISMISSED: '넘김', FAILED: '실패' };
-const KIND_LABEL: Record<string, string> = { note: '메모', price_alert: '가격 알림', target_weights: '목표 비중', journal_review: '일지 복기', journal_draft: '일지 초안' };
+const KIND_LABEL: Record<string, string> = { note: '메모', price_alert: '가격 알림', target_weights: '목표 비중', journal_review: '일지 복기', journal_draft: '일지 초안', book: '읽을 책' };
 
 function ActionCard({ action, onChange }: { action: ActionView; onChange: () => void }) {
   const [pending, start] = useTransition();
@@ -136,6 +136,7 @@ export function AiChat({
   onConversation,
   urlOnStart,
   compact,
+  modelLabel,
 }: {
   initial: ConversationView | null;
   agent: AgentKind;
@@ -147,6 +148,8 @@ export function AiChat({
   /** Put the new conversation in the address bar (the /ai page) */
   urlOnStart?: boolean;
   compact?: boolean;
+  /** What a new conversation answers with */
+  modelLabel?: string;
 }) {
   const [conv, setConv] = useState<ConversationView | null>(initial);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
@@ -289,7 +292,7 @@ export function AiChat({
           }}
         />
         <div className="spread">
-          <span className="sub">{conv ? `이 대화 약 $${conv.costUsd.toFixed(2)} · ` : ''}숫자는 앱의 기록, 판단은 참고용입니다</span>
+          <span className="sub">{[conv?.modelLabel ?? modelLabel, conv ? `이 대화 약 $${conv.costUsd.toFixed(2)}` : null, '숫자는 앱의 기록, 판단은 참고용입니다'].filter(Boolean).join(' · ')}</span>
           <button type="submit" className="btn primary small" disabled={busy || disabled || !text.trim()}>
             {busy ? '답하는 중…' : '보내기'}
           </button>

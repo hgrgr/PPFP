@@ -5,10 +5,10 @@
 
 export const AI_MODEL = 'claude-opus-5-5';
 
-export type AgentKind = 'MANAGER' | 'RESEARCH' | 'COACH' | 'SAGE';
+export type AgentKind = 'MANAGER' | 'RESEARCH' | 'COACH' | 'LIBRARIAN' | 'SAGE';
 
 /** Order in pickers */
-export const AGENT_ORDER: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH', 'SAGE'];
+export const AGENT_ORDER: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN', 'SAGE'];
 
 export const AGENTS: Record<AgentKind, { name: string; description: string; starters: string[] }> = {
   MANAGER: {
@@ -40,6 +40,15 @@ export const AGENTS: Record<AgentKind, { name: string; description: string; star
       '일지 없이 한 매매를 찾아서 무엇을 기록해 둘지 알려 줘',
     ],
   },
+  LIBRARIAN: {
+    name: '독서 큐레이터',
+    description: '읽은 책과 투자 노트(거장·키워드·메모), 매매일지, 포트폴리오 성질을 보고 다음에 읽을 책을 추천합니다. 실제로 있는 책인지 찾아 확인하고, 읽을 책 목록에 넣자고 제안합니다.',
+    starters: [
+      '지금까지 읽은 책과 내 투자 방식을 보고 다음에 읽을 책 3권을 추천해 줘',
+      '내 매매일지에서 보이는 약점을 보완해 줄 책을 골라 줘',
+      '내 포트폴리오 성질과 관심 있는 투자 철학에 맞는 책을 추천해 줘',
+    ],
+  },
   SAGE: {
     name: '투자 거장 관점',
     description: '투자 노트에 정리한 거장의 철학으로 내 포트폴리오와 종목을 봅니다. 그 철학에 맞는 종목과 어긋나는 종목을 짚어 줍니다.',
@@ -67,6 +76,9 @@ export const TOOL_LABEL: Record<string, string> = {
   get_rebalance_backtest: '리밸런싱 백테스트',
   get_journal: '매매일지 읽기',
   get_trade_review: '실현 매매 통계 확인',
+  get_reading_history: '독서 기록 확인',
+  search_books: '책 찾기',
+  propose_book: '읽을 책 제안',
   propose_journal_review: '일지 복기 제안',
   propose_journal_draft: '일지 초안 제안',
   propose_note: '메모 제안',
@@ -83,9 +95,18 @@ export const isProposal = (toolName: string) => toolName.startsWith('propose_');
 /** USD per million tokens. Cache writes are the 5-minute kind. */
 const PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  'claude-fable-5-1': { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
   'claude-opus-5': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   'claude-opus-4-8': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'gpt-6-astra': { input: 10, output: 50, cacheWrite: 10, cacheRead: 1 },
 };
+/**
+ * Models whose price the app doesn't know (other companies' models, new ids) are estimated
+ * at a top-tier rate, so the monthly cap errs on the safe side.
+ */
+const UNKNOWN_PRICE = { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 };
 /** USD per web search */
 const WEB_SEARCH = 0.01;
 
@@ -97,9 +118,12 @@ export interface UsageLike {
   server_tool_use?: { web_search_requests?: number | null } | null;
 }
 
-/** Estimated cost of one response. Unknown models are priced as the default model. */
+/** Is the price of this model known (rather than estimated at the top-tier rate)? */
+export const knownPrice = (model: string) => model in PRICES;
+
+/** Estimated cost of one response. */
 export function costUsd(usage: UsageLike, model: string): number {
-  const p = PRICES[model] ?? PRICES[AI_MODEL];
+  const p = PRICES[model] ?? UNKNOWN_PRICE;
   const m = (n: number | null | undefined, per: number) => ((n ?? 0) * per) / 1_000_000;
   return (
     m(usage.input_tokens, p.input) +

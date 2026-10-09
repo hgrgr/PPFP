@@ -1,4 +1,5 @@
 import { saveAiSettingsAction } from '@/app/ai-actions';
+import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { ActionForm, Submit } from '@/components/forms';
@@ -8,7 +9,9 @@ import { requireUser } from '@/server/auth';
 import { mask } from '@/server/crypto';
 import { listConnections } from '@/server/services/brokers';
 import { aiStatus } from '@/server/services/ai/agent';
+import { keyHints } from '@/server/services/api-keys';
 import { AskAiButton } from '@/components/ai/launcher';
+import { AgentModelFields, AiKeyFields } from '@/components/ai/model-settings';
 import { BRIEFING_PROMPT } from '@/domain/ai';
 
 export const metadata = { title: '연동 · 설정' };
@@ -16,7 +19,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [connections, ai] = await Promise.all([listConnections(user.id), aiStatus(user.id)]);
+  const [connections, ai, hints] = await Promise.all([listConnections(user.id), aiStatus(user.id), keyHints(user.id)]);
+  const kakaoHint = hints.get('kakao');
+  const kakaoServer = !kakaoHint && !!process.env.KAKAO_REST_API_KEY;
 
   return (
     <>
@@ -124,33 +129,20 @@ export default async function SettingsPage() {
       <section className="card" id="ai">
         <h2>AI 어드바이저</h2>
         <p className="sub">
-          AI 어드바이저는 Anthropic의 Claude를 씁니다. 질문할 때 필요한 보유 내역·거래·일지·투자 노트가 Anthropic API로 전송됩니다. 사용료는 API 키 계정으로 청구되며, 아래 금액은 토큰 사용량으로 추정한 값입니다.
+          AI 어드바이저는 Claude(Anthropic), ChatGPT(OpenAI), Gemini(Google), Grok(xAI), DeepSeek 중 키를 넣은 곳의 모델로 답합니다. 질문할 때 필요한 보유 내역·거래·일지·투자 노트가 그
+          회사의 API로 전송됩니다. 아래 금액은 토큰 사용량으로 추정한 값이며, 가격을 모르는 모델은 비싼 모델 기준으로 넉넉히 셉니다.
         </p>
         <ActionForm action={saveAiSettingsAction} className="grid">
-          <label className="field">
-            Anthropic API 키
-            <input name="apiKey" type="password" autoComplete="off" placeholder={ai.source === 'user' ? `저장됨 ${ai.keyHint ?? ''}` : ai.source === 'server' ? '서버 기본 키 사용 중' : 'sk-ant-…'} />
-            <span className="sub">
-              {ai.source === 'user' ? '바꾸려면 새 키를 넣으세요.' : ai.source === 'server' ? '내 키를 넣으면 그 키를 대신 씁니다.' : (
-                <>
-                  <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic 콘솔</a>에서 만든 키를 넣으세요. 암호화해 저장합니다.
-                </>
-              )}
-            </span>
-          </label>
+          <AiKeyFields keys={ai.keys} />
+          <AgentModelFields keys={ai.keys} picks={ai.picks} />
           <label className="field">
             월 사용 한도 (USD)
             <input name="monthlyLimit" inputMode="decimal" defaultValue={ai.monthlyLimit ?? ''} placeholder="비우면 한도 없음" />
             <span className="sub">이번 달 약 ${ai.spent.toFixed(2)} 사용 · 한도에 닿으면 다음 달까지 질문을 받지 않습니다.</span>
           </label>
           <label className="check">
-            <input type="checkbox" name="webSearch" defaultChecked={ai.webSearch} /> 웹 검색 허용 (최신 실적·뉴스 확인, 검색 1회 약 $0.01)
+            <input type="checkbox" name="webSearch" defaultChecked={ai.webSearch} /> 웹 검색 허용 (Claude 모델, 최신 실적·뉴스 확인, 검색 1회 약 $0.01)
           </label>
-          {ai.source === 'user' && (
-            <label className="check">
-              <input type="checkbox" name="clearKey" /> 저장한 키 지우기
-            </label>
-          )}
           <fieldset className="full ai-schedule">
             <legend className="sub strong">자동으로 받기</legend>
             <label className="check">
@@ -177,6 +169,34 @@ export default async function SettingsPage() {
               <AskAiButton className="btn small" label="지금 브리핑 받아 보기" prompt={BRIEFING_PROMPT} />
             </span>
           </fieldset>
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+      </section>
+
+      <section className="card" id="books">
+        <h2>책 검색</h2>
+        <p className="sub">
+          독서 노트에서 책 제목으로 저자·출판사·출간 연도를 찾아 채웁니다. 한국 책은 카카오 책 검색으로, 영문 책은 키 없이 Open Library로 찾습니다. 검색할 때 책 제목만 보냅니다.
+        </p>
+        <ActionForm action={saveBookSearchKeyAction} className="grid">
+          <label className="field">
+            카카오 REST API 키
+            <input name="kakaoKey" type="password" autoComplete="off" placeholder={kakaoHint ? `저장됨 ${kakaoHint}` : kakaoServer ? '서버 기본 키 사용 중' : '32자리 키'} />
+            <span className="sub">
+              {kakaoHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://developers.kakao.com/console/app" target="_blank" rel="noreferrer">카카오 developers</a>에서 앱을 만들고 앱 키의 REST API 키를 넣으세요. 무료이며 암호화해 저장합니다.
+                </>
+              )}
+            </span>
+          </label>
+          {kakaoHint && (
+            <label className="check">
+              <input type="checkbox" name="clearKakao" /> 저장한 키 지우기
+            </label>
+          )}
           <div className="full">
             <Submit>저장</Submit>
           </div>

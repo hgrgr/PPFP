@@ -1,4 +1,5 @@
 import { Stars } from '@/components/journal/fields';
+import { AskAiButton } from '@/components/ai/launcher';
 import { NewBook } from '@/components/knowledge/doc-forms';
 import { KChip, KnowledgeTabs } from '@/components/knowledge/links';
 import { BOOK_STATUS_LABEL } from '@/domain/knowledge';
@@ -24,8 +25,9 @@ export default async function BooksPage({ searchParams }: { searchParams: Promis
         </div>
       </header>
       <KnowledgeTabs current="books" />
-      <div className="spread">
+      <div className="spread" style={{ alignItems: 'flex-start' }}>
         <NewBook />
+        <AskAiButton label="AI에게 다음 책 추천받기" agent="LIBRARIAN" prompt="지금까지 읽은 책과 내 투자 방식을 보고 다음에 읽을 책 3권을 추천해 줘" />
         <div className="seg" role="group" aria-label="상태">
           <a href="/books" aria-current={!status ? 'true' : undefined}>전체</a>
           {(Object.keys(BOOK_STATUS_LABEL) as (keyof typeof BOOK_STATUS_LABEL)[]).map((s) => (
