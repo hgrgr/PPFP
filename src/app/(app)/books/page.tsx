@@ -24,7 +24,7 @@ export default async function BooksPage({ searchParams }: { searchParams: Promis
         </div>
       </header>
       <KnowledgeTabs current="books" />
-      <div className="spread">
+      <div className="spread" style={{ alignItems: 'flex-start' }}>
         <NewBook />
         <div className="seg" role="group" aria-label="상태">
           <a href="/books" aria-current={!status ? 'true' : undefined}>전체</a>

@@ -120,6 +120,14 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/dai
 * * * * *  curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/alerts
 ```
 
+## 독서 노트 책 검색
+
+독서 노트에서 책 제목으로 저자·출판사·출간 연도를 찾아 채웁니다. 한국 책은 카카오 책 검색, 영문 책은 Open Library(키 필요 없음)로 찾습니다.
+
+| 환경 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `KAKAO_REST_API_KEY` | (없음) | 서버 기본 카카오 REST API 키. 사용자가 연동 · 설정에 자기 키를 넣으면 그 키를 씁니다. 둘 다 없으면 영문 책만 찾습니다. |
+
 ## AI 어드바이저
 
 포트폴리오 매니저, 리서치 애널리스트, 매매일지 코치, 투자 거장 관점 에이전트는 Anthropic의 Claude로 동작합니다. 앱의 서비스 함수를 도구로 써서 숫자를 읽고, 데이터를 바꾸는 일(메모·가격 알림·목표 비중·일지 복기·일지 초안)은 사용자가 확인 카드에서 실행해야 반영됩니다. 웹 검색은 설정에서 끌 수 있습니다.

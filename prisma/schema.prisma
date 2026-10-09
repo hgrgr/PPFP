@@ -94,6 +94,7 @@ model User {
   topics           Topic[]
   knowledgeLinks   KnowledgeLink[]
   aiSettings       AiSettings?
+  apiKeys          ApiKey[]
   aiConversations  AiConversation[]
   aiMessages       AiMessage[]
   aiActions        AiAction[]
@@ -682,6 +683,20 @@ model KnowledgeLink {
   @@unique([userId, aType, aId, bType, bId])
   @@index([userId, aType, aId])
   @@index([userId, bType, bId])
+}
+
+/// A user's key for an outside service other than brokers (카카오 책 검색), AES-256-GCM like
+/// broker secrets. `hint` shows the last characters. Without one, the server's env key is used.
+model ApiKey {
+  userId    String
+  service   String
+  keyEnc    String
+  hint      String
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, service])
 }
 
 /// AI advisor settings: the user's own Anthropic API key (AES-256-GCM, like broker secrets)

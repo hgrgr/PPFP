@@ -754,6 +754,8 @@ async function main() {
     ANTHROPIC_API_KEY: 'sk-ant-docs-demo-not-a-real-key',
     ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
     CRON_SECRET: 'docs-demo-cron-secret',
+    // Book search goes to the fake in fake-books.cjs
+    KAKAO_REST_API_KEY: '0123456789abcdef0123456789abcdef',
   };
   let server: ChildProcess | null = null;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;

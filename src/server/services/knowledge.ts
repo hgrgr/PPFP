@@ -285,10 +285,16 @@ export async function linkedItems(userId: string, refs: KRef[]): Promise<Map<str
 
 // ── books ───────────────────────────────────────────
 
-export async function createBook(userId: string, title: string): Promise<string> {
+/** A new book note with the summary outline. `info` comes from a book search pick. */
+export async function createBook(userId: string, title: string, info?: { author?: string | null; publisher?: string | null; year?: number | null }): Promise<string> {
   const t = title.trim().slice(0, 200);
   if (!t) throw new UserError('책 제목을 입력하세요.');
-  return (await prisma.book.create({ data: { userId, title: t, content: BOOK_CONTENT as Prisma.InputJsonValue } })).id;
+  const year = info?.year && Number.isInteger(info.year) && info.year >= 1000 && info.year <= 3000 ? info.year : null;
+  return (
+    await prisma.book.create({
+      data: { userId, title: t, author: info?.author?.trim().slice(0, 100) || null, publisher: info?.publisher?.trim().slice(0, 100) || null, publishedYear: year, content: BOOK_CONTENT as Prisma.InputJsonValue },
+    })
+  ).id;
 }
 
 const ymd = (v: string | undefined) => {

@@ -1,4 +1,5 @@
 import { saveAiSettingsAction } from '@/app/ai-actions';
+import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { ActionForm, Submit } from '@/components/forms';
@@ -8,6 +9,7 @@ import { requireUser } from '@/server/auth';
 import { mask } from '@/server/crypto';
 import { listConnections } from '@/server/services/brokers';
 import { aiStatus } from '@/server/services/ai/agent';
+import { keyHints } from '@/server/services/api-keys';
 import { AskAiButton } from '@/components/ai/launcher';
 import { BRIEFING_PROMPT } from '@/domain/ai';
 
@@ -16,7 +18,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [connections, ai] = await Promise.all([listConnections(user.id), aiStatus(user.id)]);
+  const [connections, ai, hints] = await Promise.all([listConnections(user.id), aiStatus(user.id), keyHints(user.id)]);
+  const kakaoHint = hints.get('kakao');
+  const kakaoServer = !kakaoHint && !!process.env.KAKAO_REST_API_KEY;
 
   return (
     <>
@@ -177,6 +181,34 @@ export default async function SettingsPage() {
               <AskAiButton className="btn small" label="지금 브리핑 받아 보기" prompt={BRIEFING_PROMPT} />
             </span>
           </fieldset>
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+      </section>
+
+      <section className="card" id="books">
+        <h2>책 검색</h2>
+        <p className="sub">
+          독서 노트에서 책 제목으로 저자·출판사·출간 연도를 찾아 채웁니다. 한국 책은 카카오 책 검색으로, 영문 책은 키 없이 Open Library로 찾습니다. 검색할 때 책 제목만 보냅니다.
+        </p>
+        <ActionForm action={saveBookSearchKeyAction} className="grid">
+          <label className="field">
+            카카오 REST API 키
+            <input name="kakaoKey" type="password" autoComplete="off" placeholder={kakaoHint ? `저장됨 ${kakaoHint}` : kakaoServer ? '서버 기본 키 사용 중' : '32자리 키'} />
+            <span className="sub">
+              {kakaoHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://developers.kakao.com/console/app" target="_blank" rel="noreferrer">카카오 developers</a>에서 앱을 만들고 앱 키의 REST API 키를 넣으세요. 무료이며 암호화해 저장합니다.
+                </>
+              )}
+            </span>
+          </label>
+          {kakaoHint && (
+            <label className="check">
+              <input type="checkbox" name="clearKakao" /> 저장한 키 지우기
+            </label>
+          )}
           <div className="full">
             <Submit>저장</Submit>
           </div>
