@@ -595,7 +595,37 @@ const SHOTS: Shot[] = [
     pad: 0,
     marks: [{ sel: '#rules table' }, { sel: '#rules .recharts-surface' }, { sel: '#parts .bt-parts' }],
   },
-  { file: 'export', path: () => '/export', wait: 1000, clip: [{ sel: 'main' }], pad: 0 },
+  {
+    file: 'data-export',
+    path: () => '/data',
+    wait: 1000,
+    clip: [{ sel: 'main' }],
+    pad: 0,
+    marks: [{ sel: 'form[aria-label="내보낼 범위"]' }, { sel: 'h2', text: '데이터 (다시', closest: '.card' }, { sel: 'a', text: '전체 XLSX 받기' }, { sel: 'h2', text: '보고서', closest: '.card' }],
+  },
+  {
+    file: 'data-import',
+    path: () => '/data?tab=import',
+    wait: 1000,
+    steps: [
+      { until: "(async () => { const b = await (await fetch('/api/data/sample/all?format=xlsx')).blob(); const dt = new DataTransfer(); dt.items.add(new File([b], 'ppfp-sample-all.xlsx')); const i = document.querySelector('input[type=file]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" },
+      { wait: 300 },
+      { click: { sel: 'button', text: '확인하기' } },
+      { until: "!!document.querySelector('[aria-label=\"가져오기 미리 보기\"] table')", timeout: 20_000 },
+      { until: "(document.querySelectorAll('.import-issues').forEach((d) => (d.open = d.classList.contains('err'))), true)" },
+      { wait: 300 },
+    ],
+    clip: [{ sel: 'main' }],
+    pad: 0,
+    marks: [{ sel: 'input[type="file"]' }, { sel: 'button', text: '확인하기' }, { sel: '.import-summary' }, { sel: '.import-issues' }, { sel: '[aria-label="가져오기 미리 보기"] .btn.primary' }],
+  },
+  {
+    file: 'data-format',
+    path: () => '/data?tab=format',
+    wait: 1000,
+    clip: [{ sel: 'h2', text: '샘플 파일', closest: '.card' }, { sel: '#transactions' }],
+    marks: [{ sel: 'a', text: '샘플 전체 XLSX 받기' }, { sel: 'a', text: '샘플 CSV', within: { sel: '#transactions' } }, { sel: '.badge.warn', within: { sel: '#transactions' } }, { sel: '#transactions .data-format td.mono' }],
+  },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
 ];
 
