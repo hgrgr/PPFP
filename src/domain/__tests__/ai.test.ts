@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertAgent, alertPrompt, briefingDue, conversationTitle, costUsd, monthStartKst, plainSummary, toChat, userContent } from '../ai';
+import { alertAgent, alertPrompt, briefingDue, conversationTitle, costUsd, knownPrice, monthStartKst, plainSummary, toChat, userContent } from '../ai';
 
 describe('ai cost', () => {
   it('prices tokens, cache and web searches', () => {
@@ -11,9 +11,11 @@ describe('ai cost', () => {
     assert.equal(c.toFixed(4), (4 + 2 + 0.2 + 0.03).toFixed(4));
   });
 
-  it('prices a fallback model at its own rate, unknown models at the default', () => {
+  it('prices a fallback model at its own rate, unknown models at a top-tier rate', () => {
     assert.equal(costUsd({ output_tokens: 1_000_000 }, 'claude-opus-4-8'), 25);
-    assert.equal(costUsd({ output_tokens: 1_000_000 }, 'something-else'), 20);
+    assert.equal(costUsd({ output_tokens: 1_000_000 }, 'claude-haiku-5-5'), 0.5);
+    assert.equal(costUsd({ output_tokens: 1_000_000 }, 'something-else'), 50);
+    assert.equal(knownPrice('something-else'), false);
   });
 
   it('starts the month in Korean time', () => {

@@ -31,7 +31,7 @@ export function AskAiButton({ label, prompt, agent, sageId, className = 'btn' }:
  * Floating "AI" button (Alt+K) and the side window it opens. The chat knows which
  * screen it was opened on; buttons elsewhere open it with a question via askAi().
  */
-export function AiLauncher({ sages, configured }: { sages: SageOption[]; configured: boolean }) {
+export function AiLauncher({ sages, configured, models }: { sages: SageOption[]; configured: boolean; models: Partial<Record<AgentKind, string | null>> }) {
   const pathname = usePathname();
   const search = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -111,11 +111,12 @@ export function AiLauncher({ sages, configured }: { sages: SageOption[]; configu
             prefill={session.prompt}
             autoSend={!!session.prompt}
             onConversation={(id) => setSession((s) => ({ ...s, conversationId: id }))}
+            modelLabel={models[session.agent] ?? undefined}
             compact
           />
         ) : (
           <div className="drawer-body stack">
-            <p>AI 어드바이저를 쓰려면 Anthropic API 키가 필요합니다.</p>
+            <p>AI 어드바이저를 쓰려면 Claude·ChatGPT·Gemini·Grok·DeepSeek 중 한 곳의 API 키가 필요합니다.</p>
             <a className="btn primary" href="/settings#ai">
               연동 · 설정에서 키 넣기
             </a>

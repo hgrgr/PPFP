@@ -5,6 +5,7 @@ import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { conversationView, listConversations } from '@/server/services/ai/actions';
 import { aiStatus } from '@/server/services/ai/agent';
+import { modelLabels } from '@/domain/ai-providers';
 
 export const metadata = { title: 'AI 어드바이저' };
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
       {!status.configured ? (
         <section className="card stack">
           <h2>API 키가 필요합니다</h2>
-          <p>AI 어드바이저는 Anthropic의 Claude로 동작합니다. 연동 · 설정에서 API 키를 넣으면 바로 쓸 수 있습니다.</p>
+          <p>AI 어드바이저는 Claude(Anthropic), ChatGPT(OpenAI), Gemini(Google), Grok(xAI), DeepSeek 중 키를 넣은 곳의 모델로 동작합니다. 연동 · 설정에서 API 키를 넣고 에이전트마다 모델을 고르세요.</p>
           <a className="btn primary" href="/settings#ai" style={{ alignSelf: 'flex-start' }}>
             키 넣으러 가기
           </a>
@@ -76,7 +77,7 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
               <h2>{view ? view.title : agent === 'SAGE' ? `${sageName ?? '투자 거장'}의 관점` : AGENTS[agent].name}</h2>
               {view && <span className="badge">{view.agent === 'SAGE' ? `${view.sage?.name ?? '거장'}의 관점` : (AGENTS[view.agent as AgentKind]?.name ?? view.agent)}</span>}
             </div>
-            <AiChat key={view?.id ?? `${agent}:${sageId}`} initial={view} agent={agent} sageId={sageId} path="/ai" urlOnStart />
+            <AiChat key={view?.id ?? `${agent}:${sageId}`} initial={view} agent={agent} sageId={sageId} path="/ai" urlOnStart modelLabel={modelLabels(status.models)[agent] ?? undefined} />
           </section>
         </div>
       )}

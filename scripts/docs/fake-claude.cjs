@@ -1,5 +1,6 @@
 /**
- * Fake Anthropic Messages API for documentation screenshots (loaded by fake-market.cjs).
+ * Fake Anthropic Messages API for documentation screenshots (loaded by fake-market.cjs), and
+ * fake Chat Completions endpoints for the other AI companies (OpenAI, Gemini, xAI, DeepSeek).
  *
  * Answers streamed POST https://api.anthropic.com/v1/messages with a short scripted run of
  * the advisor agent: it calls the app's read tools, does one (fake) web search, writes an
@@ -380,18 +381,23 @@ function coachScript(turn, results) {
   return { blocks: [text('확인 카드에서 **실행**을 누르면 일지 끝에 복기가 덧붙습니다.')], stop: 'end_turn', usage: { input: 500, cached: 13000, output: 40 } };
 }
 
-async function messages(init) {
-  const body = JSON.parse(String(init?.body ?? '{}'));
-  const system = Array.isArray(body.system) ? body.system.map((b) => b.text).join('') : String(body.system ?? '');
-  const turn = lastTurn(body.messages);
+/** The scripted next step for a conversation (Messages API shape), picked by the agent's system prompt. */
+function scriptFor(system, msgs) {
+  const turn = lastTurn(msgs);
   const results = toolResults(turn);
-  const script = system.includes('리서치 애널리스트')
+  return system.includes('리서치 애널리스트')
     ? researchScript(turn, results)
     : system.includes('매매일지 코치')
       ? coachScript(turn, results)
       : system.includes('렌즈')
-        ? sageScript(turn, results, body.messages[0])
+        ? sageScript(turn, results, msgs[0])
         : managerScript(turn, results);
+}
+
+async function messages(init) {
+  const body = JSON.parse(String(init?.body ?? '{}'));
+  const system = Array.isArray(body.system) ? body.system.map((b) => b.text).join('') : String(body.system ?? '');
+  const script = scriptFor(system, body.messages);
   const chunks = events(body.model, script.blocks, script.stop, script.usage);
   const enc = new TextEncoder();
   const stream = new ReadableStream({
@@ -406,6 +412,82 @@ async function messages(init) {
   return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'request-id': id('req') } });
 }
 
+// ---------------------------------------------------------------- other companies
+// ChatGPT, Gemini, Grok and DeepSeek speak Chat Completions: the same scripts answer, turned
+// into that shape (without the web search, which those models don't get in the app).
+
+const COMPAT = {
+  'api.openai.com': { prefix: '/v1', models: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna', 'text-embedding-3-large'] },
+  'generativelanguage.googleapis.com': { prefix: '/v1beta/openai', models: ['models/gemini-3.1-pro-preview', 'models/gemini-3.8-flash', 'models/gemini-3.5-flash-lite'], signatures: true },
+  'api.x.ai': { prefix: '/v1', models: ['grok-4.7', 'grok-4.6'] },
+  'api.deepseek.com': { prefix: '/v1', models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+};
+
+/** Chat Completions messages -> Messages API shape, so the scripts can read them. */
+function fromCompat(msgs) {
+  const out = [];
+  for (const m of msgs) {
+    if (m.role === 'system') continue;
+    if (m.role === 'user') {
+      const t = String(m.content ?? '');
+      const cut = t.indexOf('</page-context>');
+      out.push({ role: 'user', content: cut >= 0 ? [{ type: 'text', text: t.slice(0, cut + 15) }, { type: 'text', text: t.slice(cut + 15).trim() }] : [{ type: 'text', text: t }] });
+    } else if (m.role === 'assistant') {
+      const blocks = m.content ? [{ type: 'text', text: m.content }] : [];
+      for (const c of m.tool_calls ?? []) blocks.push({ type: 'tool_use', id: c.id, name: c.function.name, input: JSON.parse(c.function.arguments || '{}') });
+      out.push({ role: 'assistant', content: blocks });
+    } else if (m.role === 'tool') {
+      const last = out.at(-1);
+      const block = { type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content };
+      if (last?.role === 'user' && last.content.every((b) => b.type === 'tool_result')) last.content.push(block);
+      else out.push({ role: 'user', content: [block] });
+    }
+  }
+  return out;
+}
+
+function compatError(status, message) {
+  return new Response(JSON.stringify({ error: { message, type: 'invalid_request_error' } }), { status, headers: { 'content-type': 'application/json' } });
+}
+
+async function completions(host, init) {
+  const cfg = COMPAT[host];
+  const body = JSON.parse(String(init?.body ?? '{}'));
+  if (!cfg.models.some((m) => m.replace(/^models\//, '') === body.model)) return compatError(404, `The model \`${body.model}\` does not exist (demo server)`);
+  // Gemini rejects a replayed function call without the thought signature it sent
+  if (cfg.signatures && body.messages.some((m) => (m.tool_calls ?? []).some((c) => !c.extra_content?.google?.thought_signature))) {
+    return compatError(400, 'Function call is missing a thought_signature (demo server)');
+  }
+  const system = body.messages.find((m) => m.role === 'system')?.content ?? '';
+  const script = scriptFor(system, fromCompat(body.messages));
+  const blocks = script.blocks.filter((b) => b.type === 'text' || b.type === 'tool_use');
+  const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  const calls = blocks.filter((b) => b.type === 'tool_use');
+  const out = [];
+  const chunk = (delta, finish = null, usage) => out.push(`data: ${JSON.stringify({ id: id('chatcmpl'), object: 'chat.completion.chunk', model: body.model, choices: delta ? [{ index: 0, delta, finish_reason: finish }] : [], ...(usage ? { usage } : {}) })}\n\n`);
+  chunk({ role: 'assistant', content: '' });
+  for (const piece of text.match(/[\s\S]{1,24}/g) ?? []) chunk({ content: piece });
+  calls.forEach((c, index) => {
+    chunk({ tool_calls: [{ index, id: id('call'), type: 'function', function: { name: c.name, arguments: '' }, ...(cfg.signatures ? { extra_content: { google: { thought_signature: `demo-sig-${index}` } } } : {}) }] });
+    chunk({ tool_calls: [{ index, function: { arguments: JSON.stringify(c.input) } }] });
+  });
+  chunk({}, calls.length ? 'tool_calls' : 'stop');
+  const u = script.usage;
+  chunk(null, null, { prompt_tokens: u.input + u.cached, completion_tokens: u.output, total_tokens: u.input + u.cached + u.output, prompt_tokens_details: { cached_tokens: u.cached } });
+  out.push('data: [DONE]\n\n');
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(c) {
+      for (const ch of out) {
+        c.enqueue(enc.encode(ch));
+        await sleep(12);
+      }
+      c.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
+}
+
 const prevFetch = globalThis.fetch;
 globalThis.fetch = async function claudeDemoFetch(input, init) {
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -415,7 +497,17 @@ globalThis.fetch = async function claudeDemoFetch(input, init) {
   } catch {
     return prevFetch(input, init);
   }
+  const compat = COMPAT[url.hostname];
+  if (compat) {
+    if (url.pathname === `${compat.prefix}/chat/completions` && init?.method === 'POST') return completions(url.hostname, init);
+    if (url.pathname === `${compat.prefix}/models`) return new Response(JSON.stringify({ object: 'list', data: compat.models.map((m) => ({ id: m, object: 'model' })) }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return compatError(404, `데모 서버에 없는 요청: ${url.pathname}`);
+  }
   if (url.hostname !== 'api.anthropic.com') return prevFetch(input, init);
+  if (url.pathname === '/v1/models') {
+    const data = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'].map((m) => ({ type: 'model', id: m, display_name: m, created_at: '2026-01-01T00:00:00Z' }));
+    return new Response(JSON.stringify({ data, has_more: false, first_id: data[0].id, last_id: data.at(-1).id }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
   if (url.pathname === '/v1/messages' && init?.method === 'POST') return messages(init);
   return new Response(JSON.stringify({ type: 'error', error: { type: 'not_found_error', message: `데모 서버에 없는 요청: ${url.pathname}` } }), { status: 404, headers: { 'content-type': 'application/json' } });
 };

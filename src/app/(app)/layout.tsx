@@ -8,6 +8,7 @@ import { kstDateTime } from '@/lib/format';
 import { unreadCount } from '@/server/services/notify';
 import { AiLauncher } from '@/components/ai/launcher';
 import { aiStatus } from '@/server/services/ai/agent';
+import { modelLabels } from '@/domain/ai-providers';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -80,7 +81,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="main">{children}</main>
       <Suspense>
         <QuickMemo />
-        <AiLauncher sages={sages} configured={ai.configured} />
+        <AiLauncher sages={sages} configured={ai.configured} models={modelLabels(ai.models)} />
       </Suspense>
     </div>
   );

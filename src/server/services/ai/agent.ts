@@ -2,13 +2,16 @@
  * The advisor agent loop: one user message in, a streamed answer out. Messages are stored
  * exactly as sent and received, append-only, so a conversation can always be replayed to the
  * API as is (thinking blocks included). Data-changing tools only propose (see tools.ts).
+ * Each conversation runs on one AI company and model, picked per agent in 연동 · 설정:
+ * Claude through the Anthropic SDK, the others through Chat Completions (providers.ts).
  */
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
-import { AGENT_ORDER, AGENTS, AI_MODEL, conversationTitle, costUsd, monthStartKst, TOOL_LABEL, userContent, type AgentKind } from '@/domain/ai';
-import { decryptSecret } from '../../crypto';
+import { AGENT_ORDER, AGENTS, conversationTitle, costUsd, monthStartKst, TOOL_LABEL, userContent, type AgentKind } from '@/domain/ai';
+import { choiceLabel, claudeHasDynamicWebTools, claudeHasFallbacks, DEFAULT_CHOICE, isProvider, modelFor, PROVIDERS, readAgentModels, type ModelChoice, type ProviderId } from '@/domain/ai-providers';
 import { dec, kstDate, prisma } from '../../db';
 import { UserError } from '../portfolios';
+import { anthropicClient, compatStep, ProviderError, providerKeys } from './providers';
 import { runTool, sageSummary, toolDefs } from './tools';
 
 /** Events streamed to the chat, one JSON object per line */
@@ -25,13 +28,17 @@ const running = new Set<string>();
 // ---------------------------------------------------------------- settings
 
 export async function aiStatus(userId: string) {
-  const s = await prisma.aiSettings.findUnique({ where: { userId } });
-  const spent = await spentThisMonth(userId);
-  const source = s?.apiKeyEnc ? 'user' : process.env.ANTHROPIC_API_KEY ? 'server' : null;
+  const [s, spent, keys] = await Promise.all([prisma.aiSettings.findUnique({ where: { userId } }), spentThisMonth(userId), providerKeys(userId)]);
+  const picks = readAgentModels(s?.agentModels);
+  const hasKey = (p: ProviderId) => !!keys[p].source;
+  const models = Object.fromEntries(AGENT_ORDER.map((a) => [a, modelFor(a, picks, hasKey)])) as Record<AgentKind, ModelChoice | null>;
   return {
-    configured: !!source,
-    source,
-    keyHint: s?.apiKeyHint ?? null,
+    configured: Object.values(keys).some((k) => k.source),
+    keys,
+    /** What the user picked for each agent */
+    picks,
+    /** What a new conversation with each agent runs on now */
+    models,
     monthlyLimit: s?.monthlyLimit ? Number(s.monthlyLimit) : null,
     webSearch: s?.webSearch ?? true,
     briefing: s?.briefing ?? false,
@@ -47,12 +54,10 @@ export async function spentThisMonth(userId: string): Promise<number> {
   return dec(r._sum.costUsd).toNumber();
 }
 
-async function clientFor(userId: string): Promise<Anthropic> {
-  const s = await prisma.aiSettings.findUnique({ where: { userId } });
-  const apiKey = s?.apiKeyEnc ? decryptSecret(s.apiKeyEnc) : process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new UserError('AI 어드바이저를 쓰려면 연동 · 설정에서 Anthropic API 키를 넣으세요.');
-  return new Anthropic({ apiKey });
-}
+/** The company and model a stored conversation runs on. */
+export const conversationModel = (c: { provider: string | null; model: string | null }): ModelChoice =>
+  isProvider(c.provider) && c.model ? { provider: c.provider, model: c.model } : DEFAULT_CHOICE;
+
 
 // ---------------------------------------------------------------- prompts
 
@@ -82,6 +87,14 @@ ${COMMON}`,
   SAGE: `당신은 개인 투자 관리 앱 PPFP 안에서, 사용자가 투자 노트에 정리한 투자 거장의 철학을 렌즈 삼아 사용자의 포트폴리오를 보는 에이전트입니다. <page-context>의 '관점으로 삼을 거장' 정리(사용자가 직접 쓰고 고친 내용)를 기준으로 판단하고, 필요하면 get_sage_profile로 다시 확인합니다. 그 인물 본인인 척하지 않고 "버핏의 관점에서 보면"처럼 말합니다. 실제 발언을 인용할 때는 확인된 것만 쓰고, 불확실하면 web_search로 확인하거나 인용하지 않습니다. 그 철학에 잘 맞는 종목과 어긋나는 종목, 그 철학이라면 하지 않을 행동을 짚어 줍니다.
 ${COMMON}`,
 };
+
+
+/** Added when the model has no web search (other companies' models, or search turned off). */
+const NO_WEB = `
+## 이 대화의 제약
+- 웹 검색 도구가 없습니다. 위에서 web_search·web_fetch를 쓰라고 한 부분은 건너뛰고, 앱의 도구가 주는 데이터와 이미 알고 있는 지식으로 답합니다.
+- 최신 뉴스·실적·일정처럼 확인이 필요한 사실은 추측하지 말고, 직접 확인이 필요하다고 밝힙니다. 알고 있는 지식의 기준 시점이 오래됐을 수 있다는 점도 짧게 밝힙니다.
+`;
 
 /** What is on screen, from the page the chat was opened on. */
 async function pageContext(userId: string, path: string | null): Promise<string | null> {
@@ -124,13 +137,16 @@ async function pageContext(userId: string, path: string | null): Promise<string 
 
 // ---------------------------------------------------------------- conversations
 
-export async function startConversation(userId: string, agent: AgentKind, sageId: string | null, firstText: string) {
+// ---------------------------------------------------------------- conversations
+
+export async function startConversation(userId: string, agent: AgentKind, sageId: string | null, firstText: string, model: ModelChoice) {
   if (!AGENT_ORDER.includes(agent)) throw new UserError('알 수 없는 에이전트입니다.');
   if (agent === 'SAGE') {
     if (!sageId || !(await prisma.sage.findFirst({ where: { id: sageId, userId } }))) throw new UserError('관점으로 삼을 투자 거장을 고르세요.');
   }
-  return prisma.aiConversation.create({ data: { userId, agent, sageId: agent === 'SAGE' ? sageId : null, title: conversationTitle(firstText) } });
+  return prisma.aiConversation.create({ data: { userId, agent, sageId: agent === 'SAGE' ? sageId : null, provider: model.provider, model: model.model, title: conversationTitle(firstText) } });
 }
+
 
 async function append(userId: string, conversationId: string, role: 'user' | 'assistant', content: unknown, extra: { model?: string; usage?: object; costUsd?: number } = {}) {
   const last = await prisma.aiMessage.findFirst({ where: { conversationId }, orderBy: { seq: 'desc' }, select: { seq: true } });
@@ -158,21 +174,40 @@ export interface TurnInput {
   path?: string | null;
 }
 
+
+/** One model request of the loop, whichever company runs it. */
+interface Step {
+  content: unknown[];
+  toolUses: { id: string; name: string; input: unknown }[];
+  stop: string;
+  model: string;
+  usage: object;
+  cost: number;
+}
+
 export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void> {
   const text = input.text.trim();
   if (!text) throw new UserError('질문을 입력하세요.');
   if (text.length > 8000) throw new UserError('질문은 8천 자까지 쓸 수 있습니다.');
   const status = await aiStatus(userId);
-  if (!status.configured) throw new UserError('AI 어드바이저를 쓰려면 연동 · 설정에서 Anthropic API 키를 넣으세요.');
+  if (!status.configured) throw new UserError('AI 어드바이저를 쓰려면 연동 · 설정에서 AI API 키를 하나 이상 넣으세요.');
   if (status.monthlyLimit !== null && status.spent >= status.monthlyLimit) {
     throw new UserError(`이번 달 AI 사용 한도($${status.monthlyLimit.toFixed(2)})에 닿았습니다. 연동 · 설정에서 한도를 바꿀 수 있습니다.`);
   }
-  const client = await clientFor(userId);
 
-  const conv = input.conversationId
-    ? await prisma.aiConversation.findFirst({ where: { id: input.conversationId, userId } })
-    : await startConversation(userId, input.agent ?? 'MANAGER', input.sageId ?? null, text);
-  if (!conv) throw new UserError('대화를 찾을 수 없습니다.');
+  let found = input.conversationId ? await prisma.aiConversation.findFirst({ where: { id: input.conversationId, userId } }) : null;
+  if (input.conversationId && !found) throw new UserError('대화를 찾을 수 없습니다.');
+  if (!found) {
+    const agent = input.agent ?? 'MANAGER';
+    const choice = status.models[agent];
+    if (!choice) throw new UserError('AI 어드바이저를 쓰려면 연동 · 설정에서 AI API 키를 하나 이상 넣으세요.');
+    found = await startConversation(userId, agent, input.sageId ?? null, text, choice);
+  }
+  const conv = found;
+  const { provider, model } = conversationModel(conv);
+  if (!status.keys[provider].source) {
+    throw new UserError(`이 대화는 ${choiceLabel({ provider, model })}로 시작했습니다. 이어 가려면 연동 · 설정에서 ${PROVIDERS[provider].name} 키를 넣거나, 새 대화를 시작하세요.`);
+  }
   if (running.has(conv.id)) throw new UserError('이 대화에서 아직 답을 쓰는 중입니다.');
   running.add(conv.id);
   emit({ t: 'start', conversationId: conv.id });
@@ -192,80 +227,126 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
 
     const kind = (conv.agent in SYSTEM ? conv.agent : 'MANAGER') as AgentKind;
     const research = kind === 'RESEARCH';
-    const tools: Anthropic.Beta.BetaToolUnion[] = [...toolDefs];
-    if (status.webSearch) {
-      tools.push(
-        { type: 'web_search_20260209', name: 'web_search', max_uses: research ? 10 : 5, user_location: { type: 'approximate', country: 'KR', timezone: 'Asia/Seoul' } },
-        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: research ? 6 : 3, citations: { enabled: true } },
-      );
-    }
-    let total = 0;
-    let jsonRetries = 0;
+    const web = status.webSearch && PROVIDERS[provider].webSearch;
+    const system = web ? SYSTEM[kind] : SYSTEM[kind] + NO_WEB;
+    const stored = () => prisma.aiMessage.findMany({ where: { conversationId: conv.id }, orderBy: { seq: 'asc' }, select: { role: true, content: true } });
+
     let wroteText = false;
     let toolSinceText = false;
-    for (let step = 0; step < MAX_STEPS; step++) {
-      const messages = (await prisma.aiMessage.findMany({ where: { conversationId: conv.id }, orderBy: { seq: 'asc' }, select: { role: true, content: true } })) as unknown as Anthropic.Beta.BetaMessageParam[];
-      const stream = client.beta.messages.stream(
-        {
-          model: AI_MODEL,
-          max_tokens: 32000,
-          system: [{ type: 'text', text: SYSTEM[kind] }],
-          // Caches the stable prefix (tools, system, earlier turns) for the next step
-          cache_control: { type: 'ephemeral' },
-          thinking: { type: 'adaptive' },
-          // Research reads and weighs many sources: think harder there
-          output_config: { effort: research ? 'high' : 'medium' },
-          tools,
-          messages,
-          // A declined request is retried server-side on the model Anthropic picks for the category
-          fallbacks: 'default',
-          betas: ['server-side-fallback-2026-07-01'],
-        },
-        { signal },
-      );
-      let msg: Anthropic.Beta.BetaMessage;
-      try {
-        for await (const ev of stream) {
-          if (ev.type === 'content_block_start') {
-            const b = ev.content_block;
-            if (b.type === 'tool_use' || b.type === 'server_tool_use') {
-              emit({ t: 'status', label: `${TOOL_LABEL[b.name] ?? b.name} 중…` });
-              toolSinceText = true;
-            }
-            // Text after a tool call starts a new paragraph (as in the stored view); cited pieces run on
-            if (b.type === 'text' && wroteText && toolSinceText) emit({ t: 'text', d: '\n\n' });
-            if (b.type === 'text') toolSinceText = false;
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            wroteText = true;
-            emit({ t: 'text', d: ev.delta.text });
-          }
-        }
-        msg = await stream.finalMessage();
-        jsonRetries = 0;
-      } catch (e) {
-        // A tool input that could not be parsed at all: re-issue the step (API errors rethrow)
-        if (e instanceof Anthropic.APIError || signal?.aborted || jsonRetries++ >= 2) throw e;
-        continue;
-      }
+    const toolStarted = (name: string) => {
+      emit({ t: 'status', label: `${TOOL_LABEL[name] ?? name} 중…` });
+      toolSinceText = true;
+    };
+    const textStarted = () => {
+      // Text after a tool call starts a new paragraph (as in the stored view); cited pieces run on
+      if (wroteText && toolSinceText) emit({ t: 'text', d: '\n\n' });
+      toolSinceText = false;
+    };
+    const textDelta = (d: string) => {
+      wroteText = true;
+      emit({ t: 'text', d });
+    };
 
-      if (msg.stop_reason === 'refusal') {
+    let next: () => Promise<Step | null>;
+    if (provider === 'anthropic') {
+      const client = await anthropicClient(userId);
+      const tools: Anthropic.Beta.BetaToolUnion[] = [...toolDefs];
+      if (web) {
+        const where = { type: 'approximate' as const, country: 'KR', timezone: 'Asia/Seoul' };
+        const searches = research ? 10 : 5;
+        const fetches = research ? 6 : 3;
+        // Opus and Sonnet filter search results as they read; other Claude models get the basic tools
+        if (claudeHasDynamicWebTools(model)) {
+          tools.push({ type: 'web_search_20260209', name: 'web_search', max_uses: searches, user_location: where }, { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: fetches, citations: { enabled: true } });
+        } else {
+          tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: searches, user_location: where }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: fetches, citations: { enabled: true } });
+        }
+      }
+      let jsonRetries = 0;
+      next = async () => {
+        const messages = (await stored()) as unknown as Anthropic.Beta.BetaMessageParam[];
+        const stream = client.beta.messages.stream(
+          {
+            model,
+            max_tokens: 32000,
+            system: [{ type: 'text', text: system }],
+            // Caches the stable prefix (tools, system, earlier turns) for the next step
+            cache_control: { type: 'ephemeral' },
+            thinking: { type: 'adaptive' },
+            // Research reads and weighs many sources: think harder there
+            output_config: { effort: research ? 'high' : 'medium' },
+            tools,
+            messages,
+            // A declined request is retried server-side on the model Anthropic picks for the category
+            ...(claudeHasFallbacks(model) ? { fallbacks: 'default' as const, betas: ['server-side-fallback-2026-07-01'] } : {}),
+          },
+          { signal },
+        );
+        let msg: Anthropic.Beta.BetaMessage;
+        try {
+          for await (const ev of stream) {
+            if (ev.type === 'content_block_start') {
+              const b = ev.content_block;
+              if (b.type === 'tool_use' || b.type === 'server_tool_use') toolStarted(b.name);
+              if (b.type === 'text') textStarted();
+            } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') textDelta(ev.delta.text);
+          }
+          msg = await stream.finalMessage();
+          jsonRetries = 0;
+        } catch (e) {
+          // A tool input that could not be parsed at all: re-issue the step (API errors rethrow)
+          if (e instanceof Anthropic.APIError || signal?.aborted || jsonRetries++ >= 2) throw e;
+          return null;
+        }
+        return {
+          content: msg.content,
+          toolUses: msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use'),
+          stop: msg.stop_reason ?? 'end_turn',
+          model: msg.model,
+          usage: msg.usage as object,
+          cost: costUsd(msg.usage, msg.model),
+        };
+      };
+    } else {
+      next = async () => {
+        let inText = false;
+        const r = await compatStep(
+          userId,
+          { provider, model, system, tools: toolDefs, messages: await stored(), signal },
+          (d) => {
+            if (!inText) textStarted();
+            inText = true;
+            textDelta(d);
+          },
+          (name) => {
+            toolStarted(name);
+            inText = false;
+          },
+        );
+        return { content: r.content, toolUses: r.toolUses, stop: r.stop, model: r.model ?? model, usage: r.usage, cost: costUsd(r.usage, model) };
+      };
+    }
+
+    let total = 0;
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const msg = await next();
+      if (!msg) continue;
+      if (msg.stop === 'refusal') {
         emit({ t: 'error', message: '이 요청에는 답할 수 없습니다. 질문을 바꿔 다시 해 보세요.' });
         break;
       }
-      const toolUses = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
-      if (msg.stop_reason === 'max_tokens' && toolUses.length) {
+      if (msg.stop === 'max_tokens' && msg.toolUses.length) {
         emit({ t: 'error', message: '답이 너무 길어져 멈췄습니다. 범위를 좁혀 다시 물어보세요.' });
         break;
       }
-      const cost = costUsd(msg.usage, msg.model);
-      total += cost;
-      await append(userId, conv.id, 'assistant', msg.content, { model: msg.model, usage: msg.usage as object, costUsd: cost });
-      if (msg.stop_reason === 'pause_turn') continue; // server tools hit their per-request limit: resume
-      if (msg.stop_reason !== 'tool_use' || !toolUses.length) break;
+      total += msg.cost;
+      await append(userId, conv.id, 'assistant', msg.content, { model: msg.model, usage: msg.usage, costUsd: msg.cost });
+      if (msg.stop === 'pause_turn') continue; // server tools hit their per-request limit: resume
+      if (msg.stop !== 'tool_use' || !msg.toolUses.length) break;
 
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
       await Promise.all(
-        toolUses.map(async (b, i) => {
+        msg.toolUses.map(async (b, i) => {
           const r = await runTool(b.name, b.input, { userId, conversationId: conv.id, toolUseId: b.id });
           results[i] = { type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.isError ? { is_error: true } : {}) };
         }),
@@ -282,11 +363,21 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
 /** Short user-facing message for an API error. */
 export function apiErrorMessage(e: unknown): string {
   if (e instanceof UserError) return e.message;
+  if (e instanceof ProviderError) {
+    const name = PROVIDERS[e.provider].name;
+    if (e.status === 401 || e.status === 403) return `${name} API 키가 올바르지 않거나 이 모델을 쓸 권한이 없습니다. 연동 · 설정에서 확인하세요.`;
+    if (e.status === 404) return `${name}에서 이 모델을 찾지 못했습니다. 연동 · 설정에서 모델 이름을 확인하세요.`;
+    if (e.status === 429) return `${name} 요청 한도에 걸렸습니다. 잠시 뒤에 다시 시도하거나 결제 한도를 확인하세요.`;
+    if (e.status >= 500) return `${name} 서비스가 잠시 불안정합니다. 조금 뒤에 다시 시도하세요.`;
+    return `${name}가 요청을 거절했습니다 (${e.status}): ${e.message}`;
+  }
   if (e instanceof Anthropic.AuthenticationError) return 'Anthropic API 키가 올바르지 않습니다. 연동 · 설정에서 확인하세요.';
   if (e instanceof Anthropic.PermissionDeniedError) return '이 API 키로는 이 모델이나 기능을 쓸 수 없습니다.';
+  if (e instanceof Anthropic.NotFoundError) return 'Anthropic에서 이 모델을 찾지 못했습니다. 연동 · 설정에서 모델 이름을 확인하세요.';
   if (e instanceof Anthropic.RateLimitError) return '요청이 많아 잠시 막혔습니다. 조금 뒤에 다시 시도하세요.';
   if (e instanceof Anthropic.APIConnectionError) return 'Anthropic API에 연결하지 못했습니다.';
   if (e instanceof Anthropic.APIError) return e.status && e.status >= 500 ? 'AI 서비스가 잠시 불안정합니다. 조금 뒤에 다시 시도하세요.' : `AI 요청이 거절되었습니다 (${e.status ?? '오류'}).`;
+  if (e instanceof TypeError && /fetch failed/i.test(e.message)) return 'AI 서비스에 연결하지 못했습니다.';
   console.error('[ai] turn failed', e);
   return 'AI 답변 중 오류가 났습니다.';
 }

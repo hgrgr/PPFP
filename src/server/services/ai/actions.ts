@@ -1,15 +1,17 @@
 /** Running what an agent proposed, settings, and the chat view of a conversation. */
 import 'server-only';
-import { toChat } from '@/domain/ai';
+import { AGENT_ORDER, AGENTS, toChat, type AgentKind } from '@/domain/ai';
+import { choiceLabel, isModelId, isProvider, PROVIDER_ORDER, PROVIDERS, type ProviderId } from '@/domain/ai-providers';
 import { textToBlocks } from '@/domain/ai-analysis';
 import { BUILTIN_FORMATS } from '@/domain/journal';
-import { encryptSecret, mask } from '../../crypto';
 import { kstDate, prisma } from '../../db';
 import { ensureListedAsset } from '../assets';
 import { appendToJournal, saveJournal } from '../journal';
 import { createAlert, savePortfolioTargets } from '../alerts';
 import { addLink, createNote } from '../knowledge';
 import { UserError } from '../portfolios';
+import { clearServiceKey, setServiceKey } from '../api-keys';
+import { conversationModel } from './agent';
 
 export interface ActionView {
   id: string;
@@ -39,6 +41,7 @@ export async function conversationView(userId: string, id: string) {
     agent: c.agent,
     sage,
     title: c.title,
+    modelLabel: choiceLabel(conversationModel(c)),
     turns: toChat(c.messages),
     costUsd: c.messages.reduce((s, m) => s + Number(m.costUsd), 0),
     actions: c.actions.map(
@@ -114,24 +117,47 @@ export async function dismissAction(userId: string, id: string) {
 
 export async function saveAiSettings(
   userId: string,
-  input: { apiKey?: string; clearKey?: boolean; monthlyLimit: string; webSearch: boolean; briefing?: boolean; briefingHour?: string; briefingWeekdays?: boolean; alertAnalysis?: boolean },
+  input: {
+    keys?: Partial<Record<ProviderId, { key?: string; clear?: boolean }>>;
+    picks?: Partial<Record<AgentKind, { provider: string; model: string }>>;
+    monthlyLimit: string;
+    webSearch: boolean;
+    briefing?: boolean;
+    briefingHour?: string;
+    briefingWeekdays?: boolean;
+    alertAnalysis?: boolean;
+  },
 ) {
-  const key = input.apiKey?.trim();
-  if (key && !/^sk-ant-[\w-]{20,}$/.test(key)) throw new UserError('Anthropic API 키는 sk-ant- 로 시작합니다.');
+  const keys: [ProviderId, string][] = [];
+  for (const p of PROVIDER_ORDER) {
+    const key = input.keys?.[p]?.key?.trim();
+    if (!key) continue;
+    if (!PROVIDERS[p].keyPattern.test(key)) throw new UserError(`${PROVIDERS[p].name} API 키 형식이 아닙니다. 예: ${PROVIDERS[p].keyPlaceholder}`);
+    keys.push([p, key]);
+  }
+  const agentModels: Record<string, { provider: ProviderId; model: string }> = {};
+  for (const agent of AGENT_ORDER) {
+    const pick = input.picks?.[agent];
+    if (!pick || !isProvider(pick.provider)) continue;
+    const model = pick.model.trim() || PROVIDERS[pick.provider].models[0].id;
+    if (!isModelId(model)) throw new UserError(`${AGENTS[agent].name}의 모델 이름을 확인하세요.`);
+    agentModels[agent] = { provider: pick.provider, model };
+  }
   const limitText = input.monthlyLimit.trim().replace(/^\$/, '');
   const limit = limitText === '' ? null : Number(limitText);
   if (limit !== null && (!Number.isFinite(limit) || limit < 0 || limit > 10_000)) throw new UserError('월 한도는 0~10,000 달러 사이로 입력하세요. 비우면 한도가 없습니다.');
-  const keyData = key ? { apiKeyEnc: encryptSecret(key), apiKeyHint: mask(key) } : input.clearKey ? { apiKeyEnc: null, apiKeyHint: null } : {};
   const hour = Number(input.briefingHour ?? 8);
   if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new UserError('브리핑 시각을 고르세요.');
+  for (const [p, key] of keys) await setServiceKey(userId, p, key);
+  for (const p of PROVIDER_ORDER) if (input.keys?.[p]?.clear && !keys.some(([q]) => q === p)) await clearServiceKey(userId, p);
   const data = {
+    ...(input.picks ? { agentModels } : {}),
     monthlyLimit: limit === null ? null : limit.toFixed(2),
     webSearch: input.webSearch,
     briefing: !!input.briefing,
     briefingHour: hour,
     briefingWeekdays: !!input.briefingWeekdays,
     alertAnalysis: !!input.alertAnalysis,
-    ...keyData,
   };
   await prisma.aiSettings.upsert({ where: { userId }, create: { userId, ...data }, update: data });
 }

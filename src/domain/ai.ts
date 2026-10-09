@@ -83,9 +83,18 @@ export const isProposal = (toolName: string) => toolName.startsWith('propose_');
 /** USD per million tokens. Cache writes are the 5-minute kind. */
 const PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  'claude-fable-5-1': { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
   'claude-opus-5': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   'claude-opus-4-8': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'gpt-6-astra': { input: 10, output: 50, cacheWrite: 10, cacheRead: 1 },
 };
+/**
+ * Models whose price the app doesn't know (other companies' models, new ids) are estimated
+ * at a top-tier rate, so the monthly cap errs on the safe side.
+ */
+const UNKNOWN_PRICE = { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 };
 /** USD per web search */
 const WEB_SEARCH = 0.01;
 
@@ -97,9 +106,12 @@ export interface UsageLike {
   server_tool_use?: { web_search_requests?: number | null } | null;
 }
 
-/** Estimated cost of one response. Unknown models are priced as the default model. */
+/** Is the price of this model known (rather than estimated at the top-tier rate)? */
+export const knownPrice = (model: string) => model in PRICES;
+
+/** Estimated cost of one response. */
 export function costUsd(usage: UsageLike, model: string): number {
-  const p = PRICES[model] ?? PRICES[AI_MODEL];
+  const p = PRICES[model] ?? UNKNOWN_PRICE;
   const m = (n: number | null | undefined, per: number) => ((n ?? 0) * per) / 1_000_000;
   return (
     m(usage.input_tokens, p.input) +

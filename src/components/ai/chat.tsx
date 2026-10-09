@@ -136,6 +136,7 @@ export function AiChat({
   onConversation,
   urlOnStart,
   compact,
+  modelLabel,
 }: {
   initial: ConversationView | null;
   agent: AgentKind;
@@ -147,6 +148,8 @@ export function AiChat({
   /** Put the new conversation in the address bar (the /ai page) */
   urlOnStart?: boolean;
   compact?: boolean;
+  /** What a new conversation answers with */
+  modelLabel?: string;
 }) {
   const [conv, setConv] = useState<ConversationView | null>(initial);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
@@ -289,7 +292,7 @@ export function AiChat({
           }}
         />
         <div className="spread">
-          <span className="sub">{conv ? `이 대화 약 $${conv.costUsd.toFixed(2)} · ` : ''}숫자는 앱의 기록, 판단은 참고용입니다</span>
+          <span className="sub">{[conv?.modelLabel ?? modelLabel, conv ? `이 대화 약 $${conv.costUsd.toFixed(2)}` : null, '숫자는 앱의 기록, 판단은 참고용입니다'].filter(Boolean).join(' · ')}</span>
           <button type="submit" className="btn primary small" disabled={busy || disabled || !text.trim()}>
             {busy ? '답하는 중…' : '보내기'}
           </button>

@@ -1,6 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { AGENT_ORDER } from '@/domain/ai';
+import { PROVIDER_ORDER } from '@/domain/ai-providers';
 import { requireUser } from '@/server/auth';
 import { deleteConversation, dismissAction, executeAction, saveAiSettings } from '@/server/services/ai/actions';
 import { UserError } from '@/server/services/portfolios';
@@ -40,13 +42,15 @@ export async function deleteAiConversation(id: string) {
 export async function saveAiSettingsAction(_prev: AiResult, form: FormData): Promise<AiResult> {
   const user = await requireUser();
   return run(async () => {
+    const str = (k: string) => String(form.get(k) ?? '');
     await saveAiSettings(user.id, {
-      apiKey: String(form.get('apiKey') ?? ''),
-      clearKey: form.get('clearKey') === 'on',
-      monthlyLimit: String(form.get('monthlyLimit') ?? ''),
+      keys: Object.fromEntries(PROVIDER_ORDER.map((p) => [p, { key: str(`key.${p}`), clear: form.get(`clear.${p}`) === 'on' }])),
+      // Only when the form has the model table (it always does on 연동 · 설정)
+      picks: form.has('picks') ? Object.fromEntries(AGENT_ORDER.map((a) => [a, { provider: str(`provider.${a}`), model: str(`model.${a}`) }])) : undefined,
+      monthlyLimit: str('monthlyLimit'),
       webSearch: form.get('webSearch') === 'on',
       briefing: form.get('briefing') === 'on',
-      briefingHour: String(form.get('briefingHour') ?? '8'),
+      briefingHour: str('briefingHour') || '8',
       briefingWeekdays: form.get('briefingWeekdays') === 'on',
       alertAnalysis: form.get('alertAnalysis') === 'on',
     });
