@@ -12,7 +12,7 @@ export interface SageOption {
   name: string;
 }
 
-function Md({ text }: { text: string }) {
+export function Md({ text }: { text: string }) {
   return (
     <div className="ai-md">
       <Markdown

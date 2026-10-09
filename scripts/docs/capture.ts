@@ -80,6 +80,8 @@ interface Ids {
   book: string;
   /** A finished AI advisor conversation, prepared through the demo server before capturing */
   aiChat: string;
+  /** A research conversation that used a skill */
+  aiSkillChat: string;
   /** Today's morning briefing conversation */
   aiBriefing: string;
 }
@@ -497,6 +499,47 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '.ai-main h2' }, { sel: '.ai-turn.user' }, { sel: '.ai-md h2', text: '오늘 할 일' }],
   },
   {
+    file: 'ai-skills',
+    path: () => '/ai/skills',
+    wait: 1500,
+    width: 1280,
+    clip: [{ sel: '.page-head' }, { sel: 'nav[aria-label="스킬"]' }, { sel: '.skill-table', closest: '.card' }],
+    marks: [
+      { sel: 'button', text: '+ 새 스킬', closest: '.inline' },
+      { sel: '.skill-table input[type="checkbox"]' },
+      { sel: '.skill-table a.badge' },
+      { sel: '.skill-table .skill-agents' },
+      { sel: 'button', text: '다시 가져오기' },
+    ],
+  },
+  {
+    file: 'ai-skills-community',
+    path: () => '/ai/skills?tab=community',
+    wait: 2000,
+    width: 1440,
+    height: 1100,
+    steps: [{ click: { sel: '.skill-pick span', text: 'dcf-valuation', closest: '.skill-pick' } }, { until: "!!document.querySelector('.skill-preview h2')", timeout: 15_000 }, { wait: 400 }],
+    clip: [{ sel: '.skill-community' }],
+    marks: [
+      { sel: 'input[aria-label="커뮤니티 스킬 찾기"]' },
+      { sel: '[aria-label="분류"]' },
+      { sel: '.skill-rank tbody tr' },
+      { sel: '.skill-warn' },
+      { sel: 'button', text: '내 어드바이저에 적용', closest: '.inline' },
+      { sel: '.skill-body' },
+    ],
+  },
+  {
+    file: 'ai-skill-use',
+    path: (ids) => `/ai?c=${ids.aiSkillChat}`,
+    wait: 2500,
+    width: 1280,
+    steps: [{ until: "(document.querySelector('.ai-log').scrollTop = 0, true)" }, { wait: 300 }],
+    clip: [{ sel: '.ai-main h2' }, { sel: '.ai-turn.user' }, { sel: '.ai-steps' }, { sel: '.ai-steps', nth: 1 }],
+    pad: 10,
+    marks: [{ sel: '.ai-steps' }, { sel: '.ai-steps', nth: 1 }],
+  },
+  {
     file: 'ai-settings',
     path: () => '/settings',
     wait: 1500,
@@ -781,6 +824,8 @@ async function main() {
     CRON_SECRET: 'docs-demo-cron-secret',
     // Book search goes to the fake in fake-books.cjs
     KAKAO_REST_API_KEY: '0123456789abcdef0123456789abcdef',
+    // Community skills come from the made-up catalog in fake-skills.cjs
+    PPFP_FAKE_SKILLS: '1',
   };
   let server: ChildProcess | null = null;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
@@ -816,6 +861,7 @@ async function main() {
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
       aiChat: '',
+      aiSkillChat: '',
       aiBriefing: '',
     };
 
@@ -836,6 +882,14 @@ async function main() {
     const events = await chat.text();
     if (!events.includes('"t":"done"')) throw new Error(`AI conversation failed:\n${events}`);
     ids.aiChat = (await db.aiConversation.findFirstOrThrow()).id;
+    // A research answer that reads the analyst's skill first
+    const research = await fetch(`${BASE}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `ppfp_session=${token}` },
+      body: JSON.stringify({ agent: 'RESEARCH', text: '엔비디아(NVDA)의 경쟁력과 해자를 점검해 줘', path: '/market?s=NVDA' }),
+    });
+    if (!(await research.text()).includes('"t":"done"')) throw new Error('AI research conversation failed');
+    ids.aiSkillChat = (await db.aiConversation.findFirstOrThrow({ where: { agent: 'RESEARCH' } })).id;
     // The scheduled-job endpoint sends the morning briefing that is due (from midnight, whatever the time now)
     await db.aiSettings.updateMany({ data: { briefingHour: 0 } });
     const cron = await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { authorization: `Bearer ${env.CRON_SECRET}` } });

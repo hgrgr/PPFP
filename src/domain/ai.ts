@@ -84,6 +84,7 @@ export const TOOL_LABEL: Record<string, string> = {
   propose_note: '메모 제안',
   propose_price_alert: '가격 알림 제안',
   propose_target_weights: '목표 비중 제안',
+  use_skill: '스킬 읽기',
   web_search: '웹 검색',
   web_fetch: '웹 페이지 읽기',
 };
@@ -210,7 +211,10 @@ export function toChat(messages: { role: string; content: unknown }[]): ChatTurn
           if (c.url && !a.sources.some((s) => s.url === c.url)) a.sources.push({ url: c.url, title: c.title || c.url });
         }
       } else if (b.type === 'tool_use' && b.name && b.id) {
-        a.parts.push(isProposal(b.name) ? { kind: 'action', toolUseId: b.id } : { kind: 'tool', name: b.name, label: TOOL_LABEL[b.name] ?? b.name });
+        const skill = b.name === 'use_skill' ? (b.input as { name?: unknown } | undefined)?.name : undefined;
+        a.parts.push(
+          isProposal(b.name) ? { kind: 'action', toolUseId: b.id } : { kind: 'tool', name: b.name, label: typeof skill === 'string' ? `스킬 ‘${skill}’ 사용` : (TOOL_LABEL[b.name] ?? b.name) },
+        );
       } else if (b.type === 'server_tool_use' && b.name === 'web_search') {
         const q = (b.input as { query?: unknown } | undefined)?.query;
         a.parts.push({ kind: 'search', query: typeof q === 'string' ? q : '' });

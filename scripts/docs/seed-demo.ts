@@ -25,6 +25,7 @@ import { addLink, addPresetSage, createBook, createNote, saveBook } from '@/serv
 import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
+import { SKILL_STARTERS } from '@/domain/ai-skills';
 import { BUILTIN_FORMATS } from '@/domain/journal';
 import { recordBuy, recordCash, recordSell, recordValuation } from '@/server/services/trading';
 
@@ -369,6 +370,29 @@ async function seedKnowledge(uid: string) {
   await prisma.aiSettings.create({
     data: { userId: uid, briefing: true, briefingHour: 7, briefingWeekdays: false, monthlyLimit: '20.00', agentModels: { COACH: { provider: 'openai', model: 'gpt-6.1-sol' } } },
   });
+  // AI skills: a checklist the user wrote for the manager and research, and (for captures, where
+  // the made-up catalog in fake-skills.cjs answers) one imported from the community
+  const starter = SKILL_STARTERS[0];
+  await prisma.aiSkill.create({ data: { userId: uid, name: starter.name, description: starter.description, instructions: starter.instructions, agents: starter.agents } });
+  if (process.env.PPFP_FAKE_SKILLS === '1') {
+    const sourceId = 'value-lab/investing-skills/moat-analysis';
+    const description = "Judge how durable a company's competitive advantage is. Use when the user asks about a moat, pricing power, or whether a business can defend its returns.";
+    await prisma.aiSkill.create({
+      data: {
+        userId: uid,
+        name: 'moat-analysis',
+        description,
+        instructions: `# Moat Analysis\n\n${description}\n\n## Steps\n\n1. List the sources of advantage.\n2. Check returns on capital over 5-10 years.\n3. Name what could erode it.\n4. Rate the moat none / narrow / wide.`,
+        agents: ['RESEARCH'],
+        source: 'skills.sh',
+        sourceId,
+        sourcePath: 'skills/moat-analysis/SKILL.md',
+        sourceUrl: `https://github.com/value-lab/investing-skills/blob/HEAD/skills/moat-analysis/SKILL.md`,
+        license: 'MIT',
+        installs: 8210,
+      },
+    });
+  }
   // Goals, dated from today so the screens stay the same whenever they are taken
   const year = Number(dash(ago(0)).slice(0, 4));
   await prisma.goal.create({ data: { userId: uid, name: '은퇴 자금', target: '1000000000', targetDate: new Date(`${year + 20}-12-31`), monthly: '1500000' } });

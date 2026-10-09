@@ -557,3 +557,4 @@ module.exports = { KR, US, COINS, KIS_ACCOUNT, USDKRW, ANCHOR, priceAt, stockMet
 // The AI advisor's Claude calls and the book search go to scripted fakes as well
 require('./fake-claude.cjs');
 require('./fake-books.cjs');
+require('./fake-skills.cjs');
