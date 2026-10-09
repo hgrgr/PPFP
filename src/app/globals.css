@@ -526,3 +526,5 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .skill-table .btn { white-space: nowrap; }
 .skill-rank th:nth-child(2) { text-align: left; }
 .skill-table td:nth-child(3) { min-width: 250px; }
+.skill-community .seg { flex-wrap: wrap; }
+.skill-community .seg button { white-space: nowrap; }
