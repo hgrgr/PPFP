@@ -445,7 +445,7 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .ai-box table th, .ai-box table td { text-align: left; white-space: normal; vertical-align: middle; padding: 8px 10px; }
 .ai-box table th[scope='row'] { color: var(--ink); font-size: 13.5px; font-weight: 500; }
 .ai-box table th[scope='row'] .sub { font-weight: 400; }
-.ai-key-table input { min-width: 180px; }
+.ai-key-table input:not([type='checkbox']) { min-width: 180px; }
 .ai-box table th[scope='row'], .ai-key-table td:nth-child(2), .ai-key-table td:last-child { white-space: nowrap; }
 .ai-key-table td:last-child .check { display: inline-flex; gap: 6px; }
 .ai-model-table select { min-width: 170px; }

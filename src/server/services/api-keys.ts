@@ -1,5 +1,4 @@
 /** Users' keys for outside services (book search, AI providers), stored encrypted. */
-import 'server-only';
 import { decryptSecret, encryptSecret, mask } from '../crypto';
 import { prisma } from '../db';
 
