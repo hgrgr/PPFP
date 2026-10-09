@@ -8,7 +8,7 @@ import { kstDate, prisma } from '../../db';
 import { ensureListedAsset } from '../assets';
 import { appendToJournal, saveJournal } from '../journal';
 import { createAlert, savePortfolioTargets } from '../alerts';
-import { addLink, createNote } from '../knowledge';
+import { addLink, createBook, createNote } from '../knowledge';
 import { UserError } from '../portfolios';
 import { clearServiceKey, setServiceKey } from '../api-keys';
 import { conversationModel } from './agent';
@@ -29,6 +29,7 @@ function hrefOf(kind: string, payload: Record<string, unknown>, resultId: string
   if (kind === 'target_weights' && typeof payload.portfolioId === 'string') return `/portfolios/${payload.portfolioId}#targets`;
   if (kind === 'journal_review' && typeof payload.entryId === 'string') return `/journal/${payload.entryId}`;
   if (kind === 'journal_draft' && resultId) return `/journal/${resultId}`;
+  if (kind === 'book' && resultId) return `/books/${resultId}`;
   return null;
 }
 
@@ -99,9 +100,19 @@ export async function executeAction(userId: string, id: string): Promise<string>
         content: textToBlocks('AI 초안', String(p.body)).slice(1),
         txnIds: [],
       });
+    } else if (a.kind === 'book') {
+      const title = String(p.title);
+      if (await prisma.book.findFirst({ where: { userId, title: title.trim() } })) throw new UserError(`『${title}』은(는) 이미 독서 노트에 있습니다.`);
+      const id = await createBook(userId, title, { author: typeof p.author === 'string' ? p.author : null, publisher: typeof p.publisher === 'string' ? p.publisher : null, year: typeof p.year === 'number' ? p.year : null });
+      await prisma.book.update({ where: { id }, data: { status: 'WANT', oneLine: String(p.reason ?? '').slice(0, 300) || null } });
+      for (const name of Array.isArray(p.keywords) ? (p.keywords as unknown[]) : []) {
+        const t = typeof name === 'string' ? await prisma.topic.findUnique({ where: { userId_name: { userId, name: name.replace(/^#/, '').trim() } } }) : null;
+        if (t) await addLink(userId, { type: 'book', id }, { type: 'topic', id: t.id });
+      }
+      result = id;
     } else throw new UserError('알 수 없는 제안입니다.');
     await prisma.aiAction.update({ where: { id }, data: { status: 'DONE', result } });
-    return a.kind === 'note' ? '메모를 저장했습니다' : a.kind === 'journal_draft' ? '일지 초안을 만들었습니다' : result;
+    return a.kind === 'note' ? '메모를 저장했습니다' : a.kind === 'journal_draft' ? '일지 초안을 만들었습니다' : a.kind === 'book' ? '읽을 책에 추가했습니다' : result;
   } catch (e) {
     const msg = e instanceof UserError ? e.message : '실행하지 못했습니다.';
     if (!(e instanceof UserError)) console.error('[ai] action failed', e);

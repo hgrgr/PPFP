@@ -12,7 +12,7 @@ export interface AskAiDetail {
 }
 
 const EVENT = 'ppfp:ai';
-const LENSES: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH'];
+const LENSES: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN'];
 
 /** Opens the AI side window with a question about the current screen. */
 export function askAi(detail: AskAiDetail) {

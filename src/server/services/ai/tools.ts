@@ -12,7 +12,8 @@ import { kstDate, prisma } from '../../db';
 import { currentState, dashboard } from '../analytics';
 import { listAlerts, portfolioTargets } from '../alerts';
 import { getJournal, listJournals } from '../journal';
-import { relatedView, topicsOverview } from '../knowledge';
+import { linkedItems, relatedView, topicsOverview } from '../knowledge';
+import { searchBooks } from '../book-search';
 import { liveCandles, stockDetail } from '../market-board';
 import { UserError, userGraph } from '../portfolios';
 import { dividendReport } from '../dividends';
@@ -319,6 +320,57 @@ const notes = tool(
   },
 );
 
+const readingHistory = tool(
+  'get_reading_history',
+  '독서 노트의 모든 책: 상태(읽음 DONE·읽는 중 READING·읽을 책 WANT), 별점, 다 읽은 날, 한 줄 요약, 연결한 키워드·거장·자산 성질, 정리한 내용 앞부분. 많이 연결한 키워드와 상태별 권수도 함께 봅니다.',
+  z.object({}),
+  async (_, { userId }) => {
+    const books = await prisma.book.findMany({ where: { userId }, orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }], take: 80 });
+    const links = await linkedItems(userId, books.map((b) => ({ type: 'book' as const, id: b.id })));
+    const count = new Map<string, number>();
+    const rows = books.map((b) => {
+      const l = links.get(`book:${b.id}`) ?? [];
+      const keywords = l.filter((x) => x.type === 'topic').map((x) => x.label);
+      for (const k of keywords) count.set(k, (count.get(k) ?? 0) + 1);
+      return {
+        title: b.title,
+        author: b.author,
+        publisher: b.publisher,
+        year: b.publishedYear,
+        status: b.status,
+        rating: b.rating,
+        finished: b.finishedAt ? kstDate(b.finishedAt) : null,
+        oneLine: b.oneLine,
+        keywords,
+        sages: l.filter((x) => x.type === 'sage').map((x) => x.label),
+        traits: l.filter((x) => x.type === 'trait').map((x) => x.label),
+        notes: blocksText(b.content, 600),
+      };
+    });
+    return {
+      counts: { DONE: books.filter((b) => b.status === 'DONE').length, READING: books.filter((b) => b.status === 'READING').length, WANT: books.filter((b) => b.status === 'WANT').length },
+      topKeywords: [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => `${k}(${n})`),
+      books: rows,
+    };
+  },
+);
+
+const findBooks = tool(
+  'search_books',
+  '책 제목(또는 제목과 저자)으로 실제 출간된 책을 찾아 제목·저자·출판사·출간 연도를 확인합니다. 한국 책은 카카오 책 검색, 영문 책은 Open Library로 찾습니다. 추천하기 전에 책이 실제로 있는지 이것으로 확인합니다.',
+  z.object({ query: z.string().min(2).max(100).describe('책 제목, 예: 전설로 떠나는 월가의 영웅') }),
+  async ({ query }, { userId }) => {
+    const r = await searchBooks(userId, query);
+    const owned = await prisma.book.findMany({ where: { userId }, select: { title: true } });
+    const mine = new Set(owned.map((b) => b.title.replace(/\s+/g, '')));
+    return {
+      hits: r.hits.map((h) => ({ title: h.title, authors: h.authors, publisher: h.publisher, year: h.year, alreadyInNotes: mine.has(h.title.replace(/\s+/g, '')) })),
+      ...(r.needsKey ? { note: '카카오 책 검색 키가 없어 한국 책은 찾지 못합니다. 영문 원서 제목으로 찾거나, 확인하지 못했다고 밝히세요.' } : {}),
+      ...(!r.hits.length ? { note: '찾은 책이 없습니다. 제목을 줄이거나 다르게 써서 다시 찾아보세요.' } : {}),
+    };
+  },
+);
+
 const sageProfile = tool(
   'get_sage_profile',
   '투자 노트에 정리한 투자 거장 한 명의 전체 정리(핵심 원칙, 대표 저서, 내가 적은 내용)와 키워드·자산 성질, 그 철학에 맞는 내 종목.',
@@ -531,6 +583,24 @@ const proposeNote = tool(
   },
 );
 
+const proposeBook = tool(
+  'propose_book',
+  "독서 노트의 '읽을 책'에 책을 추가하자고 제안합니다(사용자가 확인해야 추가). search_books로 확인한 제목·저자·출판사·연도와, 이 사용자에게 추천하는 이유를 넣습니다. keywords는 이미 있는 키워드 이름이면 연결됩니다.",
+  z.object({
+    title: z.string().min(1).max(200),
+    author: z.string().max(100).optional(),
+    publisher: z.string().max(100).optional(),
+    year: z.number().int().min(1000).max(3000).optional(),
+    reason: z.string().min(1).max(300).describe('추천 이유 한두 문장. 한 줄 요약 자리에 들어갑니다'),
+    keywords: z.array(z.string()).max(5).optional(),
+  }),
+  async (input, ctx) => {
+    const dup = await prisma.book.findFirst({ where: { userId: ctx.userId, title: input.title.trim() } });
+    if (dup) throw new UserError(`『${input.title}』은(는) 이미 독서 노트에 있습니다(${dup.status}).`);
+    return propose(ctx, 'book', input, `읽을 책 추가: 『${input.title}』${input.author ? ` · ${input.author}` : ''}`);
+  },
+);
+
 const proposeAlert = tool(
   'propose_price_alert',
   '가격 알림을 만들자고 제안합니다(사용자가 확인해야 생성). 가격이 그 값 이상 또는 이하가 되면 알림이 갑니다.',
@@ -609,7 +679,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, sageProfile, proposeNote, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, readingHistory, findBooks, sageProfile, proposeNote, proposeBook, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

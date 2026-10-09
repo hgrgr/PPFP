@@ -130,7 +130,7 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/dai
 
 ## AI 어드바이저
 
-포트폴리오 매니저, 리서치 애널리스트, 매매일지 코치, 투자 거장 관점 에이전트는 Claude(Anthropic), ChatGPT(OpenAI), Gemini(Google), Grok(xAI), DeepSeek 중 사용자가 연동 · 설정에서 고른 모델로 동작합니다. 에이전트마다 다른 회사·모델을 고를 수 있고, 대화는 시작할 때의 모델로 이어 갑니다. 앱의 서비스 함수를 도구로 써서 숫자를 읽고, 데이터를 바꾸는 일(메모·가격 알림·목표 비중·일지 복기·일지 초안)은 사용자가 확인 카드에서 실행해야 반영됩니다. Claude는 Anthropic SDK로, 나머지는 각 회사의 OpenAI 호환 Chat Completions로 부릅니다. 웹 검색은 Claude 모델에서만 되며 설정에서 끌 수 있습니다.
+포트폴리오 매니저, 리서치 애널리스트, 매매일지 코치, 독서 큐레이터, 투자 거장 관점 에이전트는 Claude(Anthropic), ChatGPT(OpenAI), Gemini(Google), Grok(xAI), DeepSeek 중 사용자가 연동 · 설정에서 고른 모델로 동작합니다. 에이전트마다 다른 회사·모델을 고를 수 있고, 대화는 시작할 때의 모델로 이어 갑니다. 앱의 서비스 함수를 도구로 써서 숫자를 읽고, 데이터를 바꾸는 일(메모·가격 알림·목표 비중·일지 복기·일지 초안·읽을 책 추가)은 사용자가 확인 카드에서 실행해야 반영됩니다. Claude는 Anthropic SDK로, 나머지는 각 회사의 OpenAI 호환 Chat Completions로 부릅니다. 웹 검색은 Claude 모델에서만 되며 설정에서 끌 수 있습니다.
 
 | 환경 변수 | 기본값 | 뜻 |
 | --- | --- | --- |

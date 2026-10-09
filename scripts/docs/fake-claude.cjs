@@ -381,6 +381,72 @@ function coachScript(turn, results) {
   return { blocks: [text('확인 카드에서 **실행**을 누르면 일지 끝에 복기가 덧붙습니다.')], stop: 'end_turn', usage: { input: 500, cached: 13000, output: 40 } };
 }
 
+/** Every result of one tool in this turn, in call order (search_books runs several times). */
+function allResults(turn, name) {
+  const ids = turn.flatMap((m) => (m.role === 'assistant' && Array.isArray(m.content) ? m.content.filter((b) => b.type === 'tool_use' && b.name === name).map((b) => b.id) : []));
+  const out = [];
+  for (const m of turn) {
+    if (m.role !== 'user' || !Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b.type !== 'tool_result' || !ids.includes(b.tool_use_id)) continue;
+      try {
+        out.push(JSON.parse(typeof b.content === 'string' ? b.content : b.content?.[0]?.text ?? 'null'));
+      } catch {}
+    }
+  }
+  return out;
+}
+
+const PICKS = [
+  { query: '전설로 떠나는 월가의 영웅', why: (t) => `린치를 투자 거장으로 정리해 두셨지만 원전은 아직 독서 노트에 없습니다. 생활 속에서 종목을 찾고 기업을 6가지 유형으로 나누는 법이 성장주 판단의 기준이 됩니다${t.sells ? '' : ''}.`, level: '쉬움 · 먼저' },
+  { query: '투자에 대한 생각', why: (t) => `리스크와 시장 사이클을 다룹니다. 손실 매매의 평균 보유가 ${t.avgHoldingDaysLosses ?? '—'}일로 길어, 언제 생각을 바꿀지 정하는 데 도움이 됩니다.`, level: '보통 · 두 번째' },
+  { query: '돈의 심리학', why: () => '숫자보다 행동을 다룹니다. 급락 때 판단을 지키려는 메모와 이어지고, 『현명한 투자자』의 미스터 마켓을 다른 각도에서 봅니다.', level: '쉬움 · 언제든' },
+];
+
+function librarianScript(turn) {
+  const done = turn.filter((x) => x.role === 'assistant').length;
+  if (done === 0) {
+    return {
+      blocks: [text('읽은 책과 투자 노트, 매매 습관을 먼저 볼게요.'), call('get_reading_history', {}), call('get_investment_notes', {}), call('get_trade_review', {})],
+      stop: 'tool_use',
+      usage: { input: 10400, cached: 0, output: 140 },
+    };
+  }
+  if (done === 1) {
+    return { blocks: [text('후보 책이 실제로 있는지 찾아볼게요.'), ...PICKS.map((p) => call('search_books', { query: p.query }))], stop: 'tool_use', usage: { input: 2600, cached: 10400, output: 90 } };
+  }
+  if (done === 2) {
+    const read = allResults(turn, 'get_reading_history')[0] ?? { books: [], counts: {}, topKeywords: [] };
+    const t = allResults(turn, 'get_trade_review')[0] ?? {};
+    const found = allResults(turn, 'search_books');
+    const picks = PICKS.map((p, i) => ({ ...p, hit: found[i]?.hits?.find((h) => !h.alreadyInNotes) })).filter((p) => p.hit);
+    const done2 = read.books.filter((b) => b.status === 'DONE').map((b) => `『${b.title}』${b.rating ? `(★${b.rating})` : ''}`);
+    const lines = [
+      `## 지금 독서 기록`,
+      `읽은 책 ${read.counts.DONE ?? 0}권 ${done2.join(', ')}, 많이 이어 둔 키워드는 ${read.topKeywords.join(', ') || '아직 없음'}입니다. 가치투자의 기초는 잡혀 있어, 다음은 **종목 찾기**와 **리스크·심리**를 넓히는 책을 권합니다.`,
+      ``,
+      `## 추천`,
+      `| 순서 | 책 | 출판사 · 연도 | 난이도 |`,
+      `| --- | --- | --- | --- |`,
+      ...picks.map((p, i) => `| ${i + 1} | 『${p.hit.title}』 ${p.hit.authors.join(', ')} | ${p.hit.publisher ?? '—'} · ${p.hit.year ?? '—'} | ${p.level} |`),
+      ``,
+      ...picks.map((p, i) => `${i + 1}. **『${p.hit.title}』** — ${p.why(t)}`),
+      ``,
+      `먼저 읽을 한 권을 읽을 책 목록에 넣어 둘게요.`,
+    ].join('\n');
+    const first = picks[0];
+    return {
+      blocks: [
+        text(lines),
+        ...(first ? [call('propose_book', { title: first.hit.title, author: first.hit.authors.join(', '), publisher: first.hit.publisher ?? undefined, year: first.hit.year ?? undefined, reason: '린치의 원전. 생활 속에서 종목을 찾고 기업 유형을 나누는 법을 익힌다.', keywords: ['성장투자'] })] : []),
+      ],
+      stop: first ? 'tool_use' : 'end_turn',
+      usage: { input: 1900, cached: 13000, output: 620 },
+    };
+  }
+  return { blocks: [text('확인 카드의 **실행**을 누르면 독서 노트의 읽을 책에 추가됩니다. 다른 두 권도 원하시면 말씀해 주세요.')], stop: 'end_turn', usage: { input: 400, cached: 15000, output: 40 } };
+}
+
 /** The scripted next step for a conversation (Messages API shape), picked by the agent's system prompt. */
 function scriptFor(system, msgs) {
   const turn = lastTurn(msgs);
@@ -389,9 +455,11 @@ function scriptFor(system, msgs) {
     ? researchScript(turn, results)
     : system.includes('매매일지 코치')
       ? coachScript(turn, results)
-      : system.includes('렌즈')
-        ? sageScript(turn, results, msgs[0])
-        : managerScript(turn, results);
+      : system.includes('독서 큐레이터')
+        ? librarianScript(turn)
+        : system.includes('렌즈')
+          ? sageScript(turn, results, msgs[0])
+          : managerScript(turn, results);
 }
 
 async function messages(init) {

@@ -11,7 +11,7 @@ export const metadata = { title: 'AI 어드바이저' };
 export const dynamic = 'force-dynamic';
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
-const AGENT_SUB = { MANAGER: '포트폴리오 점검 · 리밸런싱 · 위험 관리', RESEARCH: '종목·업종 리서치 리포트 · 출처 · 일지 초안', COACH: '매매일지 복기 · 매매 습관 · 성적 분석' };
+const AGENT_SUB = { MANAGER: '포트폴리오 점검 · 리밸런싱 · 위험 관리', RESEARCH: '종목·업종 리서치 리포트 · 출처 · 일지 초안', COACH: '매매일지 복기 · 매매 습관 · 성적 분석', LIBRARIAN: '다음에 읽을 책 추천 · 읽을 책 목록에 추가' };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default async function AiPage({ searchParams }: { searchParams: SP }) {
@@ -52,7 +52,7 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
           <aside className="stack" style={{ gap: 12 }}>
             <nav className="stack ai-new" aria-label="새 대화">
               <span className="sub strong">새 대화</span>
-              {(['MANAGER', 'RESEARCH', 'COACH'] as const).map((k) => (
+              {(['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN'] as const).map((k) => (
                 <a key={k} className="ai-agent" href={k === 'MANAGER' ? '/ai' : `/ai?agent=${k}`} aria-current={!view && agent === k ? 'true' : undefined}>
                   <span className="strong">{AGENTS[k].name}</span>
                   <span className="sub">{AGENT_SUB[k]}</span>
