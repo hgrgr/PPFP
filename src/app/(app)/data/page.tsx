@@ -152,7 +152,8 @@ export default async function DataPage({ searchParams }: { searchParams: Promise
           </section>
           {SHEET_KEYS.map((k) => {
             const s = SHEETS[k];
-            const ex = SAMPLES[k][0] ?? {};
+            // The first sample value of each column (rows fill different columns)
+            const ex = (h: string) => SAMPLES[k].find((r) => r[h])?.[h] ?? '';
             return (
               <section key={k} className="card" id={k}>
                 <div className="spread">
@@ -183,7 +184,7 @@ export default async function DataPage({ searchParams }: { searchParams: Promise
                           <td className="strong">{c.header}</td>
                           <td>{c.required ? <span className="badge warn">필수</span> : ''}</td>
                           <td className="sub">{c.note}</td>
-                          <td className="mono">{(ex[c.header] ?? '').split('\n')[0]}</td>
+                          <td className="mono">{ex(c.header).split('\n')[0]}</td>
                         </tr>
                       ))}
                     </tbody>
