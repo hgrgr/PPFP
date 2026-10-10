@@ -25,7 +25,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const params = { p: one(sp.p), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
   const [d, graph, counts, groups] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id)]);
   const s = d.summary;
-  const allocKind = params.alloc === 'ccy' ? 'ccy' : params.alloc === 'type' ? 'type' : params.alloc === 'trait' && groups.length ? 'trait' : 'holding';
+  const allocKind = params.alloc === 'ccy' ? 'ccy' : params.alloc === 'type' ? 'type' : params.alloc === 'holding' ? 'holding' : params.alloc === 'trait' && groups.length ? 'trait' : 'own';
   // 성질: one of the user's trait groups, over the holdings in scope
   const traitGroup = allocKind === 'trait' ? groups.find((g) => g.id === params.g) ?? groups[0] : null;
   const traitSlices = traitGroup
@@ -50,7 +50,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           ? traitAllocation(traitGroup.traits, [...traitSlices.values()], tags, { value: d.allocation.byType.find((x) => x.key === 'CASH_BAL')?.value ?? 0, traitId: traitGroup.cashTraitId }, traitGroup.base)
               .slices.filter((x) => x.value > 0 && !x.excluded)
               .map((x) => ({ key: x.key, label: x.label, sub: x.target === null ? undefined : `목표 ${pct(x.target, 1, false)}`, color: x.color, value: x.value, share: x.share }))
-          : d.allocation.byHolding;
+          : allocKind === 'holding'
+            ? d.allocation.byHolding
+            : d.allocation.byStructure;
   const linkParams = { p: params.p, period: params.period, from: params.from, to: params.to };
   const q = (extra: Record<string, string | undefined>) => {
     const u = new URLSearchParams();
@@ -164,7 +166,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           <div className="spread">
             <h2>자산 배분</h2>
             <div className="seg" role="group" aria-label="배분 기준">
-              <a href={q({ alloc: undefined })} aria-current={allocKind === 'holding' ? 'true' : undefined}>종목</a>
+              <a href={q({ alloc: undefined })} aria-current={allocKind === 'own' ? 'true' : undefined} title="하위 포트폴리오와 직접 가진 종목">구성</a>
+              <a href={q({ alloc: 'holding' })} aria-current={allocKind === 'holding' ? 'true' : undefined} title="하위 포트폴리오 속 종목까지 모두 펼쳐서">종목</a>
               <a href={q({ alloc: 'type' })} aria-current={allocKind === 'type' ? 'true' : undefined}>유형</a>
               <a href={q({ alloc: 'ccy' })} aria-current={allocKind === 'ccy' ? 'true' : undefined}>통화</a>
               <a href={groups.length ? q({ alloc: 'trait', g: traitGroup?.id }) : '/traits'} aria-current={allocKind === 'trait' ? 'true' : undefined} title={groups.length ? undefined : '자산 성질에서 분류를 먼저 추가하세요'}>성질</a>
@@ -178,9 +181,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
               <a className="sub" href={`/traits?g=${traitGroup.id}`} style={{ marginLeft: 4 }}>목표 비중 ›</a>
             </div>
           )}
-          <AllocationDonut slices={slices} byStock={allocKind === 'holding'} centerLabel="총자산" centerValue={krwShort(slices.reduce((a, b) => a + b.value, 0))} />
+          <AllocationDonut
+            slices={slices}
+            byStock={allocKind === 'holding' || allocKind === 'own'}
+            links={allocKind === 'own' ? Object.fromEntries(slices.filter((x) => x.key.startsWith('P:')).map((x) => [x.key, q({ p: x.key.slice(2) })])) : undefined} centerLabel="총자산" centerValue={krwShort(slices.reduce((a, b) => a + b.value, 0))} />
           <p className="sub">
-            {allocKind === 'holding' && '여러 포트폴리오에 나눠 담은 같은 종목은 하나로 합칩니다. 전체 종목별 비중은 아래 보유 종목 표에 있습니다. '}
+            {allocKind === 'own' && '하위 포트폴리오는 한 조각으로 보여 주고(누르면 그 포트폴리오로 이동), 이 포트폴리오가 직접 가진 종목과 현금은 따로 보여 줍니다. '}
+            {allocKind === 'holding' && '하위 포트폴리오 속 종목까지 모두 펼쳐, 여러 포트폴리오에 나눠 담은 같은 종목은 하나로 합칩니다. 전체 종목별 비중은 아래 보유 종목 표에 있습니다. '}
             {allocKind === 'trait' && '성질을 두 개 고른 종목은 반씩 나눠 셉니다. '}
             {traitGroup?.base === 'tagged' && '이 분류는 성질을 지정한 종목끼리의 비중입니다. '}
             부채는 배분에서 제외하고 총평가액에서는 차감합니다.

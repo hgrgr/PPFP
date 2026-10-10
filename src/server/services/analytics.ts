@@ -172,7 +172,8 @@ export interface Dashboard {
   income: Dec;
   chart: { date: string; value: number; invested: number }[];
   twrDaily: { date: string; twr: number }[];
-  allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[] };
+  /** byStructure: child portfolios as whole slices plus what the scope holds directly */
+  allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[]; byStructure: Slice[] };
   weightChange: { keys: { key: string; label: string; color: string }[]; points: Record<string, number | string>[]; start: Record<string, number>; end: Record<string, number> };
   children: ChildRow[];
   holdings: HoldingRow[];
@@ -280,7 +281,8 @@ export async function dashboard(
   const cashTotal = typeTotals.get('CASH_BAL') ?? Dec.ZERO;
   if (cashTotal.isPos()) byHolding.push({ key: 'CASH_BAL', label: '포트폴리오 현금', color: 'var(--series-cash)', value: cashTotal.toNumber(), share: shareOf(cashTotal) });
 
-  const allocation = {
+  const allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[]; byStructure: Slice[] } = {
+    byStructure: [],
     byHolding,
     byType: slices(typeTotals, typeLabel, (k) => TYPE_COLOR[k as AssetType] ?? '#999'),
     byCurrency: slices(ccyTotals, (k) => k, (_k, i) => ['#2F4FC9', '#8FA8F5', '#14A38B'][i] ?? '#999'),
@@ -388,6 +390,45 @@ export async function dashboard(
       pnl: sm ? sm.pnl.mul(e.allocation) : null,
     });
   }
+
+  // What the scope itself owns: each child portfolio as one slice (its whole content), plus the
+  // stocks and cash held directly in the scope. Net worth: the top-level portfolios.
+  // A net-worth view with a single top portfolio shows that portfolio's own make-up
+  const roots = portfolios.filter((p) => !edges.some((e) => e.childId === p.id));
+  const ownScope = scopeId ?? (roots.length === 1 ? roots[0].id : null);
+  const ownChildren =
+    ownScope === scopeId
+      ? children
+      : edges
+          .filter((e) => e.parentId === ownScope)
+          .map((e) => {
+            let value = Dec.ZERO;
+            for (const [pid, k] of effectiveWeights(edges, e.childId)) value = value.add((state.direct.get(pid) ?? Dec.ZERO).mul(k));
+            return { id: e.childId, name: byId.get(e.childId)?.name ?? '', value: value.mul(e.allocation) };
+          });
+  const own: { key: string; label: string; sub?: string; value: Dec }[] = ownChildren.filter((c) => c.value.isPos()).map((c) => ({ key: `P:${c.id}`, label: c.name, sub: '하위 포트폴리오', value: c.value }));
+  if (ownScope) {
+    const direct = new Map<string, { label: string; sub: string; value: Dec }>();
+    for (const h of holdings) {
+      if (h.portfolioId !== ownScope || !h.value.isPos()) continue;
+      const cur = direct.get(h.assetId);
+      if (cur) cur.value = cur.value.add(h.value);
+      else direct.set(h.assetId, { label: h.name, sub: h.symbol ?? ASSET_TYPE_LABEL[h.type], value: h.value });
+    }
+    own.push(...[...direct].map(([key, a]) => ({ key, ...a })));
+    const cash = Dec.sum((state.cashByPortfolio.get(ownScope) ?? []).map((c) => c.krw));
+    if (cash.isPos()) own.push({ key: 'CASH_BAL', label: '포트폴리오 현금', value: cash });
+  }
+  const ownGross = Dec.sum(own.map((o) => o.value));
+  const ownSorted = own.sort((a, b) => (a.key === 'CASH_BAL' ? 1 : b.key === 'CASH_BAL' ? -1 : b.value.cmp(a.value)));
+  allocation.byStructure = ownSorted.map((o, i) => ({
+    key: o.key,
+    label: o.label,
+    sub: o.sub,
+    color: o.key === 'CASH_BAL' ? 'var(--series-cash)' : i < SERIES_SLOTS ? `var(--series-${i + 1})` : 'var(--series-other)',
+    value: o.value.toNumber(),
+    share: ownGross.isZero() ? 0 : o.value.div(ownGross).toNumber(),
+  }));
 
   // Breadcrumb: first parent chain
   const path: { id: string; name: string }[] = [];
