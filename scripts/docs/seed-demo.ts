@@ -122,6 +122,17 @@ async function main() {
   const depositHolding = await prisma.holding.findFirstOrThrow({ where: { portfolioId: cash.id, assetId: deposit.id } });
   await recordValuation(uid, { holdingId: depositHolding.id, price: '10180000', tradeAt: new Date(`${dash(ago(20))}T09:00:00+09:00`), memo: '경과 이자 반영' });
 
+  // 부동산: an apartment linked to its 실거래가 complex (fake-realestate.cjs). Its own top-level
+  // portfolio, so the 순자산 screens stay as they are.
+  const home = await createPortfolio(uid, { name: '부동산', color: '#F08A3E', description: '실거주 아파트' });
+  const apt = await createManualAsset(uid, {
+    type: 'REAL_ESTATE',
+    name: '한빛마을래미안 34평형',
+    currency: 'KRW',
+    meta: { kind: 'apartment', address: '서울 강남구 대치동 508', roadAddress: '서울 강남구 삼성로 51', placeName: '한빛마을래미안', lat: 37.4949, lng: 127.0631, lawdCd: '11680', umdCd: '10600', umdNm: '대치동', aptNm: '한빛마을래미안', jibun: '508', aptSeq: '11680-9001', area: 84.97 },
+  });
+  await recordBuy(uid, { portfolioId: home.id, assetId: apt.id, tradeAt: new Date(`${dash(ago(400))}T14:00:00+09:00`), qty: '1', price: '2780000000', tax: '91740000', fromCash: false, memo: '취득세 포함' });
+
   // 코인: the 업비트 history replayed from a year ago.
   await syncExchangeHistory(uid, upbit.id, { portfolioId: coin.id, since: new Date(Date.now() - 365 * D) });
 

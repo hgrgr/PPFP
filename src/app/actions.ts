@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { LOT_METHODS } from '@/domain/lots';
 import { kstDate, parseKstLocal, prisma } from '@/server/db';
 import { money } from '@/lib/format';
+import { readApartmentMeta } from '@/domain/real-estate';
 import { fxRate as currentFx } from '@/server/market';
 import { createSession, destroySession, requireUser } from '@/server/auth';
 import { hashPassword, verifyPassword } from '@/server/crypto';
@@ -148,7 +149,7 @@ export async function addAssetAndBuyAction(_: ActionState, f: FormData) {
     const asset =
       kind === 'listed'
         ? await ensureListedAsset(user.id, s(f, 'symbol'))
-        : await createManualAsset(user.id, { type: s(f, 'type') as AssetType, name: s(f, 'name'), currency: s(f, 'currency') || 'KRW' });
+        : await createManualAsset(user.id, { type: s(f, 'type') as AssetType, name: s(f, 'name'), currency: s(f, 'currency') || 'KRW', meta: manualMeta(f) });
     const tradeAt = parseKstLocal(s(f, 'tradeAt'));
     await recordBuy(user.id, {
       portfolioId: s(f, 'portfolioId'),
@@ -229,6 +230,14 @@ export async function cashAction(_: ActionState, f: FormData) {
     });
     await refreshFrom(user.id, tradeAt);
   });
+}
+
+/** A real estate asset's apartment, picked on the map (see ApartmentPicker). */
+function manualMeta(f: FormData) {
+  if (s(f, 'type') !== 'REAL_ESTATE' || !s(f, 'apartment')) return undefined;
+  const meta = readApartmentMeta(s(f, 'apartment'));
+  if (!meta) throw new UserError('아파트를 다시 골라 주세요.');
+  return { ...meta };
 }
 
 export async function valuationAction(_: ActionState, f: FormData) {

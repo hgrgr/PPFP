@@ -1,4 +1,4 @@
-import type { AssetType } from '@prisma/client';
+import type { AssetType, Prisma } from '@prisma/client';
 import { cleanSymbol, isCryptoSymbol } from '@/domain/broker-format';
 import { prisma } from '../db';
 import { BrokerApiError, type Instrument } from '../brokers';
@@ -91,7 +91,7 @@ export async function ensureListedAsset(userId: string, rawSymbol: string, hint?
 
 export async function createManualAsset(
   userId: string,
-  input: { type: AssetType; name: string; currency: string; meta?: Record<string, string> },
+  input: { type: AssetType; name: string; currency: string; meta?: Prisma.InputJsonObject },
 ) {
   const name = input.name.trim();
   if (!name || name.length > 80) throw new UserError('자산 이름은 1~80자로 입력하세요.');

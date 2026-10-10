@@ -20,6 +20,7 @@ import {
   zonedIso,
   type UsMarket,
 } from '@/domain/broker-format';
+import { parseKisFuture, type CommodityDef, type CommodityQuote } from '@/domain/commodities';
 import { backoff, expiryFrom, fetchJson, obj, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -323,6 +324,16 @@ export class KisAdapter implements BrokerAdapter {
     const r = await this.get('/uapi/overseas-price/v1/quotations/price-detail', 'HHDFS76200200', { AUTH: '', EXCD: 'NAS', SYMB: 'AAPL' });
     const rate = num(obj(r.body.output).t_rate);
     return rate === '0' ? null : rate;
+  }
+
+  /**
+   * 해외선물 현재가 (HHDFC55010000, examples_llm/overseas_futureoption/inquire_price). There is
+   * no paper-trading version; real keys may also need the 해외선물옵션 service on the account.
+   */
+  async commodity(def: CommodityDef, contract: string): Promise<CommodityQuote | null> {
+    if (def.source !== 'FUTURE' || this.cfg.paper) return null;
+    const r = await this.get('/uapi/overseas-futureoption/v1/quotations/inquire-price', 'HHDFC55010000', { SRS_CD: contract });
+    return parseKisFuture(r.body.output1);
   }
 
   async indices(codes: IndexCode[]): Promise<IndexQuote[]> {

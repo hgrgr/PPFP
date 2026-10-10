@@ -24,6 +24,8 @@ import {
   type RankingType,
 } from '../brokers';
 import { kindOf, marketProviders, type Provider } from './brokers';
+import { activeContract, COMMODITIES, krwPerGram, type CommodityQuote } from '@/domain/commodities';
+import { BROKERS } from '@/lib/brokers';
 import { UserError } from './portfolios';
 
 const QUOTE_TTL = 3_000;
@@ -480,4 +482,93 @@ export async function liveCandles(userId: string, rawSymbol: string, unit: Candl
     built: v.built,
     candles: v.candles.map((b) => ({ t: b.time, o: Number(b.open), h: Number(b.high), l: Number(b.low), c: Number(b.close), v: b.volume === null ? null : Number(b.volume) })),
   };
+}
+
+export interface CommodityView {
+  id: string;
+  name: string;
+  unit: string;
+  currency: 'KRW' | 'USD';
+  exchange: string;
+  /** Futures contract (GCZ26) or KRX code */
+  contract: string;
+  price: string | null;
+  prevClose: string | null;
+  change: string | null;
+  changeRate: string | null;
+  high: string | null;
+  low: string | null;
+  expiry: string | null;
+  asOf: string | null;
+  source: string | null;
+  /** Gold in 원/g at today's rate, to compare with KRX gold */
+  krwPerGram: string | null;
+  /** Why there is no price */
+  error: string | null;
+}
+
+export interface CommodityBoard {
+  rows: CommodityView[];
+  /** Which brokers that publish commodities are linked */
+  kiwoom: boolean;
+  kis: boolean;
+}
+
+const COMMODITY_TTL = 15_000;
+const commodityCache = new Map<string, Cached<{ quote: CommodityQuote | null; source: string | null; error: string | null }>>();
+
+/** KRX gold from 키움, overseas futures from 한국투자증권, 15-second cache. */
+export async function liveCommodities(userId: string): Promise<CommodityBoard> {
+  const providers = (await marketProviders(userId, 'stock')).filter((p) => p.adapter.commodity);
+  const today = kstDate();
+  const fx = await liveFx(userId).catch(() => null);
+  const rows = await Promise.all(
+    COMMODITIES.map(async (def): Promise<CommodityView> => {
+      const contract = def.source === 'FUTURE' ? activeContract(def, today) : def.code;
+      const key = `${def.id}:${contract}`;
+      let c = commodityCache.get(key);
+      if (!fresh(c, COMMODITY_TTL)) {
+        let quote: CommodityQuote | null = null;
+        let source: string | null = null;
+        let error: string | null = null;
+        for (const p of providers) {
+          try {
+            quote = await p.adapter.commodity!(def, contract);
+            if (quote) {
+              source = p.conn.broker;
+              break;
+            }
+          } catch (e) {
+            quiet(`${p.conn.broker} commodity ${contract}`, e);
+            if (e instanceof BrokerApiError) error = `${BROKERS[p.conn.broker].label}: ${e.message}`;
+          }
+        }
+        c = { value: { quote, source, error: quote ? null : error }, at: Date.now() };
+        // Failures are cached too, so a broker that refuses is not asked on every poll.
+        commodityCache.set(key, c);
+      }
+      const { quote, source, error } = c!.value;
+      const { change, changeRate } = changeOf(quote?.price ?? null, quote?.prevClose ?? null);
+      return {
+        id: def.id,
+        name: def.name,
+        unit: def.unit,
+        currency: def.currency,
+        exchange: def.exchange,
+        contract,
+        price: quote?.price ?? null,
+        prevClose: quote?.prevClose ?? null,
+        change,
+        changeRate,
+        high: quote?.high ?? null,
+        low: quote?.low ?? null,
+        expiry: quote?.expiry ?? null,
+        asOf: quote?.asOf ?? null,
+        source,
+        krwPerGram: def.perGram && quote && fx ? krwPerGram(Number(quote.price), Number(fx.rate)).toFixed(0) : null,
+        error,
+      };
+    }),
+  );
+  return { rows, kiwoom: providers.some((p) => p.conn.broker === 'KIWOOM'), kis: providers.some((p) => p.conn.broker === 'KIS' && !p.conn.paper) };
 }

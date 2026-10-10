@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { ActionState } from '@/app/actions';
+import type { ApartmentMeta } from '@/domain/real-estate';
+import { ApartmentPicker, apartmentName } from './apartment-picker';
 import { ActionForm, DateTimeField, Submit } from './forms';
 
 const MANUAL_TYPES: [string, string][] = [
@@ -32,7 +34,10 @@ export function AddAssetForm({
   const [kind, setKind] = useState<'listed' | 'manual'>(marketLinked ? 'listed' : 'manual');
   const [type, setType] = useState('REAL_ESTATE');
   const [currency, setCurrency] = useState('KRW');
+  const [name, setName] = useState('');
+  const [apartment, setApartment] = useState<ApartmentMeta | null>(null);
   const liability = kind === 'manual' && type === 'LIABILITY';
+  const realEstate = kind === 'manual' && type === 'REAL_ESTATE';
   return (
     <ActionForm action={action} className="grid" resetOnSuccess>
       {portfolioId ? (
@@ -77,9 +82,19 @@ export function AddAssetForm({
               ))}
             </select>
           </label>
+          {realEstate && (
+            <ApartmentPicker
+              onChange={(m) => {
+                // Fill the name from the pick unless the user already wrote one.
+                if (m && (!name || name === (apartment && apartmentName(apartment)))) setName(apartmentName(m));
+                setApartment(m);
+              }}
+            />
+          )}
+          {realEstate && apartment && <input type="hidden" name="apartment" value={JSON.stringify(apartment)} />}
           <label className="field">
             이름
-            <input name="name" required maxLength={80} placeholder={liability ? '예: 주택담보대출' : '예: 서울 아파트'} />
+            <input name="name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder={liability ? '예: 주택담보대출' : '예: 서울 아파트'} />
           </label>
           <label className="field">
             통화

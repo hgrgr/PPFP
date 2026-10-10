@@ -16,6 +16,8 @@ import { RelatedPanel } from '@/components/knowledge/links';
 import { TargetBar } from '@/components/journal/viewer';
 import { STATUS_LABEL } from '@/domain/journal';
 import { AskAiButton } from '@/components/ai/launcher';
+import { RealEstatePanel } from '@/components/real-estate-panel';
+import { readApartmentMeta } from '@/domain/real-estate';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,6 +98,8 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           <div className="note">환율 효과 포함</div>
         </div>
       </section>
+
+      {h.asset.type === 'REAL_ESTATE' && <RealEstatePanel assetId={h.assetId} holdingId={h.id} linked={!!readApartmentMeta(h.asset.meta)} />}
 
       <section className="card">
         <h2>보유 Lot</h2>
