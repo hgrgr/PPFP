@@ -53,6 +53,8 @@ export interface ConnectionInput {
   appSecret: string;
   accountNo?: string;
   paper?: boolean;
+  /** false: store without asking the broker (restoring a backup of keys that worked before) */
+  verify?: boolean;
 }
 
 /** Verify the keys against the broker, then store them. Nothing is saved if the broker rejects them. */
@@ -71,11 +73,13 @@ export async function saveConnection(userId: string, input: ConnectionInput) {
   // Verify with a throwaway token store; keep the token it obtained so the first real call does not issue another.
   const store = memoryTokenStore();
   const adapter = createAdapter(broker, { id: `new:${broker}:${appKey}`, appKey, secret, accountNo, paper }, store);
-  let verified: { accountNo?: string | null };
-  try {
-    verified = await adapter.verify();
-  } catch (e) {
-    throw new UserError(e instanceof BrokerApiError ? e.message : `${meta.label} 연결을 확인하지 못했습니다.`);
+  let verified: { accountNo?: string | null } = {};
+  if (input.verify !== false) {
+    try {
+      verified = await adapter.verify();
+    } catch (e) {
+      throw new UserError(e instanceof BrokerApiError ? e.message : `${meta.label} 연결을 확인하지 못했습니다.`);
+    }
   }
   const finalAccount = verified.accountNo ?? accountNo;
   const existing = await listConnections(userId);
@@ -94,7 +98,7 @@ export async function saveConnection(userId: string, input: ConnectionInput) {
       paper,
       tokenEncrypted: store.current ? encryptSecret(store.current.token) : null,
       tokenExpiresAt: store.current ? new Date(store.current.expiresAt) : null,
-      lastSyncAt: new Date(),
+      lastSyncAt: input.verify === false ? null : new Date(),
     },
   });
   await audit(prisma, userId, 'broker_connection', conn.id, 'create', undefined, { broker, label, appKey: mask(appKey), accountNo: conn.accountNo, paper });
