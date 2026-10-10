@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { pushToUser } from '../push';
 
-export type NotificationKind = 'PRICE' | 'DRIFT' | 'TEST' | 'BRIEFING';
+export type NotificationKind = 'PRICE' | 'DRIFT' | 'TEST' | 'BRIEFING' | 'REALESTATE';
 
 /** Put a message in the user's inbox and push it to their devices. */
 export async function notify(userId: string, n: { kind: NotificationKind; title: string; body: string; url?: string }) {

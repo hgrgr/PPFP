@@ -165,6 +165,9 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
           <a className="btn small" href={RTMS_URL} target="_blank" rel="noreferrer">
             국토부 실거래가 ↗
           </a>
+          <a className="btn small" href={`/alerts?asset=${assetId}#real-estate`}>
+            알림 설정
+          </a>
           <button type="button" className="btn small" onClick={() => setEditing(true)}>
             아파트 바꾸기
           </button>

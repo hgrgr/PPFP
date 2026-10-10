@@ -214,6 +214,15 @@ const SHOTS: Shot[] = [
     clip: [{ sel: '#key-backup' }],
     marks: [{ sel: 'form[aria-label="키 백업 파일 만들기"]' }, { sel: 'form[aria-label="키 백업 파일에서 되살리기"]' }],
   },
+  {
+    file: 'alerts-realestate',
+    path: () => '/alerts',
+    width: 1280,
+    height: 1600,
+    wait: 1500,
+    clip: [{ sel: '#real-estate' }],
+    marks: [{ sel: '#real-estate select', closest: 'label', nth: 1 }, { sel: '#real-estate fieldset.re-events' }, { sel: '#real-estate legend', text: '새 거래 조건', closest: 'fieldset' }, { sel: '#real-estate button', text: '지금 확인' }, { sel: '#real-estate tbody tr', nth: 1 }],
+  },
   { file: 'settings-realestate', path: () => '/settings', wait: 1000, width: 1100, clip: [{ sel: '#real-estate' }] },
   { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
   {
@@ -970,6 +979,7 @@ async function main() {
     KAKAO_REST_API_KEY: '0123456789abcdef0123456789abcdef',
     // Apartment deals come from fake-realestate.cjs
     DATA_GO_KR_API_KEY: 'docs-demo-data-go-kr-key-not-real',
+    VWORLD_API_KEY: 'DOCS-DEMO-VWORLD-KEY-NOT-REAL',
     // Community skills come from the made-up catalog in fake-skills.cjs
     PPFP_FAKE_SKILLS: '1',
   };
