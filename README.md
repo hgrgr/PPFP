@@ -50,6 +50,17 @@ docker compose up -d --build  # http://localhost:3000
 docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지우려면 -v)
 ```
 
+### API 키 백업으로 옮기기
+
+DB를 새로 만들 때마다 키를 다시 넣지 않으려면, 한 번 키를 넣은 뒤 **연동 · 설정 › API 키 백업 · 복원**에서 백업 파일을 내려받아 둡니다. 파일은 백업 암호(scrypt + AES-256-GCM)로 잠기고 `APP_ENCRYPTION_KEY`와 상관없이 어느 서버에서나 열립니다. 새 DB에서는 같은 화면에서 되살리거나, 가입한 뒤 명령줄로 넣습니다.
+
+```bash
+npm run keys -- restore ppfp-keys.json --email me@example.com   # 증권사 확인 없이 저장, --verify로 확인
+npm run keys -- export ppfp-keys.json --email me@example.com
+```
+
+백업 암호는 `PPFP_KEYS_PASSPHRASE`로 주거나 물어볼 때 입력합니다. AI·카카오·공공데이터포털처럼 서버 전체에 하나면 되는 키는 `.env`의 `ANTHROPIC_API_KEY`, `KAKAO_REST_API_KEY`, `DATA_GO_KR_API_KEY` 등에 넣어 두면 모든 계정이 씁니다(Docker도 `.env`를 읽음).
+
 가입 후 **연동 · 설정**에서 증권사 개발자 포털에서 발급한 앱키/시크릿을 입력하면(한국투자증권은 계좌번호도) 연결을 확인한 뒤 저장합니다. 키는 `.env`가 아니라 사용자마다 앱에 입력합니다. 그다음 **보유종목 가져오기**에서 계좌 보유종목을 포트폴리오에 넣습니다.
 
 | 증권사 | 포털 | 잔고 | 시세·일봉·환율 | 지수 | 랭킹 | 분봉·호가 | 비고 |
