@@ -39,6 +39,16 @@ npm run dev                   # http://localhost:3000
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+### Docker로 실행
+
+Node와 PostgreSQL을 설치하지 않고 앱과 DB를 컨테이너로 띄웁니다. `.env`의 `APP_ENCRYPTION_KEY`, `CRON_SECRET`, API 키는 그대로 쓰고, `DATABASE_URL`만 DB 컨테이너를 가리키도록 [docker-compose.yml](docker-compose.yml)에서 바꿉니다. 앱은 시작할 때 마이그레이션을 적용합니다.
+
+```bash
+cp .env.example .env          # APP_ENCRYPTION_KEY, CRON_SECRET 채우기
+docker compose up -d --build  # http://localhost:3000
+docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지우려면 -v)
+```
+
 가입 후 **연동 · 설정**에서 증권사 개발자 포털에서 발급한 앱키/시크릿을 입력하면(한국투자증권은 계좌번호도) 연결을 확인한 뒤 저장합니다. 키는 `.env`가 아니라 사용자마다 앱에 입력합니다. 그다음 **보유종목 가져오기**에서 계좌 보유종목을 포트폴리오에 넣습니다.
 
 | 증권사 | 포털 | 잔고 | 시세·일봉·환율 | 지수 | 랭킹 | 분봉·호가 | 비고 |

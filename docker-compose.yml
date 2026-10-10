@@ -1,0 +1,32 @@
+# docker compose up -d --build  →  http://localhost:3000
+# Secrets (APP_ENCRYPTION_KEY, CRON_SECRET, API keys) come from .env; DATABASE_URL is set here.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ppfp
+      POSTGRES_PASSWORD: ppfp
+      POSTGRES_DB: ppfp
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ppfp -d ppfp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://ppfp:ppfp@db:5432/ppfp?schema=public
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
