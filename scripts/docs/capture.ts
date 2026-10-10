@@ -206,6 +206,14 @@ const SHOTS: Shot[] = [
     clip: [{ sel: '#commodities' }, { sel: '#my-real-estate' }],
     marks: [{ sel: '#commodities tbody tr' }, { sel: '#commodities td span', text: 'GCZ' , closest: 'td' }, { sel: '#my-real-estate tbody tr' }],
   },
+  {
+    file: 'settings-keys',
+    path: () => '/settings',
+    wait: 1000,
+    width: 1100,
+    clip: [{ sel: '#key-backup' }],
+    marks: [{ sel: 'form[aria-label="키 백업 파일 만들기"]' }, { sel: 'form[aria-label="키 백업 파일에서 되살리기"]' }],
+  },
   { file: 'settings-realestate', path: () => '/settings', wait: 1000, width: 1100, clip: [{ sel: '#real-estate' }] },
   { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
   {

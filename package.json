@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "job:daily": "tsx scripts/daily.ts",
-    "docs:screenshots": "tsx --env-file=.env scripts/docs/capture.ts"
+    "docs:screenshots": "tsx --env-file=.env scripts/docs/capture.ts",
+    "keys": "tsx --env-file=.env scripts/keys.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

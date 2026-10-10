@@ -3,6 +3,7 @@ import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
+import { KeyBackup } from '@/components/key-backup';
 import { ActionForm, Submit } from '@/components/forms';
 import { kstDateTime } from '@/lib/format';
 import { BROKERS, UNSUPPORTED_BROKERS } from '@/lib/brokers';
@@ -232,6 +233,16 @@ export default async function SettingsPage() {
             <Submit>저장</Submit>
           </div>
         </ActionForm>
+      </section>
+
+      <section className="card" id="key-backup">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>API 키 백업 · 복원</h2>
+          <p className="sub">
+            위에 저장한 증권사·거래소 키와 AI·카카오·공공데이터포털 키를 백업 암호로 잠근 파일 하나로 내려받습니다. 새 서버나 초기화한 DB, 다른 계정에서 이 파일과 백업 암호로 한 번에 되살립니다. 파일은 암호 없이는 열 수 없으므로 구글 드라이브 같은 곳에 두어도 됩니다. 접근 토큰은 넣지 않고 다시 발급받습니다.
+          </p>
+        </div>
+        <KeyBackup />
       </section>
 
       <section className="row">
