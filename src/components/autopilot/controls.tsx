@@ -61,8 +61,8 @@ export function OrderButtons({ orderId, executable }: { orderId: string; executa
   );
 }
 
-/** Password re-entry for order execution, raising delegation and un-halting (10 minutes). */
-export function StepUpForm() {
+/** Password (and two-step code) re-entry for order execution, raising delegation and un-halting (10 minutes). */
+export function StepUpForm({ twoStep = false }: { twoStep?: boolean }) {
   const [state, action, pending] = useActionState(stepUpAction, {} as AutopilotResult);
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -74,6 +74,12 @@ export function StepUpForm() {
         로그인 비밀번호 다시 확인
         <input name="password" type="password" autoComplete="current-password" required />
       </label>
+      {twoStep && (
+        <label className="field" style={{ flex: '0 1 140px' }}>
+          인증 코드
+          <input name="code" inputMode="numeric" autoComplete="one-time-code" required maxLength={20} />
+        </label>
+      )}
       <button className="btn small" type="submit" disabled={pending} style={{ alignSelf: 'end' }}>
         확인
       </button>

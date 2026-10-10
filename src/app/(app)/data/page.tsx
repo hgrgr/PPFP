@@ -1,6 +1,9 @@
 import { DataImport } from '@/components/data-import';
 import { SAMPLES, SHEET_KEYS, SHEETS } from '@/domain/data-format';
+import { agoLabel, backupState } from '@/domain/backup';
+import { kstDateTime } from '@/lib/format';
 import { requireUser } from '@/server/auth';
+import { prisma } from '@/server/db';
 import { DATASETS } from '@/server/services/export';
 import { userGraph } from '@/server/services/portfolios';
 
@@ -13,7 +16,8 @@ export default async function DataPage({ searchParams }: { searchParams: Promise
   const user = await requireUser();
   const sp = await searchParams;
   const tab: Tab = sp.tab === 'import' || sp.tab === 'format' ? sp.tab : 'export';
-  const { portfolios } = await userGraph(user.id);
+  const [{ portfolios }, backupRow] = await Promise.all([userGraph(user.id), prisma.appSetting.findUnique({ where: { key: 'backup.last' } })]);
+  const backup = backupState(backupRow?.value, Date.now());
   const scope = new URLSearchParams(Object.entries({ p: sp.p, from: sp.from, to: sp.to }).filter(([, v]) => v) as [string, string][]);
   const q = scope.toString() ? `&${scope}` : '';
 
@@ -39,6 +43,30 @@ export default async function DataPage({ searchParams }: { searchParams: Promise
 
       {tab === 'export' && (
         <>
+          <section className={`card stack backup-status ${backup.state}`} aria-label="DB 백업">
+            <h2>DB 백업</h2>
+            {backup.state === 'none' ? (
+              <p className="sub">
+                아직 서버에서 DB 백업을 한 기록이 없습니다. Docker로 띄웠다면 <code>docker compose up -d</code>로 <span className="strong">backup</span> 서비스를 함께 띄우면 하루에 한 번 <code>backups/</code> 폴더에 백업합니다. 직접 실행하는 방법과 되살리는 방법은 README의 <span className="strong">DB 백업</span>을 보세요.
+              </p>
+            ) : (
+              <>
+                <p>
+                  <span className={`badge ${backup.state === 'ok' ? 'ok' : 'warn'}`}>{backup.state === 'ok' ? '정상' : backup.state === 'stale' ? '오래됨' : '실패'}</span>{' '}
+                  마지막 {backup.state === 'failed' ? '시도' : '백업'} {kstDateTime(backup.record.at)} ({agoLabel(backup.ageHours)})
+                  {backup.record.ok && backup.record.bytes !== undefined && (
+                    <span className="sub">
+                      {' '}
+                      · {backup.record.file} · {(backup.record.bytes / 1024 / 1024).toFixed(1)}MB · 표 {backup.record.tables}개 · 보관 {backup.record.kept}/{backup.record.keep}개 · {backup.record.intervalHours}시간마다
+                    </span>
+                  )}
+                </p>
+                {backup.state === 'stale' && <p className="msg err">예정된 백업이 두 번 넘게 빠졌습니다. backup 서비스가 떠 있는지 확인하세요(<code>docker compose ps</code>).</p>}
+                {backup.state === 'failed' && <p className="msg err">마지막 백업이 실패했습니다{backup.record.error ? `: ${backup.record.error}` : ''}. <code>docker compose logs backup</code>을 확인하세요.</p>}
+                <p className="sub">백업 파일은 이 서버의 <code>backups/</code> 폴더에 있습니다. 디스크가 고장 나도 남도록 외장 디스크나 클라우드로도 복사해 두세요. 증권사 키를 되살리려면 <code>.env</code>의 APP_ENCRYPTION_KEY도 백업 파일과 다른 곳에 따로 보관해야 합니다.</p>
+              </>
+            )}
+          </section>
           <form method="get" action="/data" className="card stack" aria-label="내보낼 범위">
             <h2>범위</h2>
             <div className="data-scope">

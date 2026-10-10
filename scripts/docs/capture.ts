@@ -224,6 +224,21 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '#real-estate select', closest: 'label', nth: 1 }, { sel: '#real-estate fieldset.re-events' }, { sel: '#real-estate legend', text: '새 거래 조건', closest: 'fieldset' }, { sel: '#real-estate button', text: '지금 확인' }, { sel: '#real-estate tbody tr', nth: 1 }],
   },
   { file: 'settings-realestate', path: () => '/settings', wait: 1000, width: 1100, clip: [{ sel: '#real-estate' }] },
+  {
+    file: 'settings-security',
+    path: () => '/settings',
+    wait: 1000,
+    width: 1200,
+    clip: [{ sel: '#security' }],
+    marks: [
+      { sel: 'h3', text: '2단계 인증' },
+      { sel: 'h3', text: '비밀번호 바꾸기' },
+      { sel: 'h3', text: '로그인한 기기' },
+      { sel: 'h3', text: '가입 초대' },
+      { sel: 'h3', text: '최근 보안 기록' },
+    ],
+  },
+  { file: 'data-backup', path: () => '/data', wait: 1000, width: 1100, clip: [{ sel: '.backup-status' }] },
   { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
   {
     file: 'import-broker',
@@ -982,6 +997,8 @@ async function main() {
     VWORLD_API_KEY: 'DOCS-DEMO-VWORLD-KEY-NOT-REAL',
     // Community skills come from the made-up catalog in fake-skills.cjs
     PPFP_FAKE_SKILLS: '1',
+    // Two-step sign-in, devices and a backup record for the security screens (seed-demo.ts)
+    DOCS_CAPTURE: '1',
   };
   let server: ChildProcess | null = null;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | null = null;

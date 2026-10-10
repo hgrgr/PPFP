@@ -8,8 +8,8 @@ import { kstDate, parseKstLocal, prisma } from '@/server/db';
 import { money } from '@/lib/format';
 import { readApartmentMeta } from '@/domain/real-estate';
 import { fxRate as currentFx } from '@/server/market';
-import { createSession, destroySession, requireUser } from '@/server/auth';
-import { hashPassword, verifyPassword } from '@/server/crypto';
+import { completePendingSession, createSession, destroySession, pendingSession, requestMeta, requireUser } from '@/server/auth';
+import { checkPassword, signedIn, signUp, verifySecondFactor } from '@/server/services/security';
 import { createManualAsset, ensureListedAsset } from '@/server/services/assets';
 import { runDailyForUser } from '@/server/services/jobs';
 import {
@@ -61,23 +61,45 @@ async function refreshFrom(userId: string, date: Date) {
 // ── auth ─────────────────────────────────────────────
 
 export async function signupAction(_: ActionState, f: FormData): Promise<ActionState> {
-  const email = s(f, 'email').toLowerCase();
-  const password = s(f, 'password');
-  const name = s(f, 'name');
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: '이메일 형식을 확인하세요.' };
-  if (password.length < 10) return { error: '비밀번호는 10자 이상이어야 합니다.' };
-  if (await prisma.user.findUnique({ where: { email } })) return { error: '이미 가입된 이메일입니다.' };
-  const user = await prisma.user.create({ data: { email, name: name || null, passwordHash: await hashPassword(password) } });
-  await createSession(user.id);
+  try {
+    const user = await signUp({ email: s(f, 'email'), password: s(f, 'password'), name: s(f, 'name'), invite: s(f, 'invite') });
+    const sid = await createSession(user.id);
+    await signedIn(user.id, sid, user.email, (await requestMeta()).ip);
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
   redirect('/portfolios?welcome=1');
 }
 
 export async function loginAction(_: ActionState, f: FormData): Promise<ActionState> {
-  const email = s(f, 'email').toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email } });
-  const ok = user ? await verifyPassword(s(f, 'password'), user.passwordHash) : await hashPassword('timing').then(() => false);
-  if (!user || !ok) return { error: '이메일 또는 비밀번호가 올바르지 않습니다.' };
-  await createSession(user.id);
+  const { ip } = await requestMeta();
+  let twoStep = false;
+  try {
+    const r = await checkPassword(s(f, 'email'), s(f, 'password'), ip);
+    twoStep = r.twoStep;
+    const sid = await createSession(r.user.id, { pendingMfa: twoStep });
+    if (!twoStep) await signedIn(r.user.id, sid, r.user.email, ip);
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
+  redirect(twoStep ? '/login/verify' : '/dashboard');
+}
+
+/** The second step: the authenticator code (or a recovery code) for a pending sign-in. */
+export async function verifyLoginAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const pending = await pendingSession();
+  if (!pending) redirect('/login');
+  try {
+    const how = await verifySecondFactor(pending.userId, s(f, 'code'));
+    await completePendingSession(pending.id);
+    await signedIn(pending.userId, pending.id, pending.user.email, (await requestMeta()).ip);
+    if (how === 'recovery') redirect('/settings?recovery=1#security');
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
   redirect('/dashboard');
 }
 

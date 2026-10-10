@@ -1,10 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { cookies } from 'next/headers';
 import { policyFromForm } from '@/domain/autopilot';
-import { requireUser } from '@/server/auth';
-import { sha256 } from '@/server/crypto';
+import { currentSessionId, requireUser } from '@/server/auth';
 import { approveOrder, dismissOrder, savePolicy, setGlobalHalt, setPolicyHalt, stepUp, stepUpValid } from '@/server/services/autopilot';
 import { UserError } from '@/server/services/portfolios';
 
@@ -13,11 +11,7 @@ export interface AutopilotResult {
   error?: string;
 }
 
-// TODO: mirrors auth.ts COOKIE; move into auth.ts (e.g. currentSessionId) when the menu is wired
-async function sessionId(): Promise<string | null> {
-  const token = (await cookies()).get('ppfp_session')?.value;
-  return token ? sha256(token) : null;
-}
+const sessionId = currentSessionId;
 
 const fail = (e: unknown, fallback: string): AutopilotResult => {
   if (e instanceof UserError) return { error: e.message };
@@ -30,7 +24,7 @@ export async function stepUpAction(_prev: AutopilotResult, form: FormData): Prom
   const sid = await sessionId();
   if (!sid) return { error: '다시 로그인하세요.' };
   try {
-    await stepUp(user.id, sid, String(form.get('password') ?? ''));
+    await stepUp(user.id, sid, String(form.get('password') ?? ''), String(form.get('code') ?? ''));
     return { ok: '확인했습니다. 10분 동안 주문 실행과 단계 변경을 할 수 있습니다.' };
   } catch (e) {
     return fail(e, '확인하지 못했습니다.');

@@ -28,10 +28,10 @@ import {
   type Verdict,
 } from '@/domain/autopilot';
 import { PaperRouter, type PaperQuote } from '../brokers/orders';
-import { verifyPassword } from '../crypto';
 import { dec, prisma } from '../db';
 import { getQuotes } from '../market';
 import { audit, ownedPortfolio, UserError } from './portfolios';
+import { verifyIdentity } from './security';
 
 /** Password re-entry stays valid this long for order execution, raising delegation and un-halting */
 export const STEP_UP_MINUTES = 10;
@@ -79,9 +79,8 @@ export async function stepUpValid(sessionId: string | null): Promise<boolean> {
   return !!s?.stepUpUntil && s.stepUpUntil > new Date();
 }
 
-export async function stepUp(userId: string, sessionId: string, password: string): Promise<Date> {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (!(await verifyPassword(password, user.passwordHash))) throw new UserError('로그인 비밀번호가 맞지 않습니다.');
+export async function stepUp(userId: string, sessionId: string, password: string, code?: string): Promise<Date> {
+  await verifyIdentity(userId, password, code);
   const until = new Date(Date.now() + STEP_UP_MINUTES * 60_000);
   const r = await prisma.session.updateMany({ where: { id: sessionId, userId }, data: { stepUpUntil: until } });
   if (!r.count) throw new UserError('로그인 세션을 찾을 수 없습니다. 다시 로그인하세요.');
