@@ -321,8 +321,8 @@ async function seedAlerts(uid: string, p: { root: string; us: string }) {
   const now = (symbol: string) => Number(sessionTrade(symbol, 0).price);
   await createAlert(uid, { assetId: await id('005930'), price: String(won(now('005930') * 0.95)), note: '분할 매수 2차' });
   await createAlert(uid, { assetId: await id('TSLA'), price: (now('TSLA') * 0.9).toFixed(2), note: '관심종목 — 이 가격이면 첫 매수' });
-  // Already below the current price, so the first check fires it into the inbox
-  await createAlert(uid, { assetId: await id('VOO'), price: (now('VOO') * 0.99).toFixed(2), direction: 'ABOVE', note: '전고점 돌파 확인' });
+  // Well below the price, so the first check fires it into the inbox whatever the time of day
+  await createAlert(uid, { assetId: await id('VOO'), price: (now('VOO') * 0.95).toFixed(2), direction: 'ABOVE', note: '전고점 돌파 확인' });
   const children = await prisma.portfolioEdge.findMany({ where: { parentId: p.root }, include: { child: true } });
   const share: Record<string, string> = { '국내 주식': '25', '미국 주식': '45', 코인: '5', '예금 · 현금': '25' };
   await savePortfolioTargets(uid, p.root, { targets: Object.fromEntries(children.map((e) => [`P:${e.childId}`, share[e.child.name] ?? ''])), tolerance: '5', alert: true });

@@ -1,6 +1,7 @@
 /**
- * Export datasets as CSV (Excel-compatible, UTF-8 BOM) or XLSX.
- * Every dataset honours the scope portfolio and date range the user picked.
+ * Report exports (holdings, lots, realized gains, daily snapshots) as CSV (Excel-compatible,
+ * UTF-8 BOM) or XLSX, honouring the scope portfolio and date range. The data that can be
+ * imported again (portfolios, transactions, journals, notes) is exported by data-io.
  */
 import { toCsv, type Column } from '@/domain/csv';
 import { TXN_LABEL } from '@/domain/ledger';
@@ -11,10 +12,8 @@ import { ASSET_TYPE_LABEL } from './assets';
 import { userGraph } from './portfolios';
 
 export const DATASETS = {
-  portfolios: '포트폴리오 구조',
   holdings: '보유 종목',
   lots: 'Lot',
-  transactions: '거래 내역',
   realized: '실현손익',
   snapshots: '일별 스냅샷',
 } as const;
@@ -22,10 +21,12 @@ export type Dataset = keyof typeof DATASETS;
 
 type Row = Record<string, string | number | null>;
 
-interface Table {
+export interface Table<R = Row> {
   name: string;
-  columns: Column<Row>[];
-  rows: Row[];
+  columns: Column<R>[];
+  rows: R[];
+  /** Headers of long-text columns: wider and wrapped in XLSX */
+  wide?: string[];
 }
 
 const col = (header: string, key: string): Column<Row> => ({ header, value: (r) => r[key] });
@@ -44,23 +45,6 @@ export async function buildTable(
   const between = fromD || toD ? { gte: fromD, lte: toD } : undefined;
 
   switch (dataset) {
-    case 'portfolios': {
-      const rows: Row[] = portfolios
-        .filter((p) => ids.includes(p.id))
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          parents: edges.filter((e) => e.childId === p.id).map((e) => `${names.get(e.parentId)}(${e.allocation.mul(100).toFixed(2)}%)`).join('; '),
-          lotMethod: LOT_METHOD_LABEL[p.lotMethod],
-          archived: p.archived ? 'Y' : 'N',
-          createdAt: kst(p.createdAt),
-        }));
-      return {
-        name: DATASETS.portfolios,
-        rows,
-        columns: [col('ID', 'id'), col('이름', 'name'), col('상위(할당)', 'parents'), col('Lot 방식', 'lotMethod'), col('보관', 'archived'), col('생성일시', 'createdAt')],
-      };
-    }
     case 'holdings':
     case 'lots': {
       const holdings = await prisma.holding.findMany({
@@ -115,40 +99,6 @@ export async function buildTable(
         columns: [
           col('Lot ID', 'lotId'), col('포트폴리오', 'portfolio'), col('자산', 'asset'), col('종목코드', 'symbol'), col('취득일시(KST)', 'acquiredAt'),
           col('취득수량', 'qtyOriginal'), col('잔여수량', 'qtyRemaining'), col('단가(수수료 포함)', 'unitCost'), col('통화', 'currency'), col('취득 환율', 'fxRate'),
-        ],
-      };
-    }
-    case 'transactions': {
-      const txns = await prisma.transaction.findMany({
-        where: { portfolioId: { in: ids }, tradeAt: between },
-        include: { holding: { include: { asset: true } } },
-        orderBy: { tradeAt: 'asc' },
-      });
-      const rows: Row[] = txns.map((t) => ({
-        id: t.id,
-        tradeAt: kst(t.tradeAt),
-        portfolio: names.get(t.portfolioId) ?? '',
-        type: TXN_LABEL[t.type],
-        asset: t.holding?.asset.name ?? '',
-        symbol: t.holding?.asset.symbol ?? '',
-        qty: t.qty ? dec(t.qty).toString() : '',
-        price: t.price ? dec(t.price).toString() : '',
-        fee: dec(t.fee).toString(),
-        tax: dec(t.tax).toString(),
-        currency: t.currency,
-        fxRate: dec(t.fxRate).toString(),
-        cashDelta: dec(t.cashDelta).toString(),
-        flow: dec(t.flow).toString(),
-        lotMethod: t.lotMethod ? LOT_METHOD_LABEL[t.lotMethod] : '',
-        memo: t.memo ?? '',
-      }));
-      return {
-        name: DATASETS.transactions,
-        rows,
-        columns: [
-          col('거래 ID', 'id'), col('일시(KST)', 'tradeAt'), col('포트폴리오', 'portfolio'), col('유형', 'type'), col('자산', 'asset'), col('종목코드', 'symbol'),
-          col('수량', 'qty'), col('단가', 'price'), col('수수료', 'fee'), col('세금', 'tax'), col('통화', 'currency'), col('환율', 'fxRate'),
-          col('현금 증감', 'cashDelta'), col('외부 입출금', 'flow'), col('Lot 방식', 'lotMethod'), col('메모', 'memo'),
         ],
       };
     }
@@ -208,11 +158,13 @@ export async function buildTable(
   }
 }
 
-export function tableToCsv(t: Table): string {
+export function tableToCsv<R>(t: Table<R>): string {
   return toCsv(t.rows, t.columns);
 }
 
-export async function tablesToXlsx(tables: Table[]): Promise<Buffer> {
+/** Tables of any row shape, one sheet each. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function tablesToXlsx(tables: Table<any>[]): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PPFP';
@@ -229,7 +181,11 @@ export async function tablesToXlsx(tables: Table[]): Promise<Buffer> {
         }),
       );
     }
-    ws.columns.forEach((c) => (c.width = 16));
+    ws.columns.forEach((c, i) => {
+      const wide = t.wide?.includes(t.columns[i]?.header ?? '');
+      c.width = wide ? 48 : 16;
+      if (wide) c.alignment = { wrapText: true, vertical: 'top' };
+    });
     ws.views = [{ state: 'frozen', ySplit: 1 }];
   }
   return Buffer.from(await wb.xlsx.writeBuffer());
