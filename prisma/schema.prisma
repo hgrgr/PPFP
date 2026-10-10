@@ -88,6 +88,7 @@ model User {
   journalImages    JournalImage[]
   traitGroups      TraitGroup[]
   priceAlerts      PriceAlert[]
+  realEstateAlerts RealEstateAlert[]
   notifications    Notification[]
   pushSubs         PushSubscription[]
   notes            Note[]
@@ -212,11 +213,12 @@ model Asset {
   meta          Json? // type specific: coupon, maturity, address, area ...
   createdAt     DateTime   @default(now())
 
-  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  holdings Holding[]
-  journals JournalEntry[]
-  traits   AssetTrait[]
-  alerts   PriceAlert[]
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings         Holding[]
+  journals         JournalEntry[]
+  traits           AssetTrait[]
+  alerts           PriceAlert[]
+  realEstateAlerts RealEstateAlert[]
 
   @@unique([userId, symbol])
   @@index([userId])
@@ -537,6 +539,44 @@ model PriceAlert {
   @@unique([journalEntryId, source])
   @@index([active])
   @@index([userId])
+}
+
+/// Watches an apartment asset's 실거래가: newly reported sales, registrations, cancellations,
+/// and the 토지거래허가구역 status of its lot. Checked every few hours; the first check only
+/// records what is already there.
+model RealEstateAlert {
+  id          String    @id @default(cuid())
+  userId      String
+  assetId     String
+  /// TRADE (sale reported), REGISTERED (ownership transfer registered), CANCELLED, ZONE (토지거래허가구역 지정·해제)
+  events      String[]
+  /// Which sales: AREA (same 전용면적 in the complex), COMPLEX, DONG (the whole 법정동)
+  scope       String    @default("AREA")
+  /// New sales only within this price range (원)
+  minPrice    Decimal?  @db.Decimal(18, 0)
+  maxPrice    Decimal?  @db.Decimal(18, 0)
+  /// New sales only when above every earlier sale of the same complex and area
+  newHighOnly Boolean   @default(false)
+  /// ANY, BROKER (중개거래), DIRECT (직거래)
+  dealing     String    @default("ANY")
+  /// ANY, PERSON (개인), CORP (법인), other buyers (공공기관·기타) only under ANY
+  buyer       String    @default("ANY")
+  note        String?
+  active      Boolean   @default(true)
+  /// Sales seen at the last check: key -> flags ("R" registered, "C" cancelled)
+  seen        Json?
+  /// 토지거래허가구역 at the last check; null before the first check or without a key
+  zone        Boolean?
+  checkedAt   DateTime?
+  lastError   String?
+  firedAt     DateTime?
+  createdAt   DateTime  @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([active])
 }
 
 /// Target weight of one part of a portfolio: a held asset (its id), "CASH", or a child portfolio ("P:<id>").

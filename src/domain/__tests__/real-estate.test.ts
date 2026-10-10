@@ -38,6 +38,9 @@ const trade = (o: Partial<AptTrade>): AptTrade => ({
   cancelled: false,
   dealing: '중개거래',
   aptDong: null,
+  rgstDate: null,
+  buyer: '개인',
+  seller: '개인',
   ...o,
 });
 
@@ -62,7 +65,7 @@ describe('real estate', () => {
     const { trades, totalCount } = parseMolitTrades(
       page(
         [
-          item({ aptNm: '래미안대치팰리스', dealAmount: ' 312,000', dealYear: '2026', dealMonth: '9', dealDay: '3', excluUseAr: '84.97', floor: '12', umdCd: '10600', umdNm: '대치동', jibun: '316', aptSeq: '11680-3874', buildYear: '2015', cdealType: ' ', dealingGbn: '중개거래' }),
+          item({ aptNm: '래미안대치팰리스', dealAmount: ' 312,000', dealYear: '2026', dealMonth: '9', dealDay: '3', excluUseAr: '84.97', floor: '12', umdCd: '10600', umdNm: '대치동', jibun: '316', aptSeq: '11680-3874', buildYear: '2015', cdealType: ' ', dealingGbn: '중개거래', rgstDate: '26.09.30', buyerGbn: '법인', slerGbn: '개인' }),
           item({ aptNm: '은마', dealAmount: '250,000', dealYear: '2026', dealMonth: '9', dealDay: '20', excluUseAr: '76.79', floor: '5', umdNm: ' 대치동', jibun: '316', cdealType: 'O', cdealDay: '26.09.30' }),
           item({ aptNm: '깨진 행', dealAmount: '' }),
         ],
@@ -71,7 +74,7 @@ describe('real estate', () => {
     );
     assert.equal(totalCount, 3);
     assert.equal(trades.length, 2);
-    assert.deepEqual(trades[0], { date: '2026-09-03', price: 3_120_000_000, area: 84.97, floor: 12, aptNm: '래미안대치팰리스', umdCd: '10600', umdNm: '대치동', jibun: '316', aptSeq: '11680-3874', buildYear: 2015, cancelled: false, dealing: '중개거래', aptDong: null });
+    assert.deepEqual(trades[0], { date: '2026-09-03', price: 3_120_000_000, area: 84.97, floor: 12, aptNm: '래미안대치팰리스', umdCd: '10600', umdNm: '대치동', jibun: '316', aptSeq: '11680-3874', buildYear: 2015, cancelled: false, dealing: '중개거래', aptDong: null, rgstDate: '2026-09-30', buyer: '법인', seller: '개인' });
     assert.equal(trades[1].cancelled, true);
     assert.equal(trades[1].umdCd, null);
     assert.equal(trades[1].umdNm, '대치동');

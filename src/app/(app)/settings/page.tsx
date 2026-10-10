@@ -1,6 +1,7 @@
 import { saveAiSettingsAction } from '@/app/ai-actions';
 import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
+import { saveVworldKeyAction } from '@/app/alert-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { KeyBackup } from '@/components/key-backup';
@@ -26,6 +27,8 @@ export default async function SettingsPage() {
   const kakaoServer = !kakaoHint && !!process.env.KAKAO_REST_API_KEY;
   const molitHint = hints.get('molit');
   const molitServer = !molitHint && !!process.env.DATA_GO_KR_API_KEY;
+  const vworldHint = hints.get('vworld');
+  const vworldServer = !vworldHint && !!process.env.VWORLD_API_KEY;
 
   return (
     <>
@@ -227,6 +230,27 @@ export default async function SettingsPage() {
           {molitHint && (
             <label className="check">
               <input type="checkbox" name="clearMolit" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+        <ActionForm action={saveVworldKeyAction} className="grid">
+          <label className="field">
+            브이월드 인증키 (토지거래허가구역 알림)
+            <input name="vworldKey" type="password" autoComplete="off" placeholder={vworldHint ? `저장됨 ${vworldHint}` : vworldServer ? '서버 기본 키 사용 중' : '인증키'} />
+            <span className="sub">
+              {vworldHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://www.vworld.kr/dev/v4dv_2ddataguide_s001.do" target="_blank" rel="noreferrer">공간정보 오픈플랫폼(브이월드)</a>에서 인증키를 발급받아 넣으세요(무료). <a href="/alerts#real-estate">부동산 알림</a>의 토지거래허가구역 지정·해제에만 씁니다.
+                </>
+              )}
+            </span>
+          </label>
+          {vworldHint && (
+            <label className="check">
+              <input type="checkbox" name="clearVworld" /> 저장한 키 지우기
             </label>
           )}
           <div className="full">

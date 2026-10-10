@@ -3,25 +3,30 @@ import { kstDateTime, money, pct } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { dec, prisma } from '@/server/db';
 import { listAlerts } from '@/server/services/alerts';
+import { apartmentAssets, listReAlerts } from '@/server/services/real-estate-alerts';
+import { ReAlertForm, ReAlertList } from '@/components/real-estate-alerts';
 import { journalAssets } from '@/server/services/journal';
 import { AskAiButton } from '@/components/ai/launcher';
 import { alertAgent, alertPrompt } from '@/domain/ai';
 
-const KIND_LABEL: Record<string, string> = { PRICE: '가격', DRIFT: '목표 비중', BRIEFING: 'AI 브리핑', TEST: '테스트' };
+const KIND_LABEL: Record<string, string> = { PRICE: '가격', DRIFT: '목표 비중', BRIEFING: 'AI 브리핑', REALESTATE: '부동산', TEST: '테스트' };
 
 export const metadata = { title: '알림' };
 export const dynamic = 'force-dynamic';
 
 const SOURCE_LABEL = { MANUAL: '직접', JOURNAL_TARGET: '일지 목표가', JOURNAL_STOP: '일지 손절가' } as const;
 
-export default async function AlertsPage() {
+export default async function AlertsPage({ searchParams }: { searchParams: Promise<{ asset?: string }> }) {
   const user = await requireUser();
-  const [alerts, inbox, assets, devices, portfolios] = await Promise.all([
+  const { asset: initialAsset } = await searchParams;
+  const [alerts, inbox, assets, devices, portfolios, reAlerts, apartments] = await Promise.all([
     listAlerts(user.id),
     prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 50 }),
     journalAssets(user.id),
     prisma.pushSubscription.count({ where: { userId: user.id } }),
     prisma.portfolio.findMany({ where: { userId: user.id, archived: false }, include: { _count: { select: { targets: true } } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
+    listReAlerts(user.id),
+    apartmentAssets(user.id),
   ]);
   const unread = inbox.filter((n) => !n.readAt).length;
   const prices = Object.fromEntries(alerts.map((a) => [a.assetId, a.currentPrice]));
@@ -33,7 +38,7 @@ export default async function AlertsPage() {
       <header className="page-head">
         <div className="stack" style={{ gap: 6 }}>
           <h1>알림</h1>
-          <p className="sub">가격 도달, 포트폴리오 목표 비중 이탈, AI 아침 브리핑을 알려 줍니다. 알림은 여기 알림함에 쌓이고, 켜 둔 기기로 푸시도 보냅니다.</p>
+          <p className="sub">가격 도달, 포트폴리오 목표 비중 이탈, 부동산 실거래, AI 아침 브리핑을 알려 줍니다. 알림은 여기 알림함에 쌓이고, 켜 둔 기기로 푸시도 보냅니다.</p>
         </div>
       </header>
 
@@ -124,6 +129,17 @@ export default async function AlertsPage() {
         ) : (
           <p className="empty">아직 가격 알림이 없습니다.</p>
         )}
+      </section>
+
+      <section className="card re-alerts" id="real-estate">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>부동산 알림</h2>
+          <p className="sub">
+            아파트를 연결한 부동산 자산의 국토교통부 실거래가를 몇 시간마다 확인해, 새 거래 신고·등기 완료·거래 해제와 토지거래허가구역 지정·해제를 알립니다. 처음 만들 때 지금 있는 거래를 기준으로 삼으므로, 그 뒤에 생긴 일만 알립니다.
+          </p>
+        </div>
+        <ReAlertForm assets={apartments} initialAsset={initialAsset} />
+        <ReAlertList alerts={reAlerts} />
       </section>
 
       <section className="card">

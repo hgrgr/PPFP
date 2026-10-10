@@ -26,6 +26,11 @@ export interface AptTrade {
   /** 중개거래 / 직거래 */
   dealing: string | null;
   aptDong: string | null;
+  /** YYYY-MM-DD the ownership transfer was registered (등기), once it is */
+  rgstDate: string | null;
+  /** 매수자 · 매도자: 개인, 법인, 공공기관, 기타 */
+  buyer: string | null;
+  seller: string | null;
 }
 
 /** What a real estate asset remembers about the apartment it is (Asset.meta). */
@@ -80,6 +85,14 @@ const num = (v: string | null) => {
   const x = Number(v.replace(/[,\s]/g, ''));
   return Number.isFinite(x) ? x : null;
 };
+/** "20260315", "26.03.15", "2026-03-15" → "2026-03-15" */
+function dayOf(v: string | null): string | null {
+  if (!v) return null;
+  const d = v.replace(/\D/g, '');
+  if (d.length === 8) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
+  if (d.length === 6) return `20${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
+  return null;
+}
 const pad = (v: string | null, len: number) => (v && /^\d+$/.test(v) ? v.padStart(len, '0') : null);
 
 /** Error codes the data.go.kr gateway and the service send back, in words a user can act on. */
@@ -129,6 +142,9 @@ export function parseMolitTrades(xml: string): { trades: AptTrade[]; totalCount:
       cancelled: !!cdeal && cdeal.toUpperCase() === 'O',
       dealing: pick(it, 'dealingGbn', '거래유형'),
       aptDong: pick(it, 'aptDong'),
+      rgstDate: dayOf(pick(it, 'rgstDate', '등기일자')),
+      buyer: pick(it, 'buyerGbn', '매수자'),
+      seller: pick(it, 'slerGbn', '매도자'),
     });
   }
   return { trades, totalCount: num(tag(xml, 'totalCount')) ?? trades.length };

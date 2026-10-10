@@ -25,6 +25,7 @@ import { addLink, addPresetSage, createBook, createNote, saveBook } from '@/serv
 import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
+import { checkRealEstateAlerts, createReAlert } from '@/server/services/real-estate-alerts';
 import { SKILL_STARTERS } from '@/domain/ai-skills';
 import { BUILTIN_FORMATS } from '@/domain/journal';
 import { recordBuy, recordCash, recordSell, recordValuation } from '@/server/services/trading';
@@ -132,6 +133,17 @@ async function main() {
     meta: { kind: 'apartment', address: '서울 강남구 대치동 508', roadAddress: '서울 강남구 삼성로 51', placeName: '한빛마을래미안', lat: 37.4949, lng: 127.0631, lawdCd: '11680', umdCd: '10600', umdNm: '대치동', aptNm: '한빛마을래미안', jibun: '508', aptSeq: '11680-9001', area: 84.97 },
   });
   await recordBuy(uid, { portfolioId: home.id, assetId: apt.id, tradeAt: new Date(`${dash(ago(400))}T14:00:00+09:00`), qty: '1', price: '2780000000', tax: '91740000', fromCash: false, memo: '취득세 포함' });
+  // 부동산 알림: the first check records what is there; pretend it ran before the latest sale,
+  // one registration and the 토지거래허가구역 designation, so the next check reports them.
+  const watch = await createReAlert(uid, { assetId: apt.id, events: ['TRADE', 'REGISTERED', 'CANCELLED', 'ZONE'], scope: 'COMPLEX', note: '실거주 단지' });
+  await createReAlert(uid, { assetId: apt.id, events: ['TRADE'], scope: 'DONG', minEok: '25', newHighOnly: true, note: '대치동 신고가' });
+  const seen = { ...((await prisma.realEstateAlert.findUniqueOrThrow({ where: { id: watch.id } })).seen as Record<string, string>) };
+  const byDate = Object.keys(seen).sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1]));
+  delete seen[byDate[0]];
+  const registered = byDate.find((k) => seen[k] === 'R');
+  if (registered) seen[registered] = '';
+  await prisma.realEstateAlert.update({ where: { id: watch.id }, data: { seen, zone: false } });
+  await checkRealEstateAlerts(uid);
 
   // 코인: the 업비트 history replayed from a year ago.
   await syncExchangeHistory(uid, upbit.id, { portfolioId: coin.id, since: new Date(Date.now() - 365 * D) });

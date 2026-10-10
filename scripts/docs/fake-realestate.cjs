@@ -54,6 +54,10 @@ function monthDeals(ym) {
           floor: 2 + Math.floor(rnd(`${seq}:${ym}:${i}:f`) * 22),
           cancelled: rnd(`${seq}:${area}:${ym}:${i}:c`) > 0.95,
           direct: rnd(`${seq}:${area}:${ym}:${i}:g`) > 0.9,
+          corp: rnd(`${seq}:${area}:${ym}:${i}:b`) > 0.92,
+          // Registered 35–75 days after the contract, once that day has passed
+          rgstAfter: 35 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:r`) * 40),
+          dong: 101 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:dong`) * 8),
         });
       }
     }
@@ -65,10 +69,16 @@ function molit(url) {
   const lawd = url.searchParams.get('LAWD_CD');
   const ym = url.searchParams.get('DEAL_YMD') || '';
   const deals = lawd === LAWD ? monthDeals(ym) : [];
+  const now = Date.now();
   const items = deals
+    .map((d) => {
+      const contract = Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(4)) - 1, d.day);
+      const rgst = !d.cancelled && contract + d.rgstAfter * 86400_000 < now ? new Date(contract + d.rgstAfter * 86400_000).toISOString().slice(2, 10).replace(/-/g, '.') : '';
+      return { d, rgst };
+    })
     .map(
-      (d) =>
-        `<item><aptDong></aptDong><aptNm>${d.aptNm}</aptNm><aptSeq>${d.aptSeq}</aptSeq><buildYear>${d.buildYear}</buildYear><cdealDay></cdealDay><cdealType>${d.cancelled ? 'O' : ''}</cdealType>` +
+      ({ d, rgst }) =>
+        `<item><aptDong>${rgst ? d.dong : ''}</aptDong><rgstDate>${rgst}</rgstDate><buyerGbn>${d.corp ? '법인' : '개인'}</buyerGbn><slerGbn>개인</slerGbn><aptNm>${d.aptNm}</aptNm><aptSeq>${d.aptSeq}</aptSeq><buildYear>${d.buildYear}</buildYear><cdealDay></cdealDay><cdealType>${d.cancelled ? 'O' : ''}</cdealType>` +
         `<dealAmount>${d.price.toLocaleString('en-US')}</dealAmount><dealDay>${d.day}</dealDay><dealMonth>${Number(ym.slice(4))}</dealMonth><dealYear>${ym.slice(0, 4)}</dealYear>` +
         `<dealingGbn>${d.direct ? '직거래' : '중개거래'}</dealingGbn><excluUseAr>${d.area}</excluUseAr><floor>${d.floor}</floor><jibun>${d.jibun}</jibun><sggCd>${LAWD}</sggCd><umdCd>${UMD}</umdCd><umdNm>${DONG}</umdNm></item>`,
     )
@@ -84,6 +94,14 @@ function keyword(url) {
     { place_name: `${name} 상가`, address_name: `서울 강남구 대치동 ${jibun}`, road_address_name: '', x: String(lng + 0.0004), y: String(lat), category_name: '부동산 > 상가' },
   ]);
   return { documents: docs, meta: { total_count: docs.length } };
+}
+
+/** 브이월드 토지이용계획 for any lot in the demo 동: inside a 토지거래허가구역 */
+function landUse(url) {
+  const pnu = url.searchParams.get('pnu') || '';
+  if (!pnu.startsWith(LAWD + UMD)) return { landUses: { field: [], totalCount: '0', numOfRows: '100', pageNo: '1', resultCode: '', resultMsg: '' } };
+  const row = (nm) => ({ pnu, ldCode: LAWD + UMD, ldCodeNm: '서울특별시 강남구 대치동', prposAreaDstrcCodeNm: nm, cnflcAtNm: '포함' });
+  return { landUses: { field: [row('제3종일반주거지역'), row('아파트지구'), row('토지거래계약에관한허가구역')], totalCount: '3', numOfRows: '100', pageNo: '1', resultCode: '', resultMsg: '' } };
 }
 
 function region() {
@@ -106,6 +124,9 @@ globalThis.fetch = async function realEstateDemoFetch(input, init) {
   }
   if (url.hostname === 'apis.data.go.kr' && url.pathname.includes('RTMSDataSvcAptTrade')) {
     return new Response(molit(url), { status: 200, headers: { 'content-type': 'application/xml; charset=utf-8' } });
+  }
+  if (url.hostname === 'api.vworld.kr' && url.pathname === '/ned/data/getLandUseAttr') {
+    return new Response(JSON.stringify(landUse(url)), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
   }
   if (url.hostname === 'dapi.kakao.com' && (url.pathname === '/v2/local/search/keyword.json' || url.pathname === '/v2/local/geo/coord2regioncode.json')) {
     const body = url.pathname.endsWith('keyword.json') ? keyword(url) : region();

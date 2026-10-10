@@ -382,6 +382,10 @@ tr.drift-out td { background: color-mix(in srgb, #eda100 8%, transparent); }
 .apt-picked { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 #real-estate h3 { margin: 8px 0 0; font-size: 15px; }
 #key-backup h3 { margin: 0; font-size: 15px; }
+.re-alerts fieldset.re-events { display: flex; flex-direction: column; gap: 6px; }
+.re-alerts legend { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.re-alerts fieldset.re-cond { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+.re-alerts fieldset:disabled { opacity: 0.5; }
 .restore-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 
 /* AI advisor */

@@ -4,7 +4,6 @@
  * 시군구's deals from 국토교통부 아파트 매매 실거래가 (공공데이터포털 key) for the asset page.
  * Listings (매물) are not fetched: the page links to 네이버 부동산 instead.
  */
-import 'server-only';
 import {
   apartmentReport,
   complexesIn,
@@ -72,14 +71,14 @@ export async function searchApartments(userId: string, query: string): Promise<P
   }
 }
 
-// One district-month of deals rarely changes once the month is over; the current and the
-// previous month still receive late reports (신고 기한 30일).
+// One district-month of deals rarely changes once it is a few months old; recent months
+// still receive late reports (신고 기한 30일), registrations and cancellations.
 const cache = new Map<string, { at: number; trades: AptTrade[] }>();
 const inflight = new Map<string, Promise<AptTrade[]>>();
 const CACHE_MAX = 600;
 
 function fresh(ym: string, at: number, today: string) {
-  const months = recentMonths(today, 2);
+  const months = recentMonths(today, 4);
   const ttl = months.includes(ym) ? 6 * 3_600_000 : 7 * 86_400_000;
   return Date.now() - at < ttl;
 }
@@ -123,7 +122,7 @@ async function monthTrades(userId: string, key: string, lawdCd: string, ym: stri
 }
 
 /** A 시군구's deals over the last `months` months, a few months at a time. */
-async function districtTrades(userId: string, lawdCd: string, months: number): Promise<AptTrade[]> {
+export async function districtTrades(userId: string, lawdCd: string, months: number): Promise<AptTrade[]> {
   const key = await molitKey(userId);
   const today = kstDate();
   const yms = recentMonths(today, months);
