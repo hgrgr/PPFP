@@ -70,7 +70,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           유형
           <select name="type" defaultValue={type ?? ''}>
             <option value="">전체</option>
-            {TXN_TYPES.map((t) => (
+            {/* REPAY rows come with loans, which are not on the menu yet */}
+            {TXN_TYPES.filter((t) => t !== 'REPAY').map((t) => (
               <option key={t} value={t}>{TXN_LABEL[t]}</option>
             ))}
           </select>
