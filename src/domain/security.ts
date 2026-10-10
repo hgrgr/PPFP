@@ -113,7 +113,9 @@ export function deviceLabel(ua: string | null | undefined): string {
           : /Linux/i.test(ua)
             ? 'Linux'
             : null;
-  const browser = /Edg\//.test(ua)
+  const browser = /PPFP/.test(ua)
+    ? 'PPFP 앱'
+    : /Edg\//.test(ua)
     ? 'Edge'
     : /SamsungBrowser/.test(ua)
       ? '삼성 인터넷'
