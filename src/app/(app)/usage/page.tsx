@@ -120,7 +120,6 @@ export default async function UsagePage() {
                     <th scope="col">출력 토큰</th>
                     <th scope="col">캐시 읽기</th>
                     <th scope="col">웹 검색</th>
-                    <th scope="col">단가 (100만 토큰)</th>
                     <th scope="col">비용</th>
                   </tr>
                 </thead>
@@ -129,17 +128,16 @@ export default async function UsagePage() {
                     <tr key={`${m.provider}:${m.model}`}>
                       <td>
                         <span className="strong">{m.model}</span>
-                        <span className="sub">{isProvider(m.provider) ? PROVIDERS[m.provider].name : m.provider}</span>
+                        <span className="sub">
+                          {isProvider(m.provider) ? PROVIDERS[m.provider].name : m.provider} · 100만 토큰당 입력 ${m.price.input} · 출력 ${m.price.output}
+                          {!m.price.known && ' (단가를 몰라 비싼 쪽으로 추정)'}
+                        </span>
                       </td>
                       <td>{m.answers}</td>
                       <td className="money">{qty(m.input + m.cacheWrite)}</td>
                       <td className="money">{qty(m.output)}</td>
                       <td className="money">{qty(m.cacheRead)}</td>
                       <td>{m.searches || '—'}</td>
-                      <td className="money">
-                        입력 ${m.price.input} · 출력 ${m.price.output}
-                        {!m.price.known && <span className="sub">단가를 몰라 비싼 쪽으로 추정</span>}
-                      </td>
                       <td className="money strong">{usd(m.cost)}</td>
                     </tr>
                   ))}
@@ -172,7 +170,9 @@ export default async function UsagePage() {
             <ul className="plain-list">
               {ai.conversations.map((c) => (
                 <li key={c.id} className="spread">
-                  <a href={`/ai?c=${c.id}`}>{c.title}</a>
+                  <a href={`/ai?c=${c.id}`} title={c.title}>
+                    {c.title}
+                  </a>
                   <span className="money">{usd(c.cost)}</span>
                 </li>
               ))}

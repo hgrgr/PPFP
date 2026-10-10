@@ -614,7 +614,7 @@ const SHOTS: Shot[] = [
     wait: 3000,
     clip: [{ sel: 'main' }],
     pad: 0,
-    marks: [{ sel: '[aria-label="기간 선택"]' }, { sel: 'section[aria-label="요약"]' }, { sel: '[aria-label="통화"]' }, { sel: '#contrib .contrib' }, { sel: '#contrib-group .contrib' }],
+    marks: [{ sel: '[aria-label="기간 선택"]' }, { sel: 'section[aria-label="요약"]' }, { sel: '[aria-label="해외 자산 금액 통화"]' }, { sel: '#contrib .contrib' }, { sel: '#contrib-group .contrib' }],
   },
   {
     file: 'goals',
@@ -663,6 +663,39 @@ const SHOTS: Shot[] = [
     marks: [{ sel: 'a', text: '샘플 전체 XLSX 받기' }, { sel: 'a', text: '샘플 CSV', within: { sel: '#transactions' } }, { sel: '.badge.warn', within: { sel: '#transactions' } }, { sel: '#transactions .data-format td.mono' }],
   },
   { file: 'mobile-market', path: () => '/market', wait: 5000, mobile: true, width: 390, height: 844, scale: 2 },
+  {
+    file: 'usage',
+    path: () => '/usage',
+    wait: 1500,
+    width: 1360,
+    clip: [{ sel: 'main' }],
+    pad: 0,
+    marks: [
+      { sel: '.usage-strip .usage-chip' },
+      { sel: 'section[aria-label="AI 비용 요약"]' },
+      { sel: 'section[aria-label="일별 AI 비용"]' },
+      { sel: 'h2', text: '모델별', closest: '.card' },
+      { sel: 'section[aria-label="외부 API"] table' },
+    ],
+  },
+  // These turn on 현지 통화 for the demo user, so they come last
+  {
+    file: 'dashboard-local',
+    path: () => '/dashboard',
+    wait: 2200,
+    width: 1360,
+    steps: [{ click: { sel: '[aria-label="해외 자산 금액 통화"] button', text: '현지 통화' } }, { until: "document.querySelector('[aria-label=\"해외 자산 금액 통화\"] button[aria-pressed=\"true\"]')?.textContent.includes('현지')", timeout: 15_000 }, { wait: 1500 }],
+    clip: [{ sel: '.page-head' }, { sel: 'section[aria-label="요약"]' }],
+    marks: [{ sel: '[aria-label="해외 자산 금액 통화"]' }, { sel: '.page-head .sub', text: 'USD/KRW' }, { sel: '.note', text: '달러 자산' }],
+  },
+  {
+    file: 'dashboard-local-holdings',
+    path: () => '/dashboard',
+    wait: 2200,
+    width: 1680,
+    clip: [{ sel: 'h2', text: '보유 종목', closest: '.card' }],
+    marks: [{ sel: 'td.money', text: '$', within: { sel: 'h2', text: '보유 종목', closest: '.card' } }],
+  },
 ];
 
 // ---------------------------------------------------------------- page helpers (run in the browser)
