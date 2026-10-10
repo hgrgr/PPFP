@@ -12,6 +12,8 @@ import {
   parseKakaoPlaces,
   parseMolitTrades,
   parseRegionCode,
+  pickMonths,
+  PICK_PERIODS,
   readApartmentMeta,
   recentMonths,
   type ApartmentMeta,
@@ -28,8 +30,6 @@ import { audit, UserError } from './portfolios';
 const MOLIT_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev';
 /** Months of deals the asset page reads: two years, for the year-on-year comparison. */
 const REPORT_MONTHS = 24;
-/** Months the apartment picker reads to list complexes and areas. */
-const PICK_MONTHS = 12;
 
 async function kakaoKey(userId: string) {
   const k = await serviceKey(userId, 'kakao', 'KAKAO_REST_API_KEY');
@@ -72,26 +72,32 @@ export async function searchApartments(userId: string, query: string): Promise<P
 }
 
 // One district-month of deals rarely changes once it is a few months old; recent months
-// still receive late reports (신고 기한 30일), registrations and cancellations.
+// still receive late reports (신고 기한 30일), registrations and cancellations. Recently used
+// months move to the end, so reading a district's whole history pushes out the least used.
 const cache = new Map<string, { at: number; trades: AptTrade[] }>();
 const inflight = new Map<string, Promise<AptTrade[]>>();
 const CACHE_MAX = 600;
 
 function fresh(ym: string, at: number, today: string) {
   const months = recentMonths(today, 4);
-  const ttl = months.includes(ym) ? 6 * 3_600_000 : 7 * 86_400_000;
+  const yearAgo = recentMonths(today, 13).at(-1)!;
+  const ttl = months.includes(ym) ? 6 * 3_600_000 : ym > yearAgo ? 7 * 86_400_000 : 30 * 86_400_000;
   return Date.now() - at < ttl;
 }
 
 async function monthTrades(userId: string, key: string, lawdCd: string, ym: string, today: string): Promise<AptTrade[]> {
   const ck = `${lawdCd}:${ym}`;
   const hit = cache.get(ck);
-  if (hit && fresh(ym, hit.at, today)) return hit.trades;
+  if (hit && fresh(ym, hit.at, today)) {
+    cache.delete(ck);
+    cache.set(ck, hit);
+    return hit.trades;
+  }
   const running = inflight.get(ck);
   if (running) return running;
   const job = (async () => {
     const all: AptTrade[] = [];
-    for (let pageNo = 1; pageNo <= 10; pageNo++) {
+    for (let pageNo = 1, retry = 0; pageNo <= 10; pageNo++) {
       const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: ym, pageNo: String(pageNo), numOfRows: '1000' });
       let res: Response;
       try {
@@ -106,6 +112,12 @@ async function monthTrades(userId: string, key: string, lawdCd: string, ym: stri
         page = parseMolitTrades(text);
       } catch (e) {
         noteCall(userId, 'molit', e instanceof MolitApiError && ['22', '23'].includes(e.code) ? 'limited' : 'error');
+        // 23: too many calls per second, which reading years at once can hit; wait and ask again
+        if (e instanceof MolitApiError && e.code === '23' && retry < 3) {
+          await new Promise((r) => setTimeout(r, 1_000 * ++retry));
+          pageNo--;
+          continue;
+        }
         throw e;
       }
       noteCall(userId, 'molit', outcomeOf(res.status));
@@ -145,13 +157,18 @@ export interface ApartmentOptions {
   lawdCd: string;
   umdCd: string;
   umdNm: string;
+  /** Period read, as in PICK_PERIODS (0: since 2006) */
+  months: number;
   complexes: ComplexOption[];
   /** The complex the place most likely is */
   suggested: string | null;
 }
 
-/** For a picked map place: its 법정동, and the complexes and areas traded there in the last year. */
-export async function apartmentOptions(userId: string, place: PlaceHit): Promise<ApartmentOptions> {
+/**
+ * For a picked map place: its 법정동, and the complexes and areas traded there over the last
+ * `months` (12, 36, 60, or 0 for everything since 2006; see PICK_PERIODS).
+ */
+export async function apartmentOptions(userId: string, place: PlaceHit, months = 12): Promise<ApartmentOptions> {
   let region: ReturnType<typeof parseRegionCode>;
   try {
     region = parseRegionCode(await kakao(userId, '/v2/local/geo/coord2regioncode.json', { x: String(place.lng), y: String(place.lat) }));
@@ -161,9 +178,10 @@ export async function apartmentOptions(userId: string, place: PlaceHit): Promise
     throw new UserError('주소의 법정동을 찾지 못했습니다. 잠시 후 다시 시도하세요.');
   }
   if (!region) throw new UserError('이 위치의 법정동을 찾지 못했습니다. 다른 검색 결과를 고르세요.');
-  const trades = await districtTrades(userId, region.lawdCd, PICK_MONTHS);
+  const period = PICK_PERIODS.some((p) => p.months === months) ? months : 12;
+  const trades = await districtTrades(userId, region.lawdCd, pickMonths(period, kstDate()));
   const complexes = complexesIn(trades, region);
-  return { place, ...region, complexes, suggested: guessComplex(complexes, place) };
+  return { place, ...region, months: period, complexes, suggested: guessComplex(complexes, place) };
 }
 
 export async function setApartment(userId: string, assetId: string, raw: string) {

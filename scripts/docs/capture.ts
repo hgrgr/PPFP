@@ -186,7 +186,7 @@ const SHOTS: Shot[] = [
       { wait: 600 },
     ],
     clip: [{ sel: '#add' }],
-    marks: [{ sel: '.apt-picker label.field' }, { sel: '.apt-picked label', text: '실거래가 단지' }, { sel: '.apt-picked label', text: '전용면적' }, { sel: 'input[name="name"]', closest: 'label' }],
+    marks: [{ sel: '.apt-picker label.field' }, { sel: '.apt-picked label', text: '실거래가 단지' }, { sel: '.apt-picked label', text: '전용면적' }, { sel: '.apt-widen' }, { sel: 'input[name="name"]', closest: 'label' }],
   },
   {
     file: 'realestate-holding',

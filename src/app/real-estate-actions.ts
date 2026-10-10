@@ -21,9 +21,9 @@ export async function searchApartmentsAction(query: string): Promise<{ hits: Pla
   return attempt('search', async () => ({ hits: await searchApartments(user.id, query) }));
 }
 
-export async function apartmentOptionsAction(place: PlaceHit): Promise<ApartmentOptions | { error: string }> {
+export async function apartmentOptionsAction(place: PlaceHit, months = 12): Promise<ApartmentOptions | { error: string }> {
   const user = await requireUser();
-  return attempt('options', () => apartmentOptions(user.id, place));
+  return attempt('options', () => apartmentOptions(user.id, place, months));
 }
 
 export async function apartmentViewAction(assetId: string): Promise<ApartmentView | { error: string }> {

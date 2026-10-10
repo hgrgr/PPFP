@@ -10,6 +10,9 @@ import {
   jibunOf,
   MolitApiError,
   monthsBefore,
+  monthsSinceFirst,
+  periodLabel,
+  pickMonths,
   naverLandUrl,
   parseKakaoPlaces,
   parseMolitTrades,
@@ -130,6 +133,7 @@ describe('real estate', () => {
     assert.equal(opts.length, 3);
     assert.equal(opts[0].aptNm, '은마');
     assert.deepEqual(opts[0].areas.map((a) => a.area), [76.79, 84.97]);
+    assert.equal(opts[0].lastDate, '2026-09-01');
     assert.equal(guessComplex(opts, { name: '래미안 대치 팰리스', address: '서울 강남구 대치동 316' }), '11680-3874');
     assert.equal(guessComplex(opts, { name: '대치아이파크아파트', address: '서울 강남구 대치동' }), '11680-2');
     assert.equal(guessComplex(opts, { name: '타워팰리스', address: '서울 강남구 도곡동 467' }), null);
@@ -175,6 +179,17 @@ describe('real estate', () => {
     assert.equal(r.dong.recentDeals, 3);
     assert.ok(r.dong.recent! > r.dong.yearAgo!);
     assert.equal(r.dong.monthly[0].month, '2025-08');
+  });
+
+  it('reads back as far as the picker is asked, from 2006 at most', () => {
+    assert.equal(monthsSinceFirst('2006-01-20'), 1);
+    assert.equal(monthsSinceFirst('2026-10-10'), 250);
+    assert.equal(pickMonths(36, '2026-10-10'), 36);
+    assert.equal(pickMonths(0, '2026-10-10'), 250);
+    assert.equal(pickMonths(60, '2007-03-01'), 15);
+    assert.equal(pickMonths(7, '2026-10-10'), 12);
+    assert.equal(periodLabel(36), '최근 3년');
+    assert.equal(periodLabel(0), '2006년 이후');
   });
 
   it('counts months and formats 억', () => {
