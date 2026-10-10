@@ -12,13 +12,15 @@ const LAWD = '11680';
 const UMD = '10600';
 const DONG = '대치동';
 
-/** name, 지번, serial, build year, lat, lng, [area ㎡, price now in 만원, deals per year] */
+/** name, 지번, serial, build year, lat, lng, [area ㎡, price now in 만원, deals per year], [months ago it traded from, to] (default [0, 36]) */
 const COMPLEXES = [
   ['한빛마을래미안', '508', '11680-9001', 2015, 37.4949, 127.0631, [[59.97, 248000, 6], [84.97, 312000, 9], [114.6, 395000, 3]]],
   ['대치푸른숲', '316', '11680-9002', 1979, 37.4993, 127.0628, [[76.79, 236000, 10], [84.43, 268000, 7]]],
   ['대치리버뷰자이', '1026', '11680-9003', 2008, 37.4986, 127.0573, [[84.95, 285000, 5], [134.9, 420000, 2]]],
   ['도곡로한신', '972', '11680-9004', 1993, 37.4917, 127.0582, [[84.6, 221000, 4]]],
   ['선릉벽산', '890', '11680-9005', 2001, 37.5001, 127.0512, [[59.8, 172000, 3], [84.9, 214000, 4]]],
+  // Rarely traded: nothing in the last year and a half, so only a wider search finds it
+  ['대치은하수', '660', '11680-9006', 1985, 37.4962, 127.0655, [[101.6, 248000, 8]], [20, 180]],
 ];
 
 /** Deterministic 0..1 from a string */
@@ -38,9 +40,10 @@ function monthDeals(ym) {
   const y = Number(ym.slice(0, 4)), m = Number(ym.slice(4));
   const t = today();
   const back = (t.y - y) * 12 + (t.m - m); // months ago
-  if (back < 0 || back > 36) return [];
+  if (back < 0 || back > 250) return [];
   const out = [];
-  for (const [name, jibun, seq, built, , , areas] of COMPLEXES) {
+  for (const [name, jibun, seq, built, , , areas, active = [0, 36]] of COMPLEXES) {
+    if (back < active[0] || back > active[1]) continue;
     for (const [area, now, perYear] of areas) {
       const n = Math.floor((perYear / 12) * 2 * rnd(`${seq}:${area}:${ym}:n`) + 0.35);
       for (let i = 0; i < n; i++) {
@@ -88,7 +91,8 @@ function molit(url) {
 
 function keyword(url) {
   const q = (url.searchParams.get('query') || '').replace(/\s+/g, '');
-  const hits = COMPLEXES.filter(([name]) => name.includes(q) || q.includes(name) || q.includes('대치'));
+  const named = COMPLEXES.filter(([name]) => name.includes(q) || q.includes(name));
+  const hits = named.length ? named : COMPLEXES.filter(() => q.includes('대치'));
   const docs = (hits.length ? hits : COMPLEXES.slice(0, 1)).flatMap(([name, jibun, , , lat, lng]) => [
     { place_name: name, address_name: `서울 강남구 대치동 ${jibun}`, road_address_name: `서울 강남구 삼성로 ${jibun.length * 17}`, x: String(lng), y: String(lat), category_name: '부동산 > 주거시설 > 아파트' },
     { place_name: `${name} 상가`, address_name: `서울 강남구 대치동 ${jibun}`, road_address_name: '', x: String(lng + 0.0004), y: String(lat), category_name: '부동산 > 상가' },

@@ -36,6 +36,8 @@ export function AddAssetForm({
   const [currency, setCurrency] = useState('KRW');
   const [name, setName] = useState('');
   const [apartment, setApartment] = useState<ApartmentMeta | null>(null);
+  /** The name last filled in from a pick, so a new pick replaces it but not a name typed by hand */
+  const [autoName, setAutoName] = useState('');
   const liability = kind === 'manual' && type === 'LIABILITY';
   const realEstate = kind === 'manual' && type === 'REAL_ESTATE';
   return (
@@ -86,7 +88,10 @@ export function AddAssetForm({
             <ApartmentPicker
               onChange={(m) => {
                 // Fill the name from the pick unless the user already wrote one.
-                if (m && (!name || name === (apartment && apartmentName(apartment)))) setName(apartmentName(m));
+                if (m && (!name || name === autoName)) {
+                  setName(apartmentName(m));
+                  setAutoName(apartmentName(m));
+                }
                 setApartment(m);
               }}
             />

@@ -202,9 +202,39 @@ export interface ComplexOption {
   aptSeq: string | null;
   buildYear: number | null;
   deals: number;
+  /** Latest contract date among its deals */
+  lastDate: string;
   /** Areas traded in this complex, most traded first */
   areas: { area: number; deals: number; lastPrice: number; lastDate: string }[];
 }
+
+/** First contract month the 실거래가 API has (거래신고제, 2006). */
+export const RTMS_FIRST_MONTH = '2006-01';
+
+/** How far back the apartment picker reads; 0 is everything since RTMS_FIRST_MONTH. */
+export const PICK_PERIODS = [
+  { months: 12, label: '1년' },
+  { months: 36, label: '3년' },
+  { months: 60, label: '5년' },
+  { months: 0, label: '전체 (2006~)' },
+] as const;
+
+/** Contract months from RTMS_FIRST_MONTH up to `today`'s, inclusive. */
+export function monthsSinceFirst(today: string): number {
+  const [y, m] = today.split('-').map(Number);
+  const [y0, m0] = RTMS_FIRST_MONTH.split('-').map(Number);
+  return (y - y0) * 12 + (m - m0) + 1;
+}
+
+/** The picker's period in months, clamped to what the API has; unknown values fall back to a year. */
+export function pickMonths(months: number, today: string): number {
+  const all = monthsSinceFirst(today);
+  if (!PICK_PERIODS.some((p) => p.months === months)) return 12;
+  return months === 0 ? all : Math.min(months, all);
+}
+
+/** "최근 3년", "2006년 이후" */
+export const periodLabel = (months: number) => (months === 0 ? `${RTMS_FIRST_MONTH.slice(0, 4)}년 이후` : `최근 ${months / 12}년`);
 
 export const complexKey = (t: Pick<AptTrade, 'aptSeq' | 'umdCd' | 'umdNm' | 'jibun' | 'aptNm'>) => t.aptSeq ?? `${t.umdCd ?? t.umdNm}|${t.jibun ?? ''}|${t.aptNm}`;
 
@@ -229,7 +259,7 @@ export function complexesIn(trades: AptTrade[], dong: { umdCd: string; umdNm: st
         else areas.push({ area: t.area, deals: 1, lastPrice: t.price, lastDate: t.date });
       }
       areas.sort((a, b) => b.deals - a.deals || a.area - b.area);
-      return { key, aptNm: sorted[0].aptNm, jibun: sorted[0].jibun, aptSeq: sorted[0].aptSeq, buildYear: sorted[0].buildYear, deals: ts.length, areas };
+      return { key, aptNm: sorted[0].aptNm, jibun: sorted[0].jibun, aptSeq: sorted[0].aptSeq, buildYear: sorted[0].buildYear, deals: ts.length, lastDate: sorted[0].date, areas };
     })
     .sort((a, b) => b.deals - a.deals || a.aptNm.localeCompare(b.aptNm, 'ko'));
 }
