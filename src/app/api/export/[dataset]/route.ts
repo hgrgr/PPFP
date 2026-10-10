@@ -30,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ dataset:
   };
 
   const sheets: SheetKey[] = dataset === 'all' ? [...SHEET_KEYS] : (SHEET_KEYS as readonly string[]).includes(dataset) ? [dataset as SheetKey] : [];
-  const reports: Dataset[] = dataset === 'reports' ? (Object.keys(DATASETS) as Dataset[]) : dataset in DATASETS ? [dataset as Dataset] : [];
+  const reports: Dataset[] = dataset === 'reports' ? (Object.keys(DATASETS) as Dataset[]) : Object.hasOwn(DATASETS, dataset) ? [dataset as Dataset] : [];
   if (!sheets.length && !reports.length) return NextResponse.json({ error: 'unknown dataset' }, { status: 404 });
   if ((dataset === 'all' || dataset === 'reports') && format === 'csv') return NextResponse.json({ error: 'use xlsx for several datasets' }, { status: 400 });
 

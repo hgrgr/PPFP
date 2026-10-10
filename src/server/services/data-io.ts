@@ -26,9 +26,9 @@ import {
 import { BOOK_STATUS_LABEL } from '@/domain/knowledge';
 import { LOT_METHOD_LABEL } from '@/domain/lots';
 import { TXN_LABEL } from '@/domain/ledger';
-import { BUILTIN_FORMATS, JournalInputError, plainText, sanitizeContent, type FieldDef } from '@/domain/journal';
+import { BUILTIN_FORMATS, JournalInputError, normalizeFieldValues, plainText, sanitizeContent, type FieldDef } from '@/domain/journal';
 import { blocksToMarkdown, markdownToBlocks } from '@/domain/markdown-blocks';
-import { effectiveWeights } from '@/domain/portfolio-graph';
+import { checkEdge, effectiveWeights, normalizeEdges } from '@/domain/portfolio-graph';
 import { dec, kstDate, kstIso, prisma } from '../db';
 import { ASSET_TYPE_LABEL, createManualAsset, ensureListedAsset } from './assets';
 import { saveJournal } from './journal';
@@ -86,7 +86,14 @@ async function linkNames(userId: string) {
 export async function exportSheet(userId: string, key: SheetKey, scope: ExportScope = {}): Promise<DataTable> {
   const { portfolios, edges } = await userGraph(userId);
   const ids = scope.portfolioId ? [...effectiveWeights(edges, scope.portfolioId).keys()] : portfolios.map((p) => p.id);
-  const pname = new Map(portfolios.map((p) => [p.id, p.name]));
+  // Import finds portfolios by name: give same-named ones distinct names in the file
+  const pname = new Map<string, string>();
+  const used = new Map<string, number>();
+  for (const p of portfolios) {
+    const n = (used.get(p.name) ?? 0) + 1;
+    used.set(p.name, n);
+    pname.set(p.id, n === 1 ? p.name : `${p.name} (${n})`);
+  }
   const fromD = scope.from ? new Date(`${scope.from}T00:00:00+09:00`) : undefined;
   const toD = scope.to ? new Date(`${scope.to}T23:59:59.999+09:00`) : undefined;
   const between = fromD || toD ? { gte: fromD, lte: toD } : undefined;
@@ -96,7 +103,7 @@ export async function exportSheet(userId: string, key: SheetKey, scope: ExportSc
       const rows = portfolios
         .filter((p) => ids.includes(p.id))
         .flatMap((p) => {
-          const base: Row = { 이름: p.name, 'Lot 방식': LOT_METHOD_LABEL[p.lotMethod], 보관: p.archived ? 'Y' : '' };
+          const base: Row = { 이름: pname.get(p.id)!, 'Lot 방식': LOT_METHOD_LABEL[p.lotMethod], 보관: p.archived ? 'Y' : '' };
           const ups = edges.filter((e) => e.childId === p.id && ids.includes(e.parentId));
           return ups.length ? ups.map((e): Row => ({ ...base, '상위 포트폴리오': pname.get(e.parentId) ?? '', '할당(%)': e.allocation.mul(100).toString() })) : [base];
         });
@@ -136,7 +143,9 @@ export async function exportSheet(userId: string, key: SheetKey, scope: ExportSc
       return sheetTable('transactions', rows);
     }
     case 'journals': {
-      const entries = await prisma.journalEntry.findMany({ where: { userId, entryDate: between }, include: { asset: true }, orderBy: { entryDate: 'asc' } });
+      // entryDate is a DATE: compare with plain dates, not KST instants
+      const days = scope.from || scope.to ? { gte: scope.from ? new Date(scope.from) : undefined, lte: scope.to ? new Date(scope.to) : undefined } : undefined;
+      const entries = await prisma.journalEntry.findMany({ where: { userId, entryDate: days }, include: { asset: true }, orderBy: { entryDate: 'asc' } });
       const formats = await prisma.journalTemplate.findMany({ where: { userId }, select: { id: true, name: true } });
       const formatName = (t: string | null) => BUILTIN_FORMATS.find((f) => f.id === t)?.name ?? formats.find((f) => f.id === t)?.name ?? '';
       return sheetTable(
@@ -145,6 +154,7 @@ export async function exportSheet(userId: string, key: SheetKey, scope: ExportSc
           제목: e.title,
           종목코드: e.asset.symbol ?? '',
           '자산 이름': e.asset.name,
+          '자산 유형': e.asset.symbol ? '' : ASSET_TYPE_LABEL[e.asset.type],
           통화: e.currency,
           작성일: kstDate(e.entryDate),
           상태: e.status === 'CLOSED' ? '종료' : '진행 중',
@@ -202,7 +212,7 @@ export async function exportSheet(userId: string, key: SheetKey, scope: ExportSc
       // A topic's links to books, investors and notes are written on their rows
       return sheetTable(
         'topics',
-        topics.map((t) => ({ 이름: t.name, 색: t.color, 설명: t.description ?? '', 연결: links('topic', t.id, (k) => k !== 'trait' && k !== 'asset') })),
+        topics.map((t) => ({ 이름: t.name, 색: t.color, 설명: t.description ?? '', 연결: links('topic', t.id, (k) => k !== 'trait' && k !== 'asset' && k !== 'topic') })),
       );
     }
   }
@@ -249,6 +259,7 @@ function cellText(v: unknown): string {
     if ('text' in o) return cellText(o.text);
     return '';
   }
+  if (typeof v === 'number' && Math.abs(v) > 0 && Math.abs(v) < 1e-6) return v.toFixed(12).replace(/\.?0+$/, '');
   return String(v);
 }
 
@@ -280,8 +291,12 @@ export async function readUpload(file: File, forced?: SheetKey | null): Promise<
     for (const ws of wb.worksheets) {
       const table: string[][] = [];
       ws.eachRow({ includeEmpty: true }, (row, i) => {
-        const values = (row.values as unknown[]).slice(1).map(cellText);
-        table[i - 1] = values;
+        const values: string[] = [];
+        row.eachCell({ includeEmpty: true }, (c, col) => {
+          // A percent-formatted 60% is stored as 0.6
+          values[col - 1] = typeof c.value === 'number' && /%/.test(c.numFmt ?? '') ? String(Number((c.value * 100).toFixed(10))) : cellText(c.value);
+        });
+        table[i - 1] = Array.from(values, (v) => v ?? '');
       });
       for (let i = 0; i < table.length; i++) table[i] ??= [];
       const { headers, rows } = toRows(table);
@@ -293,7 +308,13 @@ export async function readUpload(file: File, forced?: SheetKey | null): Promise<
       sheets.push({ key, source: ws.name, rows });
     }
   } else {
-    const text = new TextDecoder('utf-8').decode(bytes);
+    // Korean Excel saves "CSV (쉼표로 분리)" as CP949, not UTF-8
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      text = new TextDecoder('euc-kr').decode(bytes);
+    }
     const { headers, rows } = toRows(parseCsv(text));
     const key = forced ?? detectSheet(headers);
     if (!key) throw new UserError('어떤 데이터인지 알 수 없는 CSV입니다. 첫 줄의 열 이름을 샘플과 맞추거나, 가져올 데이터 종류를 고르세요.');
@@ -339,8 +360,10 @@ interface Ctx {
   portfolios: Map<string, { id: string; lotMethod: LotMethod }>;
   /** symbol or "type|name" -> asset */
   assets: Map<string, { id: string; currency: string; manual: boolean }>;
-  /** portfolioId|assetId -> holding id and open quantity (simulated in a dry run) */
-  holdings: Map<string, { id: string | null; qty: number }>;
+  /** portfolioId|assetId -> holding id and its open lots by date (simulated in a dry run) */
+  holdings: Map<string, { id: string | null; lots: { at: number; qty: number }[] }>;
+  /** Names and keys made earlier in this import, so a dry run sees what the commit would */
+  seen: Set<string>;
   linkQueue: { ref: { type: 'note' | 'book' | 'sage' | 'topic'; id: string }; links: { type: LinkType; name: string }[]; report: SheetReport; line: number }[];
 }
 
@@ -350,15 +373,16 @@ async function loadCtx(userId: string, commit: boolean): Promise<Ctx> {
   const [portfolios, assets, holdings] = await Promise.all([
     prisma.portfolio.findMany({ where: { userId }, select: { id: true, name: true, lotMethod: true } }),
     prisma.asset.findMany({ where: { userId }, select: { id: true, symbol: true, name: true, type: true, currency: true, priceSource: true } }),
-    prisma.holding.findMany({ where: { portfolio: { userId } }, include: { lots: { where: { qtyRemaining: { gt: 0 } }, select: { qtyRemaining: true } } } }),
+    prisma.holding.findMany({ where: { portfolio: { userId } }, include: { lots: { where: { qtyRemaining: { gt: 0 } }, select: { qtyRemaining: true, acquiredAt: true } } } }),
   ]);
   return {
     userId,
     commit,
     portfolios: new Map(portfolios.map((p) => [p.name, { id: p.id, lotMethod: p.lotMethod }])),
     assets: new Map(assets.map((a) => [a.symbol ?? `${a.type}|${a.name}`, { id: a.id, currency: a.currency, manual: a.priceSource === 'MANUAL' }])),
-    holdings: new Map(holdings.map((h) => [`${h.portfolioId}|${h.assetId}`, { id: h.id, qty: h.lots.reduce((s, l) => s + Number(l.qtyRemaining), 0) }])),
+    holdings: new Map(holdings.map((h) => [`${h.portfolioId}|${h.assetId}`, { id: h.id, lots: h.lots.map((l) => ({ at: l.acquiredAt.getTime(), qty: Number(l.qtyRemaining) })) }])),
     linkQueue: [],
+    seen: new Set(),
   };
 }
 
@@ -421,29 +445,60 @@ type Records<K extends SheetKey> = { line: number; record: RecordOf<K> }[];
 
 async function importPortfolios(ctx: Ctx, rep: SheetReport, rows: Records<'portfolios'>) {
   const { edges } = await userGraph(ctx.userId);
-  const edgeSet = new Set(edges.map((e) => `${e.parentId}|${e.childId}`));
+  const sim = edges.map((e) => ({ parentId: e.parentId, childId: e.childId, allocation: e.allocation.toString() }));
+  // First every portfolio named in its own row, with that row's settings, whatever the order
+  const created = new Set<string>();
+  for (const { record: p } of rows) {
+    if (ctx.portfolios.has(p.name)) continue;
+    try {
+      const made = ctx.commit ? await createPortfolio(ctx.userId, { name: p.name, lotMethod: p.lotMethod ?? undefined }) : { id: fakeId('portfolio') };
+      if (ctx.commit && p.archived) await prisma.portfolio.update({ where: { id: made.id }, data: { archived: true } });
+      ctx.portfolios.set(p.name, { id: made.id, lotMethod: p.lotMethod ?? 'FIFO' });
+      created.add(p.name);
+    } catch {
+      // reported on the row below
+    }
+  }
+  const counted = new Set<string>();
   for (const { line, record: p } of rows) {
     await attempt(rep, line, async () => {
-      const existed = ctx.portfolios.has(p.name);
       const self = await portfolioFor(ctx, p.name);
-      if (!existed && ctx.commit && (p.lotMethod || p.archived)) {
-        await prisma.portfolio.update({ where: { id: self.id }, data: { ...(p.lotMethod ? { lotMethod: p.lotMethod } : {}), archived: p.archived } });
-        if (p.lotMethod) self.lotMethod = p.lotMethod;
-      }
+      const fresh = created.has(p.name) && !counted.has(p.name);
+      counted.add(p.name);
       let linked = false;
       if (p.parent) {
-        if (p.parent === p.name) throw new UserError('자기 자신을 상위 포트폴리오로 둘 수 없습니다.');
         const parent = await portfolioFor(ctx, p.parent);
-        if (!edgeSet.has(`${parent.id}|${self.id}`)) {
-          if (ctx.commit) await linkPortfolio(ctx.userId, parent.id, self.id, String(Number(p.allocation) / 100));
-          edgeSet.add(`${parent.id}|${self.id}`);
+        if (!sim.some((e) => e.parentId === parent.id && e.childId === self.id)) {
+          const candidate = { parentId: parent.id, childId: self.id, allocation: String(Number(p.allocation) / 100) };
+          // The same checks the real link runs (cycles, 100% cap), so the preview agrees with the import
+          const check = checkEdge(normalizeEdges(sim), candidate);
+          if (!check.ok) throw new UserError(check.message);
+          if (ctx.commit) await linkPortfolio(ctx.userId, parent.id, self.id, candidate.allocation);
+          sim.push(candidate);
           linked = true;
         }
       }
-      return existed && !linked ? 'skipped' : 'added';
+      return fresh || linked ? 'added' : 'skipped';
     });
   }
 }
+
+/** Open quantity of a holding at a moment: lots bought by then. */
+const heldAt = (h: { lots: { at: number; qty: number }[] } | undefined, at: Date) => (h ? h.lots.filter((l) => l.at <= at.getTime()).reduce((s, l) => s + l.qty, 0) : 0);
+
+/** Takes `qty` from the lots held at `at`, oldest first (for the next rows' checks). */
+function takeLots(h: { lots: { at: number; qty: number }[] }, at: Date, qty: number) {
+  let left = qty;
+  for (const l of [...h.lots].sort((a, b) => a.at - b.at)) {
+    if (l.at > at.getTime() || left <= 0) continue;
+    const used = Math.min(l.qty, left);
+    l.qty -= used;
+    left -= used;
+  }
+  h.lots = h.lots.filter((l) => l.qty > 1e-12);
+}
+
+const minute = (d: Date) => Math.floor(d.getTime() / 60_000);
 
 const sameNum = (a: unknown, b: string | undefined) => (a === null || a === undefined ? !b : !!b && Number(a) === Number(b));
 
@@ -459,30 +514,36 @@ async function importTransactions(ctx: Ctx, rep: SheetReport, rows: Records<'tra
       const asset = t.asset ? await assetFor(ctx, t.asset) : null;
       const hKey = asset ? `${portfolio.id}|${asset.id}` : null;
       const holding = hKey ? ctx.holdings.get(hKey) : undefined;
+      const cashOnly = !['BUY', 'SELL', 'SPLIT', 'VALUATION'].includes(t.type);
+      // Same portfolio, type and minute (exports keep minutes); cash rows match on the amount whatever the holding
       const dup = existing.find(
         (x) =>
           x.portfolioId === portfolio.id &&
           x.type === t.type &&
-          x.tradeAt.getTime() === t.at.getTime() &&
-          (x.holding?.assetId ?? null) === (asset?.id ?? null) &&
+          minute(x.tradeAt) === minute(t.at) &&
+          (cashOnly || (x.holding?.assetId ?? null) === (asset?.id ?? null)) &&
           (t.type === 'SPLIT' ? sameNum(x.splitRatio, t.qty) : sameNum(x.qty, t.qty)) &&
           sameNum(x.price, t.price) &&
           (!t.amount || Math.abs(Number(x.cashDelta)) === Number(t.amount)),
       );
-      if (dup) return { skipped: '같은 날짜·종목·수량의 거래가 이미 있음' };
+      if (dup) return { skipped: '같은 일시·종목·수량의 거래가 이미 있음' };
       const externalRef = t.id ? `ppfp:${t.id}` : undefined;
       const common = { tradeAt: t.at, fee: t.fee, tax: t.tax, fxRate: t.fxRate, memo: t.memo, externalRef };
       if (t.type === 'BUY') {
-        if (ctx.commit) {
-          const txn = await recordBuy(ctx.userId, { ...common, portfolioId: portfolio.id, assetId: asset!.id, qty: t.qty!, price: t.price!, fromCash: t.useCash });
-          ctx.holdings.set(hKey!, { id: txn.holdingId, qty: (holding?.qty ?? 0) + Number(t.qty) });
-        } else ctx.holdings.set(hKey!, { id: holding?.id ?? null, qty: (holding?.qty ?? 0) + Number(t.qty) });
+        const lot = { at: t.at.getTime(), qty: Number(t.qty) };
+        const id = ctx.commit ? (await recordBuy(ctx.userId, { ...common, portfolioId: portfolio.id, assetId: asset!.id, qty: t.qty!, price: t.price!, fromCash: t.useCash })).holdingId : (holding?.id ?? null);
+        ctx.holdings.set(hKey!, { id, lots: [...(holding?.lots ?? []), lot] });
       } else if (t.type === 'SELL') {
-        if (!holding || holding.qty + 1e-9 < Number(t.qty)) throw new UserError(`팔 수량(${t.qty})이 그때 보유한 수량(${holding?.qty ?? 0})보다 많습니다.`);
-        const method = t.lotMethod ?? (portfolio.lotMethod === 'SPECIFIC' ? 'FIFO' : portfolio.lotMethod);
-        if (method === 'SPECIFIC') throw new UserError('가져오기에서는 직접 선택 방식을 쓸 수 없습니다. 다른 Lot 방식을 고르세요.');
-        if (ctx.commit) await recordSell(ctx.userId, { ...common, holdingId: holding.id!, qty: t.qty!, price: t.price!, method, toCash: t.useCash });
-        holding.qty -= Number(t.qty);
+        const held = heldAt(holding, t.at);
+        if (!holding || held + 1e-9 < Number(t.qty)) throw new UserError(`팔 수량(${t.qty})이 그날 보유한 수량(${Math.round(held * 1e8) / 1e8})보다 많습니다.`);
+        let method = t.lotMethod ?? portfolio.lotMethod;
+        if (method === 'SPECIFIC') {
+          // Which lots were picked is not in the file: sell oldest first and say so
+          rep.warnings.push({ line, message: '직접 고른 Lot은 파일에 없어 선입선출(FIFO)로 계산합니다. 실현손익이 원래와 다를 수 있습니다' });
+          method = 'FIFO';
+        }
+        if (ctx.commit) await recordSell(ctx.userId, { ...common, holdingId: holding.id!, qty: t.qty!, price: t.price!, method, toCash: t.useCash, asOf: t.at });
+        takeLots(holding, t.at, Number(t.qty));
       } else if (t.type === 'SPLIT' || t.type === 'VALUATION') {
         if (!holding) throw new UserError('이 포트폴리오에 그 종목이 없습니다. 매수 줄을 먼저 넣으세요.');
         if (t.type === 'VALUATION' && !asset!.manual) throw new UserError('시세가 자동으로 들어오는 종목은 평가 갱신을 가져오지 않습니다.');
@@ -490,10 +551,10 @@ async function importTransactions(ctx: Ctx, rep: SheetReport, rows: Records<'tra
           const txn = t.type === 'SPLIT' ? await recordSplit(ctx.userId, { holdingId: holding.id!, ratio: t.qty!, tradeAt: t.at, memo: t.memo }) : await recordValuation(ctx.userId, { holdingId: holding.id!, price: t.price!, tradeAt: t.at, memo: t.memo });
           if (externalRef) await prisma.transaction.update({ where: { id: txn.id }, data: { externalRef } });
         }
-        if (t.type === 'SPLIT') holding.qty *= Number(t.qty);
+        if (t.type === 'SPLIT') for (const l of holding.lots) l.qty *= Number(t.qty);
       } else {
         if (t.asset && !holding) rep.warnings.push({ line, message: '이 포트폴리오에 그 종목이 없어 종목 없이 기록합니다' });
-        if (ctx.commit) await recordCash(ctx.userId, { portfolioId: portfolio.id, type: t.type, amount: t.amount!, currency: t.asset?.currency ?? (t.fxRate ? 'USD' : 'KRW'), tradeAt: t.at, holdingId: holding?.id ?? undefined, fxRate: t.fxRate, memo: t.memo, externalRef });
+        if (ctx.commit) await recordCash(ctx.userId, { portfolioId: portfolio.id, type: t.type, amount: t.amount!, currency: t.currency, tradeAt: t.at, holdingId: holding?.id ?? undefined, fxRate: t.fxRate, memo: t.memo, externalRef });
       }
       if (t.id) ids.add(t.id);
       return 'added';
@@ -509,6 +570,7 @@ async function importTopics(ctx: Ctx, rep: SheetReport, rows: Records<'topics'>)
         ctx.linkQueue.push({ ref: { type: 'topic', id: had.id }, links: t.links, report: rep, line });
         return 'skipped';
       }
+      if (repeated(ctx, `topic:${t.name}`)) return AGAIN;
       if (ctx.commit) {
         const id = await ensureTopic(ctx.userId, t.name);
         await prisma.topic.update({ where: { id }, data: { ...(t.color ? { color: t.color } : {}), description: t.description || null } });
@@ -518,6 +580,14 @@ async function importTopics(ctx: Ctx, rep: SheetReport, rows: Records<'topics'>)
     });
   }
 }
+
+/** True when the same item came earlier in this file (a dry run has not written it yet). */
+function repeated(ctx: Ctx, key: string): boolean {
+  if (ctx.seen.has(key)) return true;
+  ctx.seen.add(key);
+  return false;
+}
+const AGAIN = { skipped: '파일 안에서 같은 항목이 먼저 나옴' } as const;
 
 const doc = (md: string) => {
   const content = sanitizeContent(markdownToBlocks(md));
@@ -532,11 +602,14 @@ async function importSages(ctx: Ctx, rep: SheetReport, rows: Records<'sages'>) {
         ctx.linkQueue.push({ ref: { type: 'sage', id: had.id }, links: s.links, report: rep, line });
         return 'skipped';
       }
+      if (repeated(ctx, `sage:${s.name}`)) return AGAIN;
+      // Checked before anything is written, so a bad body never leaves a half-made entry
+      const body = s.body ? doc(s.body) : {};
       if (ctx.commit) {
         const id = await createSage(ctx.userId, s.name);
         await prisma.sage.update({
           where: { id },
-          data: { nameEn: s.nameEn || null, lived: s.lived || null, affiliation: s.affiliation || null, oneLine: s.oneLine || null, ...(s.body ? doc(s.body) : {}) },
+          data: { nameEn: s.nameEn || null, lived: s.lived || null, affiliation: s.affiliation || null, oneLine: s.oneLine || null, ...body },
         });
         ctx.linkQueue.push({ ref: { type: 'sage', id }, links: s.links, report: rep, line });
       }
@@ -553,6 +626,8 @@ async function importBooks(ctx: Ctx, rep: SheetReport, rows: Records<'books'>) {
         ctx.linkQueue.push({ ref: { type: 'book', id: had.id }, links: b.links, report: rep, line });
         return 'skipped';
       }
+      if (repeated(ctx, `book:${b.title}`)) return AGAIN;
+      const body = b.body ? doc(b.body) : {};
       if (ctx.commit) {
         const id = await createBook(ctx.userId, b.title, { author: b.author, publisher: b.publisher, year: b.year ? Number(b.year) : null });
         await prisma.book.update({
@@ -563,7 +638,7 @@ async function importBooks(ctx: Ctx, rep: SheetReport, rows: Records<'books'>) {
             startedAt: b.startedAt ? new Date(b.startedAt) : null,
             finishedAt: b.finishedAt ? new Date(b.finishedAt) : null,
             oneLine: b.oneLine.slice(0, 300) || null,
-            ...(b.body ? doc(b.body) : {}),
+            ...body,
           },
         });
         ctx.linkQueue.push({ ref: { type: 'book', id }, links: b.links, report: rep, line });
@@ -581,6 +656,7 @@ async function importNotes(ctx: Ctx, rep: SheetReport, rows: Records<'notes'>) {
         ctx.linkQueue.push({ ref: { type: 'note', id: had.id }, links: x.links, report: rep, line });
         return 'skipped';
       }
+      if (repeated(ctx, `note:${x.body}`)) return AGAIN;
       if (ctx.commit) {
         const id = await createNote(ctx.userId, x.body);
         await prisma.note.update({ where: { id }, data: { pinned: x.pinned, ...(x.date ? { createdAt: new Date(`${x.date}T12:00:00+09:00`) } : {}) } });
@@ -600,6 +676,7 @@ async function importJournals(ctx: Ctx, rep: SheetReport, rows: Records<'journal
       if (await prisma.journalEntry.findFirst({ where: { userId: ctx.userId, assetId: asset.id, title: j.title, ...(j.entryDate ? { entryDate: new Date(j.entryDate) } : {}) }, select: { id: true } })) {
         return { skipped: '같은 종목·제목의 일지가 이미 있음' };
       }
+      if (repeated(ctx, `journal:${assetKey(j.asset)}|${j.title}|${j.entryDate ?? ''}`)) return AGAIN;
       const builtin = BUILTIN_FORMATS.find((f) => f.name === j.format);
       const mine = custom.find((f) => f.name === j.format);
       if (j.format && !builtin && !mine) rep.warnings.push({ line, message: `양식 '${j.format}'이(가) 없어 양식 없이 가져옵니다` });
@@ -613,6 +690,9 @@ async function importJournals(ctx: Ctx, rep: SheetReport, rows: Records<'journal
         }
         values[d.key] = p.value;
       }
+      // The checks saveJournal runs, here too so the preview agrees with the import
+      normalizeFieldValues(defs, values);
+      const content = sanitizeContent(markdownToBlocks(j.body));
       if (ctx.commit) {
         await saveJournal(ctx.userId, {
           assetId: asset.id,
@@ -626,7 +706,7 @@ async function importJournals(ctx: Ctx, rep: SheetReport, rows: Records<'journal
           template: builtin?.id ?? mine?.id,
           fields: defs,
           values,
-          content: markdownToBlocks(j.body),
+          content,
           txnIds: [],
           // Price alerts only for entries still open
           alertTarget: !j.closed,
@@ -660,7 +740,7 @@ async function importLinks(ctx: Ctx) {
   };
   for (const q of ctx.linkQueue) {
     for (const l of q.links) {
-      const id = await find(l.type, l.name);
+      const id = await find(l.type, l.name).catch(() => null);
       if (!id) {
         const what = ({ topic: '키워드', sage: '투자 거장', book: '책', asset: '종목', trait: '자산 성질', note: '메모' } as const)[l.type];
         const hint = l.type === 'trait' ? '. 자산 성질 화면에서 그 분류를 추가한 뒤 같은 파일을 다시 가져오면 연결됩니다' : '';

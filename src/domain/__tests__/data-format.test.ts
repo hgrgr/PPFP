@@ -73,4 +73,23 @@ describe('import format', () => {
       ['a, b', '줄\n바꿈 "따옴표"'],
     ]);
   });
+
+  it('handles what spreadsheets do to values', () => {
+    assert.equal(num('60%', '할당(%)'), '60');
+    assert.equal(num('1.2e-7', '수량'), '0.00000012');
+    const [t] = parseSheet('transactions', [{ 일시: '2026-01-02', 포트폴리오: 'A', 유형: '매수', 종목코드: '5930', '자산 이름': '삼성전자', 통화: 'KRW', 수량: '1', 단가: '1' }]);
+    assert.equal(t.record?.asset?.symbol, '005930');
+    const [c] = parseSheet('transactions', [{ 일시: '2026-01-02', 포트폴리오: 'A', 유형: '입금', 통화: 'KRW', 금액: '1000', 환율: '1' }]);
+    assert.equal(c.record?.currency, 'KRW');
+  });
+
+  it('reads journals on manual assets and property names with colons', () => {
+    const [j] = parseSheet('journals', [{ 제목: '펀드', '자산 이름': '글로벌 채권 펀드', '자산 유형': '펀드', 통화: 'KRW', '목표 예상 가격': '11000', 속성: '목표: 1차: 절반 익절\n자료: https://x.test/a' }]);
+    assert.equal(j.error, undefined);
+    assert.deepEqual(j.record?.props, [
+      { label: '목표', value: '1차: 절반 익절' },
+      { label: '자료', value: 'https://x.test/a' },
+    ]);
+    assert.equal(detectSheet(['이름']), null);
+  });
 });

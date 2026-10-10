@@ -63,6 +63,7 @@ export const SHEETS: Record<SheetKey, { name: string; about: string; columns: Co
       { header: '제목', required: true, note: '' },
       { header: '종목코드', note: '상장 종목 코드. 수기 자산은 비우고 자산 이름을 씁니다' },
       { header: '자산 이름', note: '처음 나오는 종목의 이름, 또는 수기 자산 이름' },
+      { header: '자산 유형', note: '수기 자산에 필수: 채권, 현금·예금, 부동산, 펀드, 대안자산, 부채, 국내 주식·ETF, 해외 주식·ETF' },
       { header: '통화', note: '처음 나오는 종목의 통화(KRW·USD). 비우면 코드로 짐작' },
       { header: '작성일', note: '2026-03-02. 비우면 오늘' },
       { header: '상태', note: '진행 중 또는 종료. 비우면 진행 중' },
@@ -141,13 +142,16 @@ export function detectSheet(headers: string[]): SheetKey | null {
   const have = headers.map((h) => h.trim()).filter(Boolean);
   let best: SheetKey | null = null;
   let score = 0;
+  let tied = false;
   for (const key of SHEET_KEYS) {
     const cols = new Set(headersOf(key));
     if (!SHEETS[key].columns.every((c) => !c.required || have.includes(c.header))) continue;
     const s = have.filter((h) => cols.has(h)).length / Math.max(1, have.length);
-    if (s > score) [best, score] = [key, s];
+    if (s > score) [best, score, tied] = [key, s, false];
+    else if (s === score) tied = true;
   }
-  return score >= 0.5 ? best : null;
+  // Two kinds fit equally well (a CSV of just 이름): let the user pick
+  return score >= 0.5 && !tied ? best : null;
 }
 
 export const sheetByName = (name: string): SheetKey | null => SHEET_KEYS.find((k) => SHEETS[k].name === name.trim()) ?? null;
@@ -170,7 +174,9 @@ function need(r: Row, h: string): string {
 
 /** "1,234.5", "₩1,000", "$12" -> "1234.5" */
 export function num(v: string, label: string, opts: { positive?: boolean; allowZero?: boolean } = {}): string {
-  const t = v.replace(/[,\s₩$원]/g, '');
+  let t = v.replace(/[,\s₩$원%]/g, '');
+  // Spreadsheets write very small numbers as 1.2e-7
+  if (/^-?\d+(\.\d+)?e[-+]?\d+$/i.test(t)) t = Number(t).toFixed(12).replace(/\.?0+$/, '');
   if (!/^-?\d+(\.\d+)?$/.test(t)) bad(`${label} '${v}'을(를) 숫자로 쓰세요.`);
   const n = Number(t);
   if (opts.positive && (opts.allowZero ? n < 0 : n <= 0)) bad(`${label}은(는) ${opts.allowZero ? '0 이상' : '0보다 커야'} 합니다.`);
@@ -278,6 +284,7 @@ export interface TxnRecord {
   at: Date;
   portfolio: string;
   type: TxnType;
+  currency: 'KRW' | 'USD';
   asset: AssetRef | null;
   qty?: string;
   price?: string;
@@ -355,7 +362,9 @@ export type RecordOf<K extends SheetKey> = {
 }[K];
 
 function assetRef(r: Row, required: boolean, ccy?: 'KRW' | 'USD'): AssetRef | null {
-  const symbol = cell(r, '종목코드').toUpperCase() || null;
+  const raw = cell(r, '종목코드').toUpperCase();
+  // Excel turns 005930 into 5930: Korean codes are six digits
+  const symbol = (/^\d{1,5}$/.test(raw) ? raw.padStart(6, '0') : raw) || null;
   const name = cell(r, '자산 이름') || null;
   const typeText = cell(r, '자산 유형');
   const type = typeText ? pick(ASSET_TYPES, typeText, '자산 유형') : null;
@@ -383,6 +392,7 @@ const PARSERS: { [K in SheetKey]: (r: Row) => RecordOf<K> } = {
       at: kstInstant(need(r, '일시'), '일시'),
       portfolio: need(r, '포트폴리오'),
       type,
+      currency: ccy,
       asset,
       fee: optNum(r, '수수료', { positive: true, allowZero: true }),
       tax: optNum(r, '세금', { positive: true, allowZero: true }),
@@ -416,7 +426,8 @@ const PARSERS: { [K in SheetKey]: (r: Row) => RecordOf<K> } = {
       .map((l) => l.trim())
       .filter(Boolean)
       .map((l) => {
-        const m = l.match(/^([^:：]+)[:：]\s*(.*)$/);
+        // Export writes "이름: 값"; a colon inside the name or a URL value stays put
+        const m = l.match(/^(.+?)[:：]\s(.*)$/) ?? l.match(/^([^:：]+)[:：](.*)$/);
         if (!m) bad(`속성 '${l}'을(를) "이름: 값"으로 쓰세요.`);
         return { label: m![1].trim(), value: m![2].trim() };
       }),

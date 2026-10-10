@@ -143,6 +143,8 @@ export interface SellInput {
   picks?: { lotId: string; qty: string }[];
   /** true: proceeds go to the portfolio's cash. false: leave the portfolio (counts as a withdrawal). */
   toCash: boolean;
+  /** Only lots bought by then (an import replaying past sales); default all open lots */
+  asOf?: Date;
   memo?: string;
   externalRef?: string;
 }
@@ -167,7 +169,7 @@ export async function recordSell(userId: string, input: SellInput) {
   return prisma.$transaction(async (tx) => {
     await lockHolding(tx, input.holdingId);
     // Re-read lots inside the lock so two concurrent sells can't consume the same quantity.
-    const lotsRows = await tx.lot.findMany({ where: { holdingId: input.holdingId, qtyRemaining: { gt: 0 } }, orderBy: { acquiredAt: 'asc' } });
+    const lotsRows = await tx.lot.findMany({ where: { holdingId: input.holdingId, qtyRemaining: { gt: 0 }, ...(input.asOf ? { acquiredAt: { lte: input.asOf } } : {}) }, orderBy: { acquiredAt: 'asc' } });
     const lots = lotsRows.map(toLot);
     const qty = positive(input.qty, '수량').round(QTY_DP);
     const plan = planSale(lots, qty, input.method, input.picks ?? []);

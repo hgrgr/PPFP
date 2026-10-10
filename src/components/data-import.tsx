@@ -75,6 +75,7 @@ function Report({ report }: { report: ImportReport }) {
 export function DataImport() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
+  const [name, setName] = useState('');
   const [kind, setKind] = useState('');
   const [busy, setBusy] = useState<'check' | 'commit' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,13 +100,14 @@ export function DataImport() {
         router.refresh();
       } else setPreview(json.report);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '가져오지 못했습니다.');
+      setError(e instanceof TypeError ? '서버에 보내지 못했습니다. 파일을 다시 고르거나 잠시 후 다시 시도하세요.' : e instanceof Error ? e.message : '가져오지 못했습니다.');
     } finally {
       setBusy(null);
     }
   };
 
   const toAdd = preview?.sheets.reduce((s, x) => s + x.added, 0) ?? 0;
+  const already = preview?.sheets.reduce((s, x) => s + x.skipped, 0) ?? 0;
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="card">
@@ -119,14 +121,25 @@ export function DataImport() {
             type="file"
             accept=".xlsx,.csv,.tsv,.txt"
             aria-label="가져올 파일"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
+            onChange={async (e) => {
+              const picked = e.target.files?.[0] ?? null;
+              // Keep a copy: the file may be edited and chosen again, and the same name must fire onChange again
+              e.target.value = '';
               setPreview(null);
               setDone(null);
               setError(null);
+              setFile(null);
+              setName(picked?.name ?? '');
+              if (!picked) return;
+              try {
+                setFile(new File([await picked.arrayBuffer()], picked.name, { type: picked.type }));
+              } catch {
+                setError('파일을 읽지 못했습니다. 다시 골라 주세요.');
+              }
             }}
             style={{ maxWidth: 360 }}
           />
+          {name && <span className="sub">{name}</span>}
           <select value={kind} aria-label="CSV의 데이터 종류" onChange={(e) => (setKind(e.target.value), setPreview(null))} style={{ width: 'auto' }}>
             <option value="">CSV 종류: 자동으로 알아보기</option>
             {SHEET_KEYS.map((k) => (
@@ -148,8 +161,8 @@ export function DataImport() {
           <p className="sub">아직 아무것도 바뀌지 않았습니다. 오류가 있는 줄과 이미 있는 데이터는 건너뜁니다. 거래 내역은 날짜 순서대로 다시 계산해 보유 종목과 Lot을 만듭니다.</p>
           <Report report={preview} />
           <div className="inline">
-            <button type="button" className="btn primary" disabled={!toAdd || !!busy} onClick={() => send(true)}>
-              {busy === 'commit' ? '가져오는 중…' : toAdd ? `${toAdd.toLocaleString('ko-KR')}건 가져오기` : '가져올 것이 없습니다'}
+            <button type="button" className="btn primary" disabled={(!toAdd && !already) || !!busy} onClick={() => send(true)}>
+              {busy === 'commit' ? '가져오는 중…' : toAdd ? `${toAdd.toLocaleString('ko-KR')}건 가져오기` : already ? '연결만 다시 맞추기' : '가져올 것이 없습니다'}
             </button>
             <button type="button" className="btn" disabled={!!busy} onClick={() => setPreview(null)}>
               취소
