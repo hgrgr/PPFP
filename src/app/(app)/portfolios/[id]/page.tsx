@@ -4,6 +4,7 @@ import {
   cashAction,
   deletePortfolioAction,
   linkPortfolioAction,
+  removeHoldingAction,
   unlinkPortfolioAction,
   updatePortfolioAction,
 } from '@/app/actions';
@@ -44,6 +45,9 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
   const direct = state.direct.get(id) ?? Dec.ZERO;
   const holdings = state.holdings.filter((h) => h.portfolioId === id).sort((a, b) => b.valueFull.cmp(a.valueFull));
   const cash = state.cashByPortfolio.get(id) ?? [];
+  const txnCounts = new Map(
+    (await prisma.transaction.groupBy({ by: ['holdingId'], where: { portfolioId: id, holdingId: { not: null } }, _count: { _all: true } })).map((g) => [g.holdingId, g._count._all]),
+  );
 
   return (
     <>
@@ -96,7 +100,7 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th scope="col">자산</th><th scope="col">유형</th><th scope="col">수량</th><th scope="col">Lot</th><th scope="col">현재가</th><th scope="col">평가액</th><th scope="col">미실현 손익</th></tr>
+                <tr><th scope="col">자산</th><th scope="col">유형</th><th scope="col">수량</th><th scope="col">Lot</th><th scope="col">현재가</th><th scope="col">평가액</th><th scope="col">미실현 손익</th><th scope="col"><span className="sr-only">작업</span></th></tr>
               </thead>
               <tbody>
                 {holdings.map((h) => {
@@ -112,6 +116,15 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
                       <td className={`money ${tone(u.toString())}`}>
                         {signedKrwShort(u.toString())}
                         <span className="sub">{h.costFull.isZero() ? '' : pct(u.div(h.costFull.abs()).toString())}</span>
+                      </td>
+                      <td>
+                        <ActionForm
+                          action={removeHoldingAction}
+                          confirm={`${h.name}을(를) 이 포트폴리오에서 뺄까요?\n거래 ${txnCounts.get(h.holdingId) ?? 0}건(매수·매도·배당 등)과 Lot이 함께 지워지고, 그 거래로 늘거나 준 현금도 되돌아갑니다. 감사 로그에는 남습니다.`}
+                        >
+                          <input type="hidden" name="id" value={h.holdingId} />
+                          <Submit className="btn small danger" pendingText="…">제거</Submit>
+                        </ActionForm>
                       </td>
                     </tr>
                   );

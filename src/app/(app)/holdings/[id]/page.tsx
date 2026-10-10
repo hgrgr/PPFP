@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { buyAction, deleteTransactionAction, sellAction, splitAction, valuationAction } from '@/app/actions';
+import { buyAction, deleteTransactionAction, removeHoldingAction, sellAction, splitAction, valuationAction } from '@/app/actions';
 import { ActionForm, DateTimeField, Submit } from '@/components/forms';
 import { SellForm } from '@/components/sell-form';
 import { Dec } from '@/domain/decimal';
@@ -299,6 +299,22 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
               })}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="card danger-zone" aria-label="종목 제거">
+        <div className="spread">
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>이 포트폴리오에서 종목 빼기</h2>
+            <p className="sub">
+              {h.portfolio.name}에서 {h.asset.name}을(를) 처음부터 없던 것처럼 뺍니다. 거래 {h.transactions.length}건과 Lot이 지워지고 현금 잔고와 지난 기록도 다시 계산됩니다. 매매일지는 남습니다.
+            </p>
+          </div>
+          <ActionForm action={removeHoldingAction} confirm={`${h.asset.name}을(를) ${h.portfolio.name}에서 뺄까요? 거래 ${h.transactions.length}건이 함께 지워집니다.`}>
+            <input type="hidden" name="id" value={h.id} />
+            <input type="hidden" name="back" value={`/portfolios/${h.portfolioId}`} />
+            <Submit className="btn danger" pendingText="빼는 중…">종목 빼기</Submit>
+          </ActionForm>
         </div>
       </section>
     </>
