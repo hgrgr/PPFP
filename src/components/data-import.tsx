@@ -75,7 +75,6 @@ function Report({ report }: { report: ImportReport }) {
 export function DataImport() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState('');
   const [kind, setKind] = useState('');
   const [busy, setBusy] = useState<'check' | 'commit' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,16 +120,20 @@ export function DataImport() {
             type="file"
             accept=".xlsx,.csv,.tsv,.txt"
             aria-label="가져올 파일"
+            // Cleared when the picker opens, so choosing the same (edited) file again fires onChange
+            onClick={(e) => {
+              e.currentTarget.value = '';
+              setFile(null);
+              setPreview(null);
+            }}
             onChange={async (e) => {
               const picked = e.target.files?.[0] ?? null;
-              // Keep a copy: the file may be edited and chosen again, and the same name must fire onChange again
-              e.target.value = '';
               setPreview(null);
               setDone(null);
               setError(null);
               setFile(null);
-              setName(picked?.name ?? '');
               if (!picked) return;
+              // Keep a copy: the file on disk may change after it is chosen
               try {
                 setFile(new File([await picked.arrayBuffer()], picked.name, { type: picked.type }));
               } catch {
@@ -139,7 +142,6 @@ export function DataImport() {
             }}
             style={{ maxWidth: 360 }}
           />
-          {name && <span className="sub">{name}</span>}
           <select value={kind} aria-label="CSV의 데이터 종류" onChange={(e) => (setKind(e.target.value), setPreview(null))} style={{ width: 'auto' }}>
             <option value="">CSV 종류: 자동으로 알아보기</option>
             {SHEET_KEYS.map((k) => (
