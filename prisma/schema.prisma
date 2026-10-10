@@ -64,6 +64,9 @@ enum TxnType {
   TAX
   SPLIT
   VALUATION
+  /// Loan principal on a one-unit loan holding: + repaid, - drawn (마이너스통장). `price` = balance after.
+  /// cashDelta = -principal when paid from the portfolio, else flow = +principal. Snapshots read it like VALUATION.
+  REPAY
 }
 
 model User {
@@ -103,21 +106,30 @@ model User {
   aiMessages       AiMessage[]
   aiActions        AiAction[]
   goals            Goal[]
+  loans            Loan[]
+  financialProfile FinancialProfile?
+  autopilots       AutopilotPolicy[]
+  agentDecisions   AgentDecision[]
+  tradeOrders      TradeOrder[]
+  strategies       Strategy[]
+  strategyRuns     StrategyRun[]
 }
 
 model Session {
-  id        String   @id // sha256 of the cookie token, never the token itself
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id // sha256 of the cookie token, never the token itself
+  userId      String
+  expiresAt   DateTime
+  /// Password re-entered; order execution, delegation changes and un-halting are allowed until then
+  stepUpUntil DateTime?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 /// A user's brokerage OpenAPI link. Secret and cached access token are AES-256-GCM encrypted.
 model BrokerConnection {
-  id                 String    @id @default(cuid())
+  id                 String           @id @default(cuid())
   userId             String
   broker             Broker
   label              String
@@ -126,7 +138,7 @@ model BrokerConnection {
   /// KIS: "12345678-01". Toss: account sequence. Others bind the account to the app key.
   accountNo          String?
   /// Mock-trading environment (KIS, Kiwoom).
-  paper              Boolean   @default(false)
+  paper              Boolean          @default(false)
   tokenEncrypted     String?
   tokenExpiresAt     DateTime?
   /// Crypto exchanges: portfolio the trade history is replayed into, where it started, and how far it has been synced.
@@ -135,9 +147,14 @@ model BrokerConnection {
   historySyncedTo    DateTime?
   lastSyncAt         DateTime?
   lastError          String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// User turned on ordering for this link (separate from read access)
+  tradeEnabled       Boolean          @default(false)
+  tradeEnabledAt     DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  autopilot          AutopilotPolicy?
+  tradeOrders        TradeOrder[]
 
   @@index([userId])
 }
@@ -157,33 +174,40 @@ model WatchItem {
 }
 
 model Portfolio {
-  id             String    @id @default(cuid())
-  userId         String
-  name           String
-  description    String?
-  color          String    @default("#2F4FC9")
-  baseCurrency   String    @default("KRW")
-  lotMethod      LotMethod @default(FIFO)
-  archived       Boolean   @default(false)
-  sortOrder      Int       @default(0)
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  description       String?
+  color             String    @default("#2F4FC9")
+  baseCurrency      String    @default("KRW")
+  lotMethod         LotMethod @default(FIFO)
+  archived          Boolean   @default(false)
+  sortOrder         Int       @default(0)
   /// Notify when a target weight is off by more than `driftTolerance` (fraction, 0.05 = 5%p).
-  driftAlert     Boolean   @default(false)
-  driftTolerance Decimal   @default(0.05) @db.Decimal(20, 10)
+  driftAlert        Boolean   @default(false)
+  driftTolerance    Decimal   @default(0.05) @db.Decimal(20, 10)
   /// Target keys out of band at the last check, so each breach is told once.
-  driftBreaches  String[]  @default([])
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  driftBreaches     String[]  @default([])
+  /// Strategy version the advisor checks this portfolio against (advice only, no orders)
+  strategyVersionId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentEdges  PortfolioEdge[]   @relation("child")
-  childEdges   PortfolioEdge[]   @relation("parent")
-  holdings     Holding[]
-  cash         CashBalance[]
-  transactions Transaction[]
-  snapshots    Snapshot[]
-  targets      PortfolioTarget[]
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentEdges     PortfolioEdge[]   @relation("child")
+  childEdges      PortfolioEdge[]   @relation("parent")
+  holdings        Holding[]
+  cash            CashBalance[]
+  transactions    Transaction[]
+  snapshots       Snapshot[]
+  targets         PortfolioTarget[]
+  // NoAction: a followed version cannot be deleted, yet deleting the user still cascades both
+  strategyVersion StrategyVersion?  @relation(fields: [strategyVersionId], references: [id], onDelete: NoAction)
+  loansPaid       Loan[]            @relation("loanPayFrom")
+  autopilot       AutopilotPolicy?
 
   @@index([userId])
+  @@index([strategyVersionId])
 }
 
 /// parent contains `allocation` (0 < a <= 1) of child. Cycles and over-allocation are rejected in code.
@@ -211,6 +235,10 @@ model Asset {
   manualPrice   Decimal?   @db.Decimal(24, 6)
   manualPriceAt DateTime?
   meta          Json? // type specific: coupon, maturity, address, area ...
+  /// Sub-kind within `type`, checked per type in code. LIABILITY: MORTGAGE, JEONSE_LOAN, CREDIT,
+  /// OVERDRAFT, INSTALLMENT, STUDENT, PRIVATE, LEASE_DEPOSIT_RECEIVED. CASH: TERM_DEPOSIT,
+  /// INSTALLMENT_SAVING. ALTERNATIVE: LEASE_DEPOSIT_PAID, RECEIVABLE, VEHICLE, INSURANCE. Null = generic.
+  kind          String?
   createdAt     DateTime   @default(now())
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -219,6 +247,9 @@ model Asset {
   traits           AssetTrait[]
   alerts           PriceAlert[]
   realEstateAlerts RealEstateAlert[]
+  loan             Loan?             @relation("loanAsset")
+  securedLoans     Loan[]            @relation("loanCollateral")
+  tradeOrders      TradeOrder[]
 
   @@unique([userId, symbol])
   @@index([userId])
@@ -258,37 +289,42 @@ model Lot {
 }
 
 model Transaction {
-  id           String     @id @default(cuid())
-  portfolioId  String
-  holdingId    String?
-  type         TxnType
-  tradeAt      DateTime
-  qty          Decimal?   @db.Decimal(28, 8)
-  price        Decimal?   @db.Decimal(24, 6)
-  fee          Decimal    @default(0) @db.Decimal(24, 6)
-  tax          Decimal    @default(0) @db.Decimal(24, 6)
-  fxRate       Decimal    @default(1) @db.Decimal(20, 10)
-  splitRatio   Decimal?   @db.Decimal(20, 10)
-  currency     String
-  cashDelta    Decimal    @default(0) @db.Decimal(24, 6)
-  flow         Decimal    @default(0) @db.Decimal(24, 6)
-  lotMethod    LotMethod?
-  memo         String?
-  externalRef  String? // e.g. broker order id, for idempotency
+  id            String     @id @default(cuid())
+  portfolioId   String
+  holdingId     String?
+  type          TxnType
+  tradeAt       DateTime
+  qty           Decimal?   @db.Decimal(28, 8)
+  price         Decimal?   @db.Decimal(24, 6)
+  fee           Decimal    @default(0) @db.Decimal(24, 6)
+  tax           Decimal    @default(0) @db.Decimal(24, 6)
+  fxRate        Decimal    @default(1) @db.Decimal(20, 10)
+  splitRatio    Decimal?   @db.Decimal(20, 10)
+  currency      String
+  cashDelta     Decimal    @default(0) @db.Decimal(24, 6)
+  flow          Decimal    @default(0) @db.Decimal(24, 6)
+  lotMethod     LotMethod?
+  memo          String?
+  externalRef   String? // e.g. broker order id, for idempotency
   /// Where an imported opening lot came from, e.g. "KIS:12345678-01" or "paste:하나증권".
-  importSource String?
-  createdAt    DateTime   @default(now())
+  importSource  String?
+  /// REPAY and its interest/fee rows; they are edited and deleted through the loan
+  loanPaymentId String?
+  createdAt     DateTime   @default(now())
 
   portfolio    Portfolio        @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   holding      Holding?         @relation(fields: [holdingId], references: [id], onDelete: SetNull)
   createdLot   Lot?             @relation("lotSource")
   consumptions LotConsumption[]
   journals     JournalTxn[]
+  loanPayment  LoanPayment?     @relation(fields: [loanPaymentId], references: [id], onDelete: SetNull)
+  orderFill    OrderFill?
 
   @@unique([portfolioId, externalRef])
   @@index([portfolioId, tradeAt])
   @@index([holdingId])
   @@index([importSource])
+  @@index([loanPaymentId])
 }
 
 /// How much of which lot a SELL consumed, and the profit realized on it.
@@ -746,19 +782,22 @@ model ApiKey {
 /// AI advisor settings: which model each agent uses (`{ MANAGER: { provider, model }, … }`),
 /// a monthly spending cap, and what runs by itself. API keys for each AI company are in ApiKey.
 model AiSettings {
-  userId           String   @id
-  agentModels      Json     @default("{}")
+  userId            String    @id
+  agentModels       Json      @default("{}")
   /// Monthly cap in USD, estimated from token usage; null = no cap
-  monthlyLimit     Decimal? @db.Decimal(10, 2)
-  webSearch        Boolean  @default(true)
+  monthlyLimit      Decimal?  @db.Decimal(10, 2)
+  webSearch         Boolean   @default(true)
   /// Morning briefing: on/off, hour (KST), weekdays only, and the KST date of the last one sent
-  briefing         Boolean  @default(false)
-  briefingHour     Int      @default(8)
-  briefingWeekdays Boolean  @default(true)
-  briefingLastDate String?
+  briefing          Boolean   @default(false)
+  briefingHour      Int       @default(8)
+  briefingWeekdays  Boolean   @default(true)
+  briefingLastDate  String?
   /// Have the advisor look into each price / target-weight alert as it arrives
-  alertAnalysis    Boolean  @default(false)
-  updatedAt        DateTime @updatedAt
+  alertAnalysis     Boolean   @default(false)
+  /// Global kill switch: no order of any policy is sent while set
+  tradingHaltedAt   DateTime?
+  tradingHaltReason String?
+  updatedAt         DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -810,9 +849,10 @@ model AiConversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages AiMessage[]
-  actions  AiAction[]
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+  actions   AiAction[]
+  decisions AgentDecision[]
 
   @@index([userId, updatedAt])
 }
@@ -855,6 +895,7 @@ model AiAction {
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradeOrder   TradeOrder?
 
   @@index([conversationId])
 }
@@ -906,4 +947,377 @@ model ApiLimit {
   at      DateTime @default(now())
 
   @@id([userId, service])
+}
+
+// ── Net worth: loans ─────────────────────────────────────────────
+
+enum RepaymentMethod {
+  AMORTIZING // 원리금균등
+  EQUAL_PRINCIPAL // 원금균등
+  BULLET // 만기일시
+  REVOLVING // 마이너스통장: daily interest on the drawn balance
+  CUSTOM // 사인 간 등: no schedule, payments only
+}
+
+/// Terms of a loan. The asset (LIABILITY, or ALTERNATIVE/RECEIVABLE when `lent`) sits in exactly one
+/// holding with one unit; its ledger carries the balance. Rates live only in LoanRate.
+model Loan {
+  id              String          @id @default(cuid())
+  userId          String
+  assetId         String          @unique
+  /// Money lent out (대여금) rather than borrowed
+  lent            Boolean         @default(false)
+  lender          String?
+  /// 사인 간 상대방; always masked before reaching the AI
+  counterparty    String?
+  principal       Decimal         @db.Decimal(24, 6)
+  /// REVOLVING: 한도
+  creditLimit     Decimal?        @db.Decimal(24, 6)
+  startDate       DateTime        @db.Date
+  /// Null for CUSTOM or open-ended REVOLVING
+  maturityDate    DateTime?       @db.Date
+  method          RepaymentMethod
+  graceMonths     Int             @default(0)
+  /// Day of month due (past month end = last day)
+  paymentDay      Int             @default(1)
+  /// FIXED, VARIABLE, MIXED: only tells the UI to ask for a new rate at resets
+  rateType        String          @default("FIXED")
+  /// Next 금리 재산정, for reminders
+  nextResetAt     DateTime?       @db.Date
+  /// 중도상환수수료 on the prepaid amount, sliding to 0 over `prepayFeeMonths` (0 = none)
+  prepayFeeRate   Decimal         @default(0) @db.Decimal(20, 10)
+  prepayFeeMonths Int             @default(0)
+  collateralId    String?
+  /// Portfolio whose cash pays installments; null = paid outside the app (interest stays off the ledger)
+  payFromId       String?
+  note            String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset      Asset         @relation("loanAsset", fields: [assetId], references: [id], onDelete: Cascade)
+  collateral Asset?        @relation("loanCollateral", fields: [collateralId], references: [id], onDelete: SetNull)
+  payFrom    Portfolio?    @relation("loanPayFrom", fields: [payFromId], references: [id], onDelete: SetNull)
+  rates      LoanRate[]
+  payments   LoanPayment[]
+
+  @@index([userId])
+  @@index([collateralId])
+}
+
+/// Annual rate in force from `from` (first row = rate at start; later rows = resets, 금리인하요구).
+model LoanRate {
+  loanId String
+  from   DateTime @db.Date
+  rate   Decimal  @db.Decimal(20, 10)
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@id([loanId, from])
+}
+
+/// A payment or draw actually made. Ledger rows point back via Transaction.loanPaymentId.
+model LoanPayment {
+  id           String    @id @default(cuid())
+  loanId       String
+  /// Installment it settles; null = prepayment or REVOLVING movement (NULLs never collide in the unique)
+  dueDate      DateTime? @db.Date
+  paidAt       DateTime
+  /// + repaid, - drawn
+  principal    Decimal   @db.Decimal(24, 6)
+  interest     Decimal   @default(0) @db.Decimal(24, 6)
+  fee          Decimal   @default(0) @db.Decimal(24, 6)
+  balanceAfter Decimal   @db.Decimal(24, 6)
+  prepayment   Boolean   @default(false)
+  memo         String?
+  createdAt    DateTime  @default(now())
+
+  loan Loan          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  txns Transaction[]
+
+  @@unique([loanId, dueDate])
+  @@index([loanId, paidAt])
+}
+
+/// What the balance-sheet ratios and the advisor need that the ledger does not hold.
+model FinancialProfile {
+  userId          String   @id
+  annualIncome    Decimal? @db.Decimal(24, 6)
+  birthYear       Int?
+  retireAge       Int?
+  /// CAPITAL or OTHER; null hides stress DSR
+  region          String?
+  emergencyMonths Int      @default(6)
+  /// Send income and loan terms to the AI (counterparties stay masked)
+  shareWithAi     Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Autopilot: delegated trading ─────────────────────────────────
+
+/// Delegation steps. Compare in code with an explicit rank (Prisma enums have no ordering).
+enum DelegationLevel {
+  SUGGEST // draft order cards only, no execute button
+  APPROVE // every order needs the user's confirmation
+  AUTO // within limits without confirmation (PAPER first)
+}
+
+enum TradeMode {
+  PAPER
+  LIVE
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING_APPROVAL
+  BLOCKED // failed the pre-trade check, never sent
+  DISMISSED
+  EXPIRED
+  SUBMITTING // claimed and being sent; older than a minute becomes UNKNOWN
+  SUBMITTED
+  PARTIAL
+  FILLED
+  CANCELLED
+  REJECTED // refused by the broker
+  /// Sent but the answer was lost; resolved from the broker's order list before any new order on the symbol
+  UNKNOWN
+}
+
+/// Trading policy for one portfolio (and at most one account). Every order runs inside it.
+/// Changes bump `version` and go to AuditLog.
+model AutopilotPolicy {
+  id             String          @id @default(cuid())
+  userId         String
+  name           String
+  /// Account orders go to; null = paper only. One policy per account.
+  connectionId   String?         @unique
+  /// Portfolio fills are recorded into; must hold only this account's lots. One policy per portfolio.
+  portfolioId    String          @unique
+  level          DelegationLevel @default(SUGGEST)
+  mode           TradeMode       @default(PAPER)
+  objective      String          @default("")
+  allowedTypes   AssetType[]     @default([KR_STOCK])
+  /// Symbols the advisor may trade (required for AUTO) and never trades
+  allowSymbols   String[]        @default([])
+  denySymbols    String[]        @default([])
+  /// Limits in KRW
+  maxOrder       Decimal         @db.Decimal(24, 6)
+  maxDaily       Decimal         @db.Decimal(24, 6)
+  maxDailyOrders Int             @default(5)
+  /// Fractions (0.02 = 2%)
+  dailyLossStop  Decimal         @default(0.02) @db.Decimal(20, 10)
+  maxPriceGap    Decimal         @default(0.03) @db.Decimal(20, 10)
+  /// Paper account: starting cash and slippage for simulated fills
+  paperCash      Decimal         @default(10000000) @db.Decimal(24, 6)
+  slippageBp     Int             @default(10)
+  version        Int             @default(1)
+  haltedAt       DateTime?
+  haltReason     String?
+  /// Claimed by a server process before running an AUTO cycle, like AiSettings.briefingLastDate
+  cycleClaimedAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // NoAction: deleting the user still cascades; deleting just the portfolio is refused while a policy exists
+  portfolio  Portfolio         @relation(fields: [portfolioId], references: [id], onDelete: NoAction)
+  connection BrokerConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  orders     TradeOrder[]
+  decisions  AgentDecision[]
+
+  @@index([userId])
+}
+
+/// One advisor proposal or cycle that may lead to orders. Rationale is copied; inputs stay in the conversation.
+model AgentDecision {
+  id             String   @id @default(cuid())
+  userId         String
+  policyId       String
+  policyVersion  Int
+  /// USER (chat), SCHEDULE, DRIFT, ALERT
+  trigger        String
+  conversationId String?
+  /// NO_TRADE, ORDERS, BLOCKED, ERROR
+  outcome        String
+  rationale      String   @default("")
+  counterpoints  String   @default("")
+  /// The conversation read outside text; its orders always wait for approval
+  tainted        Boolean  @default(false)
+  /// web_search, web_fetch, search_books, skill:<name>
+  taintSources   String[] @default([])
+  /// Model that actually answered (a server-side fallback may differ from the setting)
+  model          String?
+  costUsd        Decimal  @default(0) @db.Decimal(12, 6)
+  createdAt      DateTime @default(now())
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy       AutopilotPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  conversation AiConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  orders       TradeOrder[]
+
+  @@index([policyId, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// An order, paper or live, from proposal to its last fill.
+model TradeOrder {
+  id            String      @id @default(cuid())
+  userId        String
+  policyId      String
+  decisionId    String?
+  /// Chat card the order came from
+  aiActionId    String?     @unique
+  connectionId  String?
+  mode          TradeMode
+  assetId       String?
+  symbol        String
+  /// KRX for now
+  exchange      String      @default("KRX")
+  currency      String      @default("KRW")
+  side          OrderSide
+  /// LIMIT only for now
+  orderType     String      @default("LIMIT")
+  qty           Decimal     @db.Decimal(28, 8)
+  limitPrice    Decimal?    @db.Decimal(24, 6)
+  /// Amount held against the policy's limits while the order is open
+  reserved      Decimal     @default(0) @db.Decimal(24, 6)
+  /// Ours; sent as the broker's identifier where supported. Never reused.
+  clientOrderId String      @unique
+  brokerOrderId String?
+  status        OrderStatus @default(PENDING_APPROVAL)
+  /// Pre-trade results [{ rule, ok, level, message }]
+  checks        Json        @default("[]")
+  filledQty     Decimal     @default(0) @db.Decimal(28, 8)
+  avgFillPrice  Decimal?    @db.Decimal(24, 6)
+  error         String?
+  expiresAt     DateTime?
+  approvedAt    DateTime?
+  submittedAt   DateTime?
+  lastCheckedAt DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy     AutopilotPolicy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  decision   AgentDecision?    @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  aiAction   AiAction?         @relation(fields: [aiActionId], references: [id], onDelete: SetNull)
+  connection BrokerConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  asset      Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  fills      OrderFill[]
+
+  @@unique([connectionId, brokerOrderId])
+  @@index([status, updatedAt]) // poller
+  @@index([policyId, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// One increase of an order's filled quantity. Live stock fills go to the ledger once
+/// (Transaction.externalRef "<BROKER>:ord:<brokerOrderId>:<seq>"); paper fills never touch it.
+model OrderFill {
+  id            String   @id @default(cuid())
+  orderId       String
+  seq           Int
+  brokerFillId  String?
+  qty           Decimal  @db.Decimal(28, 8)
+  price         Decimal  @db.Decimal(24, 6)
+  fee           Decimal  @default(0) @db.Decimal(24, 6)
+  tax           Decimal  @default(0) @db.Decimal(24, 6)
+  /// Fee and tax were estimated and still need the broker's figures
+  estimated     Boolean  @default(false)
+  filledAt      DateTime
+  transactionId String?  @unique
+  createdAt     DateTime @default(now())
+
+  order       TradeOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, seq])
+}
+
+// ── Strategies: investment philosophy as testable rules ─────────
+
+/// A strategy the advisor checks a portfolio against and the app can test: principles in prose
+/// plus closed-schema rules. Every edit adds a StrategyVersion.
+model Strategy {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  oneLine       String?
+  /// custom, template:<key>, skill (drafted from an AiSkill), sage (drafted from a Sage)
+  origin        String   @default("custom")
+  /// What it was drafted from; plain ids, the skill or sage may be deleted later
+  skillId       String?
+  sageId        String?
+  /// Version number the user adopted; null until one is (drafts wait here)
+  activeVersion Int?
+  archived      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions StrategyVersion[]
+
+  @@unique([userId, name])
+}
+
+/// One immutable revision. Runs and portfolios pin a version, never the strategy.
+model StrategyVersion {
+  id          String   @id @default(cuid())
+  strategyId  String
+  version     Int
+  /// Principles in markdown; shown to agents only inside an untrusted-text block
+  principles  String   @default("")
+  /// StrategyRules { schemaVersion, assets, cashWeight, rebalance, band, limits } (zod, closed)
+  rules       Json
+  /// sha256 of principles + rules
+  contentHash String
+  /// Text-lint findings from a skill or sage conversion: [{ level, code, excerpt }]
+  lint        Json     @default("[]")
+  /// user, ai (strategy_draft action), template
+  author      String   @default("user")
+  note        String?
+  createdAt   DateTime @default(now())
+
+  strategy   Strategy      @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  runs       StrategyRun[]
+  portfolios Portfolio[]
+
+  @@unique([strategyId, version])
+}
+
+/// A test of a pinned version: BACKTEST over past closes or PAPER forward from startDate.
+/// Values are replayed from PriceDaily on read; only the summary is cached in `metrics`.
+model StrategyRun {
+  id         String    @id @default(cuid())
+  userId     String
+  versionId  String
+  /// BACKTEST or PAPER
+  mode       String
+  startDate  DateTime  @db.Date
+  /// End of a BACKTEST; null for PAPER (runs to the latest close)
+  endDate    DateTime? @db.Date
+  /// Benchmark symbol (performance.ts BENCHMARKS)
+  benchmark  String    @default("069500")
+  /// Per trade side, and sell-side tax, in basis points
+  feeBps     Decimal   @default(15) @db.Decimal(8, 2)
+  taxBps     Decimal   @default(0) @db.Decimal(8, 2)
+  /// Last metrics, warnings, coverage and a hash of the input closes
+  metrics    Json      @default("{}")
+  computedAt DateTime?
+  lastError  String?
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version StrategyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@index([versionId])
 }

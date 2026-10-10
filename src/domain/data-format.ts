@@ -9,6 +9,9 @@ import { BOOK_STATUS_LABEL } from './knowledge';
 import { LOT_METHOD_LABEL } from './lots';
 import { TXN_LABEL } from './ledger';
 
+// REPAY rows belong to a loan and are written from the loan screen, so the sheet does not take them
+const { REPAY: _repay, ...IMPORT_TXN_LABEL } = TXN_LABEL;
+
 export interface ColumnSpec {
   header: string;
   required?: boolean;
@@ -39,7 +42,7 @@ export const SHEETS: Record<SheetKey, { name: string; about: string; columns: Co
     columns: [
       { header: '일시', required: true, note: '한국 시간. 2026-03-02 또는 2026-03-02 10:30' },
       { header: '포트폴리오', required: true, note: '포트폴리오 이름' },
-      { header: '유형', required: true, note: `${Object.values(TXN_LABEL).join(', ')} (BUY처럼 영문도 됨)` },
+      { header: '유형', required: true, note: `${Object.values(IMPORT_TXN_LABEL).join(', ')} (BUY처럼 영문도 됨)` },
       { header: '종목코드', note: '상장 종목: 6자리 코드, 티커, KRW-BTC. 수기 자산(예금·부동산 등)은 비웁니다' },
       { header: '자산 이름', note: '처음 나오는 종목의 이름. 수기 자산은 필수' },
       { header: '자산 유형', note: '수기 자산에 필수: 채권, 현금·예금, 부동산, 펀드, 대안자산, 부채, 국내 주식·ETF, 해외 주식·ETF' },
@@ -222,7 +225,7 @@ function pick<T extends string>(labels: Record<T, string>, v: string, label: str
 }
 
 const TXN_ALIASES: Record<string, TxnType> = { 분할: 'SPLIT', 병합: 'SPLIT', 평가: 'VALUATION', 평가갱신: 'VALUATION' };
-export const txnType = (v: string): TxnType => TXN_ALIASES[v.replace(/\s+/g, '')] ?? pick(TXN_LABEL, v, '유형');
+export const txnType = (v: string): TxnType => TXN_ALIASES[v.replace(/\s+/g, '')] ?? pick(IMPORT_TXN_LABEL, v, '유형');
 export const lotMethod = (v: string, label = 'Lot 방식'): LotMethod => pick(LOT_METHOD_LABEL, v, label);
 
 export const ASSET_TYPES = {

@@ -16,6 +16,7 @@ export const TXN_TYPES = [
   'TAX',
   'SPLIT',
   'VALUATION',
+  'REPAY',
 ] as const;
 export type TxnType = (typeof TXN_TYPES)[number];
 
@@ -30,6 +31,7 @@ export const TXN_LABEL: Record<TxnType, string> = {
   TAX: '세금',
   SPLIT: '분할·병합',
   VALUATION: '평가 갱신',
+  REPAY: '상환·인출',
 };
 
 export interface LedgerTxn {
