@@ -206,6 +206,32 @@ const KIS_ACCOUNT = [
   ['035720', 30, 48900],
 ];
 
+/** Overseas futures roots: made-up levels near where these traded in 2026 */
+const FUTURES = { GC: 4010, SI: 47.2, HG: 4.85, CL: 68.4, NG: 3.42, ZC: 432.5, ZS: 1018.25, ES: 6720, NQ: 24850, ZN: 112.4 };
+const MONTHS = 'FGHJKMNQUVXZ';
+function kisFuture(code) {
+  const m = /^([A-Z]{2})([FGHJKMNQUVXZ])(\d{2})$/.exec(code);
+  if (!m || !FUTURES[m[1]]) return { last_price: '0' };
+  const now = Date.now();
+  const at = (t) => priceAt(`FUT:${m[1]}`, FUTURES[m[1]], t, 0.6);
+  const dp = FUTURES[m[1]] >= 100 ? 2 : 4;
+  const day = (t) => [at(t - 6 * H), at(t - 3 * H), at(t)];
+  const p = parts(now, 'America/Chicago');
+  return {
+    last_price: at(now).toFixed(dp),
+    prev_price: at(now - D).toFixed(dp),
+    open_price: at(now - 8 * H).toFixed(dp),
+    high_price: Math.max(...day(now), at(now - 8 * H)).toFixed(dp),
+    low_price: Math.min(...day(now), at(now - 8 * H)).toFixed(dp),
+    vol: String(Math.round(120000 * (0.6 + hash(code, Math.floor(now / H))))),
+    proc_date: p.ymd,
+    proc_time: p.hms,
+    expr_date: `20${m[3]}${String(MONTHS.indexOf(m[2]) + 1).padStart(2, '0')}20`,
+    exch_cd: 'CME',
+    crc_cd: 'USD',
+  };
+}
+
 function kis(url) {
   const p = url.pathname;
   const q = (k) => url.searchParams.get(k) ?? '';
@@ -217,6 +243,7 @@ function kis(url) {
     });
   }
   if (p === '/uapi/overseas-stock/v1/trading/inquire-balance') return kisOk({ output1: [], output2: {} });
+  if (p === '/uapi/overseas-futureoption/v1/quotations/inquire-price') return kisOk({ output1: kisFuture(q('SRS_CD')) });
   if (p === '/uapi/domestic-stock/v1/quotations/inquire-price') {
     const m = stockMeta(q('FID_INPUT_ISCD'));
     if (!m) return kisOk({ output: { stck_prpr: '0' } });
@@ -557,4 +584,5 @@ module.exports = { KR, US, COINS, KIS_ACCOUNT, USDKRW, ANCHOR, priceAt, stockMet
 // The AI advisor's Claude calls and the book search go to scripted fakes as well
 require('./fake-claude.cjs');
 require('./fake-books.cjs');
+require('./fake-realestate.cjs');
 require('./fake-skills.cjs');

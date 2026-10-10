@@ -68,6 +68,8 @@ interface Shot {
 interface Ids {
   root: string;
   us: string;
+  home: string;
+  apartment: string;
   aapl: string;
   nvdaJournal: string;
   aaplJournal: string;
@@ -170,6 +172,41 @@ const SHOTS: Shot[] = [
     clip: [card('보유 Lot'), card('매도 · Lot 선택')],
     marks: [card('보유 Lot'), { sel: '[aria-label="Lot 선택 방식"]' }, { sel: 'input[aria-describedby="qty-help"]', closest: 'label' }, { sel: 'span', text: '예상 실현손익', closest: 'div' }],
   },
+  {
+    file: 'realestate-pick',
+    path: (ids) => `/portfolios/${ids.home}`,
+    wait: 1500,
+    steps: [
+      { click: { sel: '[aria-label="자산 종류"] button', text: '수기 자산' } },
+      { set: { sel: '.apt-picker input' }, value: '한빛마을래미안' },
+      { click: { sel: '.apt-picker button', text: '찾기' } },
+      { until: "!!document.querySelector('.apt-picker .book-hits li button')" },
+      { click: { sel: '.apt-picker .book-hits li button' } },
+      { until: "!!document.querySelector('.apt-picked select')" },
+      { wait: 600 },
+    ],
+    clip: [{ sel: '#add' }],
+    marks: [{ sel: '.apt-picker label.field' }, { sel: '.apt-picked label', text: '실거래가 단지' }, { sel: '.apt-picked label', text: '전용면적' }, { sel: 'input[name="name"]', closest: 'label' }],
+  },
+  {
+    file: 'realestate-holding',
+    path: (ids) => `/holdings/${ids.apartment}`,
+    width: 1280,
+    height: 1800,
+    steps: [{ until: "!!document.querySelector('#real-estate .kpi')" }, { wait: 1200 }],
+    clip: [{ sel: '#real-estate' }],
+    marks: [{ sel: '#real-estate .kpi .label', text: '추정 시세', closest: '.kpi' }, { sel: '#real-estate button', text: '추정 시세를 평가 가치로 기록' }, { sel: '#real-estate a', text: '네이버 부동산 매물' }, { sel: '#real-estate h3', text: '같은 면적 거래' }, { sel: '#real-estate h3', text: '단지 (최근 1년)' }],
+  },
+  {
+    file: 'market-commodities',
+    path: () => '/market',
+    width: 1280,
+    height: 1900,
+    steps: [{ until: "!!document.querySelector('#commodities tbody tr') && !!document.querySelector('#my-real-estate tbody tr')" }, { wait: 800 }],
+    clip: [{ sel: '#commodities' }, { sel: '#my-real-estate' }],
+    marks: [{ sel: '#commodities tbody tr' }, { sel: '#commodities td span', text: 'GCZ' , closest: 'td' }, { sel: '#my-real-estate tbody tr' }],
+  },
+  { file: 'settings-realestate', path: () => '/settings', wait: 1000, width: 1100, clip: [{ sel: '#real-estate' }] },
   { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
   {
     file: 'import-broker',
@@ -923,6 +960,8 @@ async function main() {
     CRON_SECRET: 'docs-demo-cron-secret',
     // Book search goes to the fake in fake-books.cjs
     KAKAO_REST_API_KEY: '0123456789abcdef0123456789abcdef',
+    // Apartment deals come from fake-realestate.cjs
+    DATA_GO_KR_API_KEY: 'docs-demo-data-go-kr-key-not-real',
     // Community skills come from the made-up catalog in fake-skills.cjs
     PPFP_FAKE_SKILLS: '1',
   };
@@ -957,6 +996,8 @@ async function main() {
       assetClass: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'assetClass' } })).id,
       equityStyle: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'equityStyle' } })).id,
       samsung: (await db.holding.findFirstOrThrow({ where: { asset: { symbol: '005930' } } })).id,
+      home: pid('부동산'),
+      apartment: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE' } } })).id,
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
       aiChat: '',

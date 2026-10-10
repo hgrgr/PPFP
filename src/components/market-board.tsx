@@ -3,7 +3,10 @@
 import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import type { ActionState } from '@/app/actions';
 import { krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
-import type { Board, BoardRow, RankingView, StockDetail } from '@/server/services/market-board';
+import type { Board, BoardRow, CommodityBoard, RankingView, StockDetail } from '@/server/services/market-board';
+import { myApartmentsAction } from '@/app/real-estate-actions';
+import { eok } from '@/domain/real-estate';
+import type { ApartmentSummary } from '@/server/services/real-estate';
 import { CandleChart } from './candle-chart';
 import { AskAiButton } from './ai/launcher';
 
@@ -430,6 +433,124 @@ function BookRow({ side, level, max, currency, now }: { side: 'ask' | 'bid'; lev
 }
 
 /** The whole live board: indices, my stocks, rankings, and a detail panel for the selected stock. */
+const priceText = (v: string, currency: string) =>
+  currency === 'KRW' ? `${Number(v).toLocaleString('ko-KR')}원` : Number(v).toLocaleString('en-US', { maximumFractionDigits: Number(v) >= 100 ? 2 : 4, minimumFractionDigits: 2 });
+
+/** Gold, oil, grains and index futures: KRX 금현물 from 키움, overseas futures from 한국투자증권. */
+function Commodities({ paused }: { paused: boolean }) {
+  const { data } = usePoll<CommodityBoard>('/api/market/commodities', 15_000, paused);
+  const shown = data?.rows.filter((r) => r.price || r.error) ?? [];
+  return (
+    <div className="card" id="commodities">
+      <div className="spread">
+        <h2>원자재 · 선물</h2>
+        <span className="sub">15초마다 갱신</span>
+      </div>
+      {!data ? (
+        <p className="empty">불러오는 중…</p>
+      ) : !data.kiwoom && !data.kis ? (
+        <p className="empty">
+          금 현물은 키움증권, 해외 선물(금·은·원유·곡물·지수)은 한국투자증권을 <a href="/settings">연동 · 설정</a>에서 연결하면 보입니다.
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th scope="col" className="l">종목</th><th scope="col">현재가</th><th scope="col">전일 대비</th><th scope="col" className="l">계약 · 출처</th></tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr key={r.id}>
+                  <td className="l">
+                    <span className="strong">{r.name}</span>
+                    <span className="sub">{r.exchange} · {r.unit}</span>
+                  </td>
+                  {r.price ? (
+                    <>
+                      <td className="money strong">
+                        <Flash id={`c:${r.id}`} value={r.price}>{priceText(r.price, r.currency)}</Flash>
+                        {r.krwPerGram && <span className="sub">≈ {Number(r.krwPerGram).toLocaleString('ko-KR')}원/g</span>}
+                      </td>
+                      <td className="money"><Change rate={r.changeRate} /></td>
+                    </>
+                  ) : (
+                    <td colSpan={2} className="l sub" style={{ whiteSpace: 'normal' }}>{r.error}</td>
+                  )}
+                  <td className="l">
+                    <span>{r.contract}</span>
+                    <span className="sub">{[r.expiry && `만기 ${r.expiry.slice(5)}`, r.source && (BROKER_LABEL[r.source] ?? r.source)].filter(Boolean).join(' · ') || '—'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data && (data.kiwoom || data.kis) && (
+        <p className="sub">
+          {!data.kiwoom && '금 현물(KRX)은 키움증권을 연결하면 보입니다. '}
+          {!data.kis && '해외 선물은 한국투자증권(실전 계좌)을 연결하면 보입니다. '}
+          해외 선물은 거래가 가장 많은 근월물을 날짜로 골라 보여 주며, 증권사 시세 신청 여부에 따라 지연될 수 있습니다. 금(COMEX)의 원/g은 현재 환율로 환산한 값입니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Held apartments with their 실거래가 estimate (loaded once; deals change daily at most). */
+function RealEstates() {
+  const [data, setData] = useState<{ rows: ApartmentSummary[]; unlinked: number } | { error: string } | null>(null);
+  useEffect(() => {
+    void myApartmentsAction().then(setData);
+  }, []);
+  if (data && !('error' in data) && !data.rows.length && !data.unlinked) return null;
+  return (
+    <div className="card" id="my-real-estate">
+      <div className="spread">
+        <h2>내 부동산</h2>
+        <span className="sub">국토교통부 실거래가</span>
+      </div>
+      {!data ? (
+        <p className="empty">불러오는 중…</p>
+      ) : 'error' in data ? (
+        <p className="msg err">{data.error}</p>
+      ) : (
+        <>
+          {data.rows.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th scope="col" className="l">자산</th><th scope="col">추정 시세</th><th scope="col">같은 면적 최근 거래</th><th scope="col">동 3.3㎡당 1년 변화</th></tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((r) => (
+                    <tr key={r.holdingId}>
+                      <td className="l">
+                        <a className="strong" href={`/holdings/${r.holdingId}#real-estate`}>{r.name}</a>
+                        {r.qty !== '1' && <span className="sub">수량 {r.qty}</span>}
+                      </td>
+                      {r.error ? (
+                        <td colSpan={2} className="l sub" style={{ whiteSpace: 'normal' }}>{r.error}</td>
+                      ) : (
+                        <>
+                          <td className="money strong">{r.estimate ? eok(r.estimate) : '—'}</td>
+                          <td className="money">{r.latest ? <>{eok(r.latest.price)} <span className="sub">{r.latest.date}</span></> : '—'}</td>
+                          <td className={`money ${r.dongChange !== null ? tone(r.dongChange) : ''}`}>{r.dongChange !== null ? `${r.umdNm} ${pct(r.dongChange, 1)}` : '—'}</td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {data.unlinked > 0 && <p className="sub">아파트를 연결하지 않은 부동산 {data.unlinked}개는 빠져 있습니다. 자산 화면에서 아파트를 고르면 실거래가가 나옵니다.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function MarketBoard({ initialSymbol, watchAction, unwatchAction }: { initialSymbol: string | null; watchAction: Action; unwatchAction: Action }) {
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<string | null>(initialSymbol);
@@ -503,6 +624,8 @@ export function MarketBoard({ initialSymbol, watchAction, unwatchAction }: { ini
               <Detail symbol={selected} paused={paused} onClose={() => select(null)} watchAction={watchAction} unwatchAction={unwatchAction} onChanged={reload} />
             </div>
           )}
+          <Commodities paused={paused} />
+          <RealEstates />
         </div>
         <Rankings paused={paused} onSelect={select} />
       </section>

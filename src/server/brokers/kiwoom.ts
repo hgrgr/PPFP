@@ -20,6 +20,7 @@ import {
   zonedIso,
   type UsMarket,
 } from '@/domain/broker-format';
+import { parseKiwoomGold, type CommodityDef, type CommodityQuote } from '@/domain/commodities';
 import { backoff, fetchJson, rows, sleep, str, throttle, todayKst, TokenManager } from './http';
 import {
   BrokerApiError,
@@ -270,6 +271,13 @@ export class KiwoomAdapter implements BrokerAdapter {
   async usdKrw(): Promise<string | null> {
     const info = await this.usInfo('AAPL', 'NASDAQ');
     return info && info.fx !== '0' ? info.fx : null;
+  }
+
+  /** KRX 금현물 only (ka50100); 키움 also trades it, so the key needs no extra service. */
+  async commodity(def: CommodityDef, contract: string): Promise<CommodityQuote | null> {
+    if (def.source !== 'KRX_GOLD') return null;
+    const r = await this.post('/api/dostk/mrkcond', 'ka50100', { stk_cd: contract });
+    return parseKiwoomGold(r.body);
   }
 
   async indices(codes: IndexCode[]): Promise<IndexQuote[]> {

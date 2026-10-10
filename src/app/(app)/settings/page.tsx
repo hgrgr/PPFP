@@ -1,5 +1,6 @@
 import { saveAiSettingsAction } from '@/app/ai-actions';
 import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
+import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { ActionForm, Submit } from '@/components/forms';
@@ -22,6 +23,8 @@ export default async function SettingsPage() {
   const [connections, ai, hints] = await Promise.all([listConnections(user.id), aiStatus(user.id), keyHints(user.id)]);
   const kakaoHint = hints.get('kakao');
   const kakaoServer = !kakaoHint && !!process.env.KAKAO_REST_API_KEY;
+  const molitHint = hints.get('molit');
+  const molitServer = !molitHint && !!process.env.DATA_GO_KR_API_KEY;
 
   return (
     <>
@@ -195,6 +198,34 @@ export default async function SettingsPage() {
           {kakaoHint && (
             <label className="check">
               <input type="checkbox" name="clearKakao" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+      </section>
+
+      <section className="card" id="real-estate">
+        <h2>부동산 실거래가</h2>
+        <p className="sub">
+          부동산 자산에 아파트를 연결하면 국토교통부 아파트 매매 실거래가로 추정 시세와 인근 거래를 보여 줍니다. 아파트를 지도에서 찾을 때는 위 책 검색의 카카오 REST API 키를 같이 씁니다(카카오 앱에서 카카오맵 사용 설정 필요). 매물은 가져오지 않고 네이버 부동산으로 연결합니다.
+        </p>
+        <ActionForm action={saveRealEstateKeyAction} className="grid">
+          <label className="field">
+            공공데이터포털 일반 인증키
+            <input name="molitKey" type="password" autoComplete="off" placeholder={molitHint ? `저장됨 ${molitHint}` : molitServer ? '서버 기본 키 사용 중' : '인증키 (Decoding 또는 Encoding)'} />
+            <span className="sub">
+              {molitHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://www.data.go.kr/data/15126468/openapi.do" target="_blank" rel="noreferrer">공공데이터포털 › 국토교통부 아파트 매매 실거래가 상세 자료</a>에서 활용신청(자동 승인, 무료)한 뒤 마이페이지의 일반 인증키를 넣으세요. 암호화해 저장합니다.
+                </>
+              )}
+            </span>
+          </label>
+          {molitHint && (
+            <label className="check">
+              <input type="checkbox" name="clearMolit" /> 저장한 키 지우기
             </label>
           )}
           <div className="full">

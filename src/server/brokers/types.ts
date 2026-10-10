@@ -6,6 +6,7 @@
 import type { BrokerId, BrokerKind } from '@/lib/brokers';
 import type { Candle, CandleUnit } from '@/domain/candles';
 import type { ExchangeBalance, ExchangeEvent } from '@/domain/exchange-replay';
+import type { CommodityDef, CommodityQuote } from '@/domain/commodities';
 
 export type { BrokerId, BrokerKind, Candle, CandleUnit, ExchangeBalance, ExchangeEvent };
 export type Currency = 'KRW' | 'USD';
@@ -121,6 +122,8 @@ export interface BrokerAdapter {
   orderbook?(ref: InstrumentRef): Promise<Orderbook | null>;
   /** Up to `count` bars of `unit`, oldest first; null when this broker does not publish that interval. */
   candles?(ref: InstrumentRef, unit: CandleUnit, count: number): Promise<Candle[] | null>;
+  /** Gold, oil, index futures…: `contract` is the futures contract (GCZ26) or the KRX code. Null when this broker does not publish it. */
+  commodity?(def: CommodityDef, contract: string): Promise<CommodityQuote | null>;
   /** Crypto exchanges: every balance including KRW, for replaying history. */
   balances?(): Promise<ExchangeBalance[]>;
   /**
