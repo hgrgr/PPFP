@@ -9,15 +9,19 @@ import { unreadCount } from '@/server/services/notify';
 import { AiLauncher } from '@/components/ai/launcher';
 import { aiStatus } from '@/server/services/ai/agent';
 import { modelLabels } from '@/domain/ai-providers';
+import { UsageChip } from '@/components/usage-chip';
+import { fxRate } from '@/server/market';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const [links, unread, sages, ai] = await Promise.all([
+  const [links, unread, sages, ai, usdkrw] = await Promise.all([
     prisma.brokerConnection.findMany({ where: { userId: user.id }, select: { label: true, lastSyncAt: true, lastError: true } }),
     unreadCount(user.id),
     prisma.sage.findMany({ where: { userId: user.id }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
     aiStatus(user.id),
+    fxRate(user.id, 'USD').then((r) => r.toNumber()),
   ]);
+  const spend = ai.configured ? { spent: ai.spent, limit: ai.monthlyLimit, usdkrw } : null;
   const failing = links.filter((l) => l.lastError);
   const lastSync = links.map((l) => l.lastSyncAt).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
   return (
@@ -53,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
         </NavLink>
         <NavLink href="/data">가져오기 · 내보내기</NavLink>
+        <NavLink href="/usage">사용량 · 비용</NavLink>
         <NavLink href="/settings">연동 · 설정</NavLink>
         <div className="side-foot">
           <div>
@@ -79,10 +84,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </form>
         </div>
       </nav>
-      <main className="main">{children}</main>
+      <main className="main">
+        {spend && (
+          <div className="usage-strip" aria-label="AI 사용 비용">
+            <UsageChip {...spend} />
+          </div>
+        )}
+        {children}
+      </main>
       <Suspense>
         <QuickMemo />
-        <AiLauncher sages={sages} configured={ai.configured} models={modelLabels(ai.models)} />
+        <AiLauncher sages={sages} configured={ai.configured} models={modelLabels(ai.models)} spend={spend} />
       </Suspense>
     </div>
   );

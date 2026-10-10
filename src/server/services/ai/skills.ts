@@ -8,6 +8,7 @@ import { AGENT_ORDER, type AgentKind } from '@/domain/ai';
 import { CATALOG_TERMS, parseSkillMd, pickSkillPath, rankCatalog, skillFolderFiles, skillSlug, SKILL_LIMITS, type CatalogEntry } from '@/domain/ai-skills';
 import { prisma } from '../../db';
 import { UserError } from '../portfolios';
+import { noteCall, outcomeOf } from '../api-usage';
 
 const HOUR = 3_600_000;
 const g = globalThis as unknown as { ppfpSkillCache?: Map<string, { at: number; value: unknown }> };
@@ -21,15 +22,29 @@ async function cached<T>(key: string, ttl: number, load: () => Promise<T>): Prom
   return value;
 }
 
+/** GitHub (API and raw files) or the skills.sh directory, for the usage page */
+const serviceOf = (url: string) => (new URL(url).hostname.endsWith('skills.sh') ? 'skills.sh' : 'github');
+
+async function tracked(url: string, init: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(url, init);
+    noteCall(null, serviceOf(url), outcomeOf(res.status), res.headers);
+    return res;
+  } catch (e) {
+    noteCall(null, serviceOf(url), 'error');
+    throw e;
+  }
+}
+
 async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'PPFP (personal portfolio app)' }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  const res = await tracked(url, { headers: { accept: 'application/json', 'user-agent': 'PPFP (personal portfolio app)' }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
   if (res.status === 403 || res.status === 429) throw new UserError('잠시 요청이 많아 막혔습니다. 몇 분 뒤에 다시 시도하세요.');
   if (!res.ok) throw new Error(`${new URL(url).hostname} ${res.status}`);
   return res.json();
 }
 
 async function getText(url: string): Promise<string> {
-  const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  const res = await tracked(url, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`${new URL(url).hostname} ${res.status}`);
   return res.text();
 }

@@ -11,6 +11,7 @@ import { Dec } from '@/domain/decimal';
 import { isKrSymbol, usMarketOf } from '@/domain/broker-format';
 import { dbDate, dec, kstDate, out, prisma } from './db';
 import { BrokerApiError, type InstrumentRef } from './brokers';
+import { BROKERS } from '@/lib/brokers';
 import { kindOf, marketProviders } from './services/brokers';
 
 const QUOTE_TTL_MS = 10_000;
@@ -25,7 +26,7 @@ export interface Quote {
 }
 
 const quoteCache = new Map<string, { quote: Quote; fetchedAt: number }>();
-const fxCache = new Map<string, { rate: Dec; fetchedAt: number }>();
+const fxCache = new Map<string, { rate: Dec; fetchedAt: number; source: string }>();
 
 function logFailure(what: string, e: unknown) {
   if (!(e instanceof BrokerApiError)) console.error(`[market] ${what} failed`, e);
@@ -103,11 +104,24 @@ export async function getQuotes(userId: string, assets: Asset[]): Promise<Map<st
 }
 
 /** Base-currency (KRW) units per one unit of `currency`. */
-export async function fxRate(userId: string, currency: string): Promise<Dec> {
-  if (currency === 'KRW') return Dec.ONE;
+export interface FxQuote {
+  rate: Dec;
+  /** When the rate was published or received (ISO instant), null for the built-in fallback */
+  asOf: string | null;
+  /** Where it came from, for display: "한국투자증권 고시", "저장된 일별 환율", "기본값" */
+  source: string;
+  /** Source and time for display: "한국투자증권 고시 10-10 13:07", "저장된 일별 환율 10-09" */
+  label: string;
+}
+
+const kstShort = (ms: number) => new Date(ms + 9 * 3_600_000).toISOString().slice(5, 16).replace('T', ' ');
+
+/** Latest published KRW rate for a currency, with where and when it came from. */
+export async function fxQuote(userId: string, currency: string): Promise<FxQuote> {
+  if (currency === 'KRW') return { rate: Dec.ONE, asOf: null, source: '원화', label: '원화' };
   const key = `${currency}KRW`;
   const c = fxCache.get(key);
-  if (c && Date.now() - c.fetchedAt < FX_TTL_MS) return c.rate;
+  if (c && Date.now() - c.fetchedAt < FX_TTL_MS) return { rate: c.rate, asOf: new Date(c.fetchedAt).toISOString(), source: c.source, label: `${c.source} ${kstShort(c.fetchedAt)}` };
   if (currency === 'USD') {
     for (const { adapter } of await marketProviders(userId, 'stock')) {
       if (!adapter.usdKrw) continue;
@@ -115,8 +129,10 @@ export async function fxRate(userId: string, currency: string): Promise<Dec> {
         const r = await adapter.usdKrw();
         if (r && Dec.of(r).isPos()) {
           const rate = Dec.of(r);
-          fxCache.set(key, { rate, fetchedAt: Date.now() });
-          return rate;
+          const source = `${BROKERS[adapter.broker].label} 고시`;
+          const fetchedAt = Date.now();
+          fxCache.set(key, { rate, fetchedAt, source });
+          return { rate, asOf: new Date(fetchedAt).toISOString(), source, label: `${source} ${kstShort(fetchedAt)}` };
         }
       } catch (e) {
         logFailure(`${adapter.broker} fx`, e);
@@ -124,8 +140,12 @@ export async function fxRate(userId: string, currency: string): Promise<Dec> {
     }
   }
   const row = await prisma.fxDaily.findFirst({ where: { pair: key }, orderBy: { date: 'desc' } });
-  if (row) return dec(row.rate);
-  return Dec.of(process.env.FALLBACK_USDKRW ?? '1390');
+  if (row) return { rate: dec(row.rate), asOf: row.date.toISOString(), source: '저장된 일별 환율', label: `저장된 일별 환율 ${kstDate(row.date).slice(5)}` };
+  return { rate: Dec.of(process.env.FALLBACK_USDKRW ?? '1390'), asOf: null, source: '기본값', label: '기본값 (시세 연결 없음)' };
+}
+
+export async function fxRate(userId: string, currency: string): Promise<Dec> {
+  return (await fxQuote(userId, currency)).rate;
 }
 
 export async function storeClose(symbol: string, date: string, close: Dec, currency: string, source = 'BROKER') {

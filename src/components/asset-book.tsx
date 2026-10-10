@@ -5,9 +5,10 @@ import { Fragment, useCallback, useEffect, useMemo, useState, useTransition } fr
 import type { ActionState } from '@/app/actions';
 import { buyAction, moveHoldingAction, removeAssetAction, removeHoldingAction } from '@/app/actions';
 import { setAssetTraitsAction } from '@/app/trait-actions';
-import { krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
+import { krwShort, money, pct, qty, tone } from '@/lib/format';
 import type { AssetBook, BookAsset } from '@/server/services/asset-book';
 import { ActionForm, DateTimeField, Submit } from './forms';
+import { FxAmount } from './amount';
 
 const TYPE_LABEL: Record<string, string> = {
   KR_STOCK: '국내 주식·ETF',
@@ -73,7 +74,8 @@ function Toast({ notice, onClose }: { notice: ActionState | null; onClose: () =>
 type Traits = Map<string, { name: string; color: string; group: string }>;
 
 /** Every asset the user holds, with where it sits and how it is classified. */
-export function AssetBookView({ book }: { book: AssetBook }) {
+export function AssetBookView({ book, local }: { book: AssetBook; local: boolean }) {
+  const fx = Number(book.usdkrw);
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
   const [pid, setPid] = useState('');
@@ -209,10 +211,12 @@ export function AssetBookView({ book }: { book: AssetBook }) {
                         {a.price ? money(a.price, a.currency) : '—'}
                         {a.stale && <span className="sub">지연</span>}
                       </td>
-                      <td className="money">{krwShort(a.value)}</td>
+                      <td className="money">
+                        <FxAmount value={a.value} currency={a.currency} usdkrw={fx} local={local} />
+                      </td>
                       <td className="muted">{a.type === 'LIABILITY' ? '—' : pct(a.weight, 1, false)}</td>
                       <td className={`money ${tone(u)}`}>
-                        {signedKrwShort(u)}
+                        <FxAmount value={u} currency={a.currency} usdkrw={fx} local={local} signed />
                         <span className="sub">{a.cost ? pct(u / Math.abs(a.cost)) : ''}</span>
                       </td>
                       <td>
@@ -224,7 +228,7 @@ export function AssetBookView({ book }: { book: AssetBook }) {
                     {isOpen && (
                       <tr className="asset-detail">
                         <td colSpan={9}>
-                          <AssetDetail asset={a} book={book} onResult={setNotice} />
+                          <AssetDetail asset={a} book={book} onResult={setNotice} local={local} />
                         </td>
                       </tr>
                     )}
@@ -242,7 +246,8 @@ export function AssetBookView({ book }: { book: AssetBook }) {
   );
 }
 
-function AssetDetail({ asset, book, onResult }: { asset: BookAsset; book: AssetBook; onResult: Notify }) {
+function AssetDetail({ asset, book, onResult, local }: { asset: BookAsset; book: AssetBook; onResult: Notify; local: boolean }) {
+  const fx = Number(book.usdkrw);
   return (
     <div className="stack" style={{ gap: 20 }}>
       <div className="stack" style={{ gap: 8 }}>
@@ -277,8 +282,12 @@ function AssetDetail({ asset, book, onResult }: { asset: BookAsset; book: AssetB
                       </span>
                     </td>
                     <td className="money">{qty(p.qty)}</td>
-                    <td className="money">{krwShort(p.value)}</td>
-                    <td className={`money ${tone(u)}`}>{signedKrwShort(u)}</td>
+                    <td className="money">
+                      <FxAmount value={p.value} currency={asset.currency} usdkrw={fx} local={local} />
+                    </td>
+                    <td className={`money ${tone(u)}`}>
+                      <FxAmount value={u} currency={asset.currency} usdkrw={fx} local={local} signed />
+                    </td>
                     <td>
                       {others.length ? (
                         <BookForm

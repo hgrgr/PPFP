@@ -34,8 +34,7 @@ export default async function AiPage({ searchParams }: { searchParams: SP }) {
         </div>
         {status.configured && (
           <span className="sub">
-            이번 달 약 ${status.spent.toFixed(2)}
-            {status.monthlyLimit !== null ? ` / 한도 $${status.monthlyLimit.toFixed(2)}` : ''} · <a href="/settings#ai">설정</a>
+            <a href="/usage">사용량 · 비용</a> · <a href="/settings#ai">설정</a>
           </span>
         )}
       </header>

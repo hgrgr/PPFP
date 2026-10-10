@@ -552,7 +552,7 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .asset-book tr.open > td { background: var(--surface-2); }
 .asset-book tr.asset-detail > td { background: var(--surface-2); padding: 16px; white-space: normal; text-align: left; }
 .asset-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
-.asset-kpis > * { flex-basis: 200px; }
+.row.four > * { flex-basis: 200px; }
 .asset-detail h3 { margin: 0; font-size: 14px; }
 .asset-detail .move-form { gap: 6px; flex-wrap: nowrap; }
 .asset-detail .move-form select { width: auto; min-width: 110px; }
@@ -560,3 +560,21 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; display: flex; gap: 12px; align-items: center; max-width: min(640px, calc(100vw - 32px)); padding: 10px 12px 10px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 8px 28px rgb(0 0 0 / 0.18); font-size: 13.5px; }
 .toast.ok { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
 .toast.err { border-color: var(--danger); color: var(--danger); }
+
+/* usage */
+.meter { height: 6px; border-radius: 999px; background: var(--line-soft); overflow: hidden; min-width: 80px; }
+.meter > span { display: block; height: 100%; border-radius: inherit; background: var(--ink); }
+.meter > span.warn { background: #eda100; }
+.meter > span.over { background: var(--danger); }
+.day-bars { display: flex; align-items: flex-end; gap: 3px; height: 96px; }
+.day-bars > span { flex: 1; min-width: 4px; border-radius: 3px 3px 0 0; background: var(--line-soft); }
+.day-bars > span.on { background: var(--ink); opacity: 0.8; }
+.usage-services td.l { white-space: normal; min-width: 160px; }
+.usage-strip { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: -8px 0 12px; font-size: 12.5px; color: var(--muted); }
+.usage-chip { color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 12.5px; white-space: nowrap; }
+.usage-chip:hover { color: var(--ink); }
+.usage-chip .meter { width: 64px; min-width: 64px; height: 5px; }
+.usage-chip .sub { font-size: 12px; }
+.usage-chip .over-text { color: var(--danger); font-weight: 600; }
+.ai-drawer .usage-chip { align-self: flex-start; margin: 0 16px 4px; }
+.plain-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }

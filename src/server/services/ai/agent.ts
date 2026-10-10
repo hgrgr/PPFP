@@ -12,6 +12,7 @@ import { choiceLabel, claudeHasDynamicWebTools, claudeHasFallbacks, DEFAULT_CHOI
 import { dec, kstDate, prisma } from '../../db';
 import { UserError } from '../portfolios';
 import { anthropicClient, compatStep, ProviderError, providerKeys } from './providers';
+import { noteCall } from '../api-usage';
 import { skillsPrompt } from '@/domain/ai-skills';
 import { skillsFor } from './skills';
 import { runTool, sageSummary, skillToolDefs, toolDefs } from './tools';
@@ -304,8 +305,10 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
             } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') textDelta(ev.delta.text);
           }
           msg = await stream.finalMessage();
+          noteCall(userId, 'anthropic', 'ok', stream.response?.headers);
           jsonRetries = 0;
         } catch (e) {
+          if (e instanceof Anthropic.APIError) noteCall(userId, 'anthropic', e.status === 429 ? 'limited' : 'error', e.headers as Headers | undefined);
           // A tool input that could not be parsed at all: re-issue the step (API errors rethrow)
           if (e instanceof Anthropic.APIError || signal?.aborted || jsonRetries++ >= 2) throw e;
           return null;

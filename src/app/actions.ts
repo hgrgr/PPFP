@@ -423,6 +423,13 @@ export async function refreshDataAction(_: ActionState) {
   });
 }
 
+/** Show foreign assets in their own currency (or everything in won). */
+export async function setLocalCurrencyAction(on: boolean) {
+  const user = await requireUser();
+  await prisma.user.update({ where: { id: user.id }, data: { localCurrency: on } });
+  revalidatePath('/', 'layout');
+}
+
 export async function updatePrefsAction(_: ActionState, f: FormData) {
   const user = await requireUser();
   return run(async () => {

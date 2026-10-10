@@ -7,6 +7,7 @@ import 'server-only';
 import { dedupeHits, isKorean, parseKakao, parseOpenLibrary, type BookHit } from '@/domain/book-search';
 import { UserError } from './portfolios';
 import { clearServiceKey, serviceKey, setServiceKey } from './api-keys';
+import { noteCall, outcomeOf } from './api-usage';
 
 export interface BookSearch {
   hits: BookHit[];
@@ -14,8 +15,15 @@ export interface BookSearch {
   needsKey: boolean;
 }
 
-async function getJson(url: string, headers: Record<string, string> = {}): Promise<unknown> {
-  const res = await fetch(url, { headers: { accept: 'application/json', ...headers }, cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+async function getJson(userId: string, service: string, url: string, headers: Record<string, string> = {}): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { accept: 'application/json', ...headers }, cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+  } catch (e) {
+    noteCall(userId, service, 'error');
+    throw e;
+  }
+  noteCall(userId, service, outcomeOf(res.status), res.headers);
   if (res.status === 401 || res.status === 403) throw new UserError('카카오 REST API 키가 올바르지 않습니다. 연동 · 설정에서 확인하세요.');
   if (!res.ok) throw new Error(`book search ${new URL(url).hostname} ${res.status}`);
   return res.json();
@@ -28,12 +36,12 @@ export async function searchBooks(userId: string, query: string): Promise<BookSe
   const hits: BookHit[] = [];
   try {
     if (kakao) {
-      const body = await getJson(`https://dapi.kakao.com/v3/search/book?${new URLSearchParams({ query: q, size: '10' })}`, { authorization: `KakaoAK ${kakao.key}` });
+      const body = await getJson(userId, 'kakao-book', `https://dapi.kakao.com/v3/search/book?${new URLSearchParams({ query: q, size: '10' })}`, { authorization: `KakaoAK ${kakao.key}` });
       hits.push(...parseKakao(body));
     }
     if (!hits.length && !isKorean(q)) {
       const params = new URLSearchParams({ q, limit: '10', fields: 'title,author_name,publisher,first_publish_year,isbn' });
-      hits.push(...parseOpenLibrary(await getJson(`https://openlibrary.org/search.json?${params}`, { 'user-agent': 'PPFP (personal portfolio app)' })));
+      hits.push(...parseOpenLibrary(await getJson(userId, 'openlibrary', `https://openlibrary.org/search.json?${params}`, { 'user-agent': 'PPFP (personal portfolio app)' })));
     }
   } catch (e) {
     if (e instanceof UserError) throw e;

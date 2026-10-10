@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -151,6 +152,7 @@ export function AiChat({
   /** What a new conversation answers with */
   modelLabel?: string;
 }) {
+  const router = useRouter();
   const [conv, setConv] = useState<ConversationView | null>(initial);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [live, setLive] = useState<{ text: string; status: string | null } | null>(null);
@@ -212,11 +214,12 @@ export function AiChat({
         setError(e instanceof Error ? e.message : '연결이 끊겼습니다.');
       }
       if (id) await reload(id);
+      router.refresh(); // the month's spend at the top of the page
       setPendingUser(null);
       setLive(null);
       area.current?.focus();
     },
-    [agent, sageId, path, conv, busy, reload, onConversation, urlOnStart],
+    [agent, sageId, path, conv, busy, reload, onConversation, urlOnStart, router],
   );
 
   useEffect(() => {

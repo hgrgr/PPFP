@@ -51,7 +51,7 @@ export async function performanceReport(userId: string, scopeId: string | null, 
   const w = (pid: string) => weights.get(pid)?.toNumber() ?? 0;
   const ids = [...weights.keys()].filter((id) => w(id) > 0);
   const startSnaps = await Promise.all(ids.map((id) => prisma.snapshot.findFirst({ where: { portfolioId: id, date: { lte: dbDate(start) } }, orderBy: { date: 'desc' } })));
-  const holdings = await prisma.holding.findMany({ where: { portfolioId: { in: ids } }, include: { asset: { select: { name: true, type: true } } } });
+  const holdings = await prisma.holding.findMany({ where: { portfolioId: { in: ids } }, include: { asset: { select: { name: true, type: true, currency: true } } } });
   const meta = new Map(holdings.map((h) => [h.id, { pid: h.portfolioId, assetId: h.assetId, name: h.asset.name, type: h.asset.type as AssetType }]));
   const byAsset = new Map<string, ContributionInput>();
   const row = (holdingId: string) => {
@@ -94,6 +94,9 @@ export async function performanceReport(userId: string, scopeId: string | null, 
     benches: benches.map(({ returns: _r, ...b }) => b),
     chart,
     contributions: contributions([...byAsset.values()], startTotal),
+    /** asset id → trading currency, to show foreign assets in their own currency */
+    currencies: Object.fromEntries(holdings.map((h) => [h.assetId, h.asset.currency])) as Record<string, string>,
+    usdkrw: d.usdkrw.toNumber(),
     startTotal,
     krw,
   };

@@ -122,6 +122,12 @@ export interface UsageLike {
 /** Is the price of this model known (rather than estimated at the top-tier rate)? */
 export const knownPrice = (model: string) => model in PRICES;
 
+/** USD per million tokens the app charges this model at (an estimate for unknown models). */
+export const priceOf = (model: string) => ({ ...(PRICES[model] ?? UNKNOWN_PRICE), known: model in PRICES });
+
+/** USD per web search */
+export const WEB_SEARCH_USD = WEB_SEARCH;
+
 /** Estimated cost of one response. */
 export function costUsd(usage: UsageLike, model: string): number {
   const p = PRICES[model] ?? UNKNOWN_PRICE;
