@@ -1,0 +1,39 @@
+# Overrides for a cloud VM reached only through Tailscale (docs/deploy-cloud.md):
+#   docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
+# The app listens on the VM's loopback only; `tailscale serve` puts HTTPS in front of it,
+# so nothing is open to the internet.
+services:
+  app:
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    environment:
+      COOKIE_SECURE: "true"
+
+  # Copies the encrypted backups (*.dump.gpg) to Google Drive or any rclone remote and deletes
+  # copies there older than OFFSITE_KEEP_DAYS. Copy, not sync: a rebuilt VM with an empty
+  # backups folder must not wipe the copies. Unencrypted dumps never leave the VM.
+  # Off unless started with --profile offsite (deploy/cloud/setup.sh does when rclone is set up).
+  offsite:
+    image: rclone/rclone:1.71.1
+    profiles: ["offsite"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          if ls /backups/*.dump.gpg >/dev/null 2>&1; then
+            rclone copy /backups "$${OFFSITE_REMOTE}" --include '*.dump.gpg' --log-level NOTICE &&
+              rclone delete "$${OFFSITE_REMOTE}" --include '*.dump.gpg' --min-age "$${OFFSITE_KEEP_DAYS:-30}d" --log-level NOTICE &&
+              echo "[offsite] $$(date -u +%FT%TZ) copied to $${OFFSITE_REMOTE}"
+          else
+            echo "[offsite] $$(date -u +%FT%TZ) no encrypted backups yet (set BACKUP_GPG_PASSPHRASE)"
+          fi
+          sleep $$(( $${OFFSITE_INTERVAL_HOURS:-6} * 3600 ))
+        done
+    environment:
+      OFFSITE_REMOTE: ${OFFSITE_REMOTE:-gdrive:ppfp-backups}
+      OFFSITE_INTERVAL_HOURS: ${OFFSITE_INTERVAL_HOURS:-6}
+      OFFSITE_KEEP_DAYS: ${OFFSITE_KEEP_DAYS:-30}
+    volumes:
+      - ./backups:/backups:ro
+      - ./rclone:/config/rclone
+    restart: unless-stopped

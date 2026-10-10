@@ -50,6 +50,10 @@ docker compose up -d --build  # http://localhost:3000
 docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지우려면 -v)
 ```
 
+### 클라우드에 올리기 (Oracle 무료 VM + Tailscale)
+
+집 PC를 켜 두지 않고 24시간 돌리려면 Oracle Cloud 상시 무료 Arm VM에 같은 `docker compose`를 올리고, Tailscale로 내 기기와 허락한 가족 기기에만 엽니다. 포트를 인터넷에 열지 않고 `https://ppfp.<tailnet>.ts.net`으로 접속하며, 휴대폰에서는 웹 앱을 설치해 씁니다. VM에서 `bash deploy/cloud/setup.sh` 하나로 설치되고, 암호화 백업은 Google Drive로 복사할 수 있습니다. 단계별 안내와 주의할 점(무료 VM 회수 정책 등)은 [docs/deploy-cloud.md](docs/deploy-cloud.md)에 있습니다.
+
 ### DB 백업
 
 `docker compose up -d`를 하면 앱·DB와 함께 `backup` 서비스가 뜹니다. 시작하자마자 한 번, 그 뒤 24시간마다 `pg_dump`로 저장소의 `backups/` 폴더에 `ppfp-YYYYMMDD-HHMMSS.dump`를 만들고 최근 14개만 남깁니다([scripts/backup/backup.sh](scripts/backup/backup.sh)). 마지막 백업 시각과 결과는 앱의 **가져오기 · 내보내기** 화면 맨 위에 나옵니다.
