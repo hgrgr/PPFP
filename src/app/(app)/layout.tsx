@@ -34,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavLink href="/performance">성과 분석</NavLink>
         <NavLink href="/market">실시간 시세</NavLink>
         <NavLink href="/portfolios">포트폴리오</NavLink>
+        <NavLink href="/assets">보유 자산</NavLink>
         <NavLink href="/import">보유종목 가져오기</NavLink>
         <NavLink href="/transactions">거래 내역</NavLink>
         <NavLink href="/tax">세금</NavLink>

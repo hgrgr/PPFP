@@ -410,3 +410,76 @@ export async function removeHolding(userId: string, holdingId: string) {
     return { portfolioId: holding.portfolioId, name: holding.asset.name, count: txns.length, firstDate: txns[0] ? kstIso(txns[0].tradeAt).slice(0, 10) : null };
   });
 }
+
+/**
+ * Move a stock to another portfolio as if it had been bought there: the holding's
+ * transactions, lots and their cash effects go along. If the target already holds the
+ * same asset, the two holdings merge. With `settle`, both portfolios end with the cash they
+ * had: the net cash of the moved trades is sent from one to the other as a withdrawal and a
+ * deposit at `at`. Returns the first trade date so history can be redone.
+ */
+export async function moveHolding(userId: string, holdingId: string, toPortfolioId: string, opts: { settle?: boolean; usdkrw?: string; at?: Date } = {}) {
+  const holding = await prisma.holding.findFirst({ where: { id: holdingId, portfolio: { userId } }, include: { asset: true, portfolio: true } });
+  if (!holding) throw new UserError('보유 종목을 찾을 수 없습니다.');
+  const to = await ownedPortfolio(userId, toPortfolioId);
+  if (to.id === holding.portfolioId) throw new UserError('이미 이 포트폴리오에 있습니다.');
+  return prisma.$transaction(async (tx) => {
+    await lockHolding(tx, holding.id);
+    const txns = await tx.transaction.findMany({ where: { holdingId: holding.id }, orderBy: { tradeAt: 'asc' } });
+    const refs = txns.map((t) => t.externalRef).filter((r): r is string => !!r);
+    if (refs.length && (await tx.transaction.count({ where: { portfolioId: to.id, externalRef: { in: refs } } })))
+      throw new UserError(`${to.name}에 같은 증권사 거래 번호가 이미 있어 옮길 수 없습니다.`);
+    const target = await tx.holding.findUnique({ where: { portfolioId_assetId: { portfolioId: to.id, assetId: holding.assetId } } });
+    if (target) {
+      await lockHolding(tx, target.id);
+      // Each holding's splits were applied to its own lots only; replaying them together would split twice
+      if (await tx.transaction.count({ where: { holdingId: { in: [holding.id, target.id] }, type: 'SPLIT' } }))
+        throw new UserError(`${to.name}에도 ${holding.asset.name}이(가) 있고 분할·병합 기록이 있어 합칠 수 없습니다.`);
+      await tx.lot.updateMany({ where: { holdingId: holding.id }, data: { holdingId: target.id } });
+      await tx.transaction.updateMany({ where: { holdingId: holding.id }, data: { holdingId: target.id, portfolioId: to.id } });
+      await tx.holding.delete({ where: { id: holding.id } });
+    } else {
+      await tx.holding.update({ where: { id: holding.id }, data: { portfolioId: to.id } });
+      await tx.transaction.updateMany({ where: { holdingId: holding.id }, data: { portfolioId: to.id } });
+    }
+    for (const t of txns) {
+      await addCash(tx, holding.portfolioId, t.currency, dec(t.cashDelta).neg());
+      await addCash(tx, to.id, t.currency, dec(t.cashDelta));
+    }
+    const settled: { currency: string; amount: Dec }[] = [];
+    if (opts.settle) {
+      const net = new Map<string, Dec>();
+      for (const t of txns) net.set(t.currency, (net.get(t.currency) ?? Dec.ZERO).add(dec(t.cashDelta)));
+      const memo = `${holding.asset.name} 옮기기: 현금 정산 (${holding.portfolio.name} → ${to.name})`;
+      for (const [currency, n] of net) {
+        if (n.isZero()) continue;
+        const fx = currency === 'KRW' ? Dec.ONE : positive(opts.usdkrw, '환율');
+        // n < 0 when the stock cost money: the source pays for it again, the target gets it back
+        for (const [portfolioId, d] of [
+          [holding.portfolioId, n],
+          [to.id, n.neg()],
+        ] as const) {
+          const txn = await tx.transaction.create({
+            data: { portfolioId, type: d.isPos() ? 'DEPOSIT' : 'WITHDRAW', tradeAt: opts.at ?? new Date(), fxRate: out(fx), currency, cashDelta: out(d), flow: out(d), memo },
+          });
+          await addCash(tx, portfolioId, currency, d);
+          await audit(tx, userId, 'transaction', txn.id, 'create', undefined, txn);
+        }
+        settled.push({ currency, amount: n.neg() });
+      }
+    }
+    await audit(tx, userId, 'holding', holding.id, 'update', { portfolioId: holding.portfolioId }, { portfolioId: to.id, mergedInto: target?.id ?? null, transactions: txns.map((t) => t.id), settled });
+    const cash = await tx.cashBalance.findMany({ where: { portfolioId: to.id } });
+    return {
+      name: holding.asset.name,
+      from: holding.portfolio.name,
+      to: to.name,
+      holdingId: target?.id ?? holding.id,
+      merged: !!target,
+      count: txns.length,
+      settled,
+      firstDate: txns[0] ? kstIso(txns[0].tradeAt).slice(0, 10) : null,
+      negativeCash: cash.filter((c) => dec(c.amount).isNeg()).map((c) => ({ currency: c.currency, amount: dec(c.amount) })),
+    };
+  });
+}
