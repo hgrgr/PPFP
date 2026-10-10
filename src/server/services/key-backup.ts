@@ -6,12 +6,13 @@
 import { z } from 'zod';
 import { PROVIDER_ORDER } from '@/domain/ai-providers';
 import { BROKERS, type BrokerId } from '@/lib/brokers';
-import { decryptSecret, verifyPassword } from '../crypto';
+import { decryptSecret } from '../crypto';
 import { prisma } from '../db';
 import { checkPassphrase, openVault, sealVault, VaultError } from '../key-vault';
 import { setServiceKey } from './api-keys';
 import { listConnections, saveConnection, sourceKey } from './brokers';
 import { audit, UserError } from './portfolios';
+import { verifyIdentity } from './security';
 
 /** Outside services whose keys are kept in ApiKey */
 export const BACKUP_SERVICES = ['kakao', 'molit', 'vworld', ...PROVIDER_ORDER] as const;
@@ -42,12 +43,11 @@ export async function keyPayload(userId: string): Promise<KeyBackup> {
 }
 
 /**
- * The backup file's text. Asks for the login password again: the file holds every secret,
- * so an open session alone (a borrowed phone, a stolen cookie) is not enough.
+ * The backup file's text. Asks for the login password (and the two-step code) again: the
+ * file holds every secret, so an open session alone (a borrowed phone, a stolen cookie) is not enough.
  */
-export async function exportKeys(userId: string, input: { password: string; passphrase: string; confirm: string }) {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (!(await verifyPassword(input.password, user.passwordHash))) throw new UserError('로그인 비밀번호가 맞지 않습니다.');
+export async function exportKeys(userId: string, input: { password: string; passphrase: string; confirm: string; code?: string }) {
+  await verifyIdentity(userId, input.password, input.code);
   if (input.passphrase !== input.confirm) throw new UserError('백업 암호 두 칸이 다릅니다.');
   try {
     checkPassphrase(input.passphrase);

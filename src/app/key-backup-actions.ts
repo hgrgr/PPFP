@@ -14,7 +14,7 @@ const str = (f: FormData, k: string) => {
 export async function exportKeysAction(f: FormData): Promise<{ text: string; filename: string; brokers: number; services: number } | { error: string }> {
   const user = await requireUser();
   try {
-    const r = await exportKeys(user.id, { password: str(f, 'password'), passphrase: str(f, 'passphrase'), confirm: str(f, 'confirm') });
+    const r = await exportKeys(user.id, { password: str(f, 'password'), passphrase: str(f, 'passphrase'), confirm: str(f, 'confirm'), code: str(f, 'code') });
     return { ...r, filename: `ppfp-keys-${kstDate()}.json` };
   } catch (e) {
     if (e instanceof UserError) return { error: e.message };

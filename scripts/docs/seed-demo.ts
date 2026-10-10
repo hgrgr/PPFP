@@ -12,7 +12,8 @@
 import fake from './fake-market.cjs';
 import { Dec } from '@/domain/decimal';
 import { prisma } from '@/server/db';
-import { newToken, sha256 } from '@/server/crypto';
+import { encryptSecret, newToken, sha256 } from '@/server/crypto';
+import { newRecoveryCodes, newTotpSecret, normalizeRecoveryCode } from '@/server/totp';
 import { storeFx } from '@/server/market';
 import { createManualAsset, ensureListedAsset } from '@/server/services/assets';
 import { setServiceKey } from '@/server/services/api-keys';
@@ -163,10 +164,59 @@ async function main() {
   await seedKnowledge(uid);
 
   const token = newToken();
-  await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D) } });
+  await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D), userAgent: MAC_CHROME, ip: '192.168.0.12', lastSeenAt: new Date() } });
+  // Only for the documentation screens: the local demo (.claude/demo) keeps a password-only login
+  if (process.env.DOCS_CAPTURE === '1') await seedSecurity(uid);
   const cashLeft = await prisma.cashBalance.findMany({ where: { portfolio: { userId: uid } }, include: { portfolio: { select: { name: true } } } });
   console.error('[seed] cash', cashLeft.map((c) => `${c.portfolio.name} ${c.currency} ${c.amount}`).join(' | '));
   console.log(token);
+}
+
+// ---------------------------------------------------------------- account security
+
+const MAC_CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const PHONE = 'Mozilla/5.0 (Linux; Android 15; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36';
+const OFFICE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0';
+
+/** Two-step sign-in on, two more devices, invitations, security log, and last night's DB backup. */
+async function seedSecurity(uid: string) {
+  const H = 3_600_000;
+  const at = (hours: number) => new Date(Date.now() - hours * H);
+  await prisma.user.update({
+    where: { id: uid },
+    data: { totpSecret: encryptSecret(newTotpSecret()), totpEnabledAt: at(24 * 12), recoveryCodes: newRecoveryCodes(8).map((c) => sha256(normalizeRecoveryCode(c))) },
+  });
+  await prisma.session.createMany({
+    data: [
+      { id: sha256(newToken()), userId: uid, expiresAt: new Date(Date.now() + D), userAgent: PHONE, ip: '211.36.142.7', createdAt: at(24 * 9), lastSeenAt: at(3) },
+      { id: sha256(newToken()), userId: uid, expiresAt: new Date(Date.now() + D), userAgent: OFFICE, ip: '121.134.20.55', createdAt: at(24 * 4), lastSeenAt: at(28) },
+    ],
+  });
+  await prisma.invite.createMany({
+    data: [
+      { id: sha256(newToken()), createdById: uid, email: 'spouse@ppfp.example', note: '배우자', expiresAt: new Date(Date.now() + 5 * 24 * H), usedAt: at(24 * 2), usedBy: 'spouse@ppfp.example', createdAt: at(24 * 2 + 1) },
+      { id: sha256(newToken()), createdById: uid, note: '동생', expiresAt: new Date(Date.now() + 6 * 24 * H), createdAt: at(20) },
+    ],
+  });
+  const log = (hours: number, action: string, after: Record<string, string | number>) => ({ userId: uid, entity: 'Security', entityId: uid, action, after, at: at(hours) });
+  await prisma.auditLog.createMany({
+    data: [
+      log(24 * 12, '2fa.enable', {}),
+      log(24 * 9, 'login', { device: '삼성 인터넷 · Android', ip: '211.36.142.7' }),
+      log(24 * 4, 'login', { device: 'Edge · Windows', ip: '121.134.20.55' }),
+      log(24 * 2 + 1, 'invite.create', { email: 'spouse@ppfp.example' }),
+      log(24 * 2, 'invite.used', { email: 'spouse@ppfp.example' }),
+      log(20, 'invite.create', {}),
+      log(1, 'login', { device: 'Chrome · macOS', ip: '192.168.0.12' }),
+    ],
+  });
+  const night = new Date(Date.now() - 5 * H);
+  const stamp = night.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  await prisma.appSetting.upsert({
+    where: { key: 'backup.last' },
+    create: { key: 'backup.last', value: JSON.stringify({ at: night.toISOString().slice(0, 19) + 'Z', ok: true, file: `ppfp-${stamp}.dump`, bytes: 3_460_000, tables: 61, kept: 14, keep: 14, intervalHours: 24 }) },
+    update: {},
+  });
 }
 
 // ---------------------------------------------------------------- trade journal

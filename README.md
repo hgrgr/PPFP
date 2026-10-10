@@ -50,6 +50,38 @@ docker compose up -d --build  # http://localhost:3000
 docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지우려면 -v)
 ```
 
+### DB 백업
+
+`docker compose up -d`를 하면 앱·DB와 함께 `backup` 서비스가 뜹니다. 시작하자마자 한 번, 그 뒤 24시간마다 `pg_dump`로 저장소의 `backups/` 폴더에 `ppfp-YYYYMMDD-HHMMSS.dump`를 만들고 최근 14개만 남깁니다([scripts/backup/backup.sh](scripts/backup/backup.sh)). 마지막 백업 시각과 결과는 앱의 **가져오기 · 내보내기** 화면 맨 위에 나옵니다.
+
+```bash
+npm run db:backup                                   # 지금 한 번 (backup 서비스가 떠 있을 때)
+docker compose logs backup                          # 백업 기록
+npm run db:restore -- backups/ppfp-20261010-030000.dump   # 되살리기
+```
+
+- **간격·보관 개수**: `.env`의 `BACKUP_INTERVAL_HOURS`(기본 24), `BACKUP_KEEP`(기본 14).
+- **암호화**: `BACKUP_GPG_PASSPHRASE`를 넣으면 파일마다 gpg(AES-256)로 잠가 `.dump.gpg`로 저장합니다. 백업에는 모든 자산·거래 내역이 들어 있으므로 다른 곳으로 복사할 거라면 켜 두세요. 되살릴 때도 같은 변수를 셸에 넣고 실행합니다.
+- **되살리기**([scripts/backup/restore.sh](scripts/backup/restore.sh)): 지금 데이터를 `backups/before-restore-*.dump`로 먼저 떠 둔 뒤, 앱을 멈추고 모든 표를 백업의 것으로 바꾸고 앱을 다시 띄웁니다. 백업보다 새로운 마이그레이션은 앱이 시작하면서 적용합니다.
+- **다른 곳에 복사**: `backups/`는 이 컴퓨터 안에 있으므로 디스크가 고장 나면 같이 사라집니다. 외장 디스크나 클라우드(rclone 등)로 정기적으로 복사하세요.
+- **APP_ENCRYPTION_KEY는 따로**: 증권사 시크릿과 API 키는 이 키로 암호화돼 DB에 들어 있습니다. 백업을 되살려도 같은 키가 없으면 키를 풀 수 없으므로 `.env`를 백업 파일과 다른 곳(비밀번호 관리자 등)에 따로 보관하세요. 키를 잃었다면 [API 키 백업](#api-키-백업으로-옮기기) 파일로 키만 다시 넣습니다.
+
+Docker 없이 쓰는 PostgreSQL이라면 같은 스크립트를 `PGHOST`·`PGUSER`·`PGPASSWORD`·`PGDATABASE`와 `BACKUP_DIR`을 주고 cron으로 `sh scripts/backup/backup.sh once`처럼 돌리면 됩니다.
+
+### 계정 보안
+
+- **가입**: 첫 계정은 언제나 만들 수 있고, 그다음은 `.env`의 `SIGNUP_MODE`를 따릅니다. `invite`(기본)는 기존 사용자가 **연동 · 설정 › 계정 보안**에서 만든 초대 코드(7일, 한 번)가 있어야 하고, `closed`는 막고, `open`은 누구나 받습니다.
+- **로그인 실패 제한**: 같은 이메일이나 주소에서 5번 틀리면 30초, 그 뒤로 틀릴 때마다 두 배씩(최대 15분) 기다리게 합니다. 기록은 메모리에만 있어 앱을 다시 시작하면 사라집니다.
+- **2단계 인증(TOTP)**: 계정 보안에서 켜면 로그인할 때, 그리고 키 백업·AI 운용 승인·비밀번호 변경 때 인증 앱의 6자리 숫자를 묻습니다. 켤 때 복구 코드 10개를 한 번 보여 줍니다.
+- **2단계 인증 되돌리기**: 휴대폰과 복구 코드를 모두 잃었으면 서버에서 끕니다. 그 계정은 모든 기기에서 로그아웃됩니다.
+
+```bash
+npm run user:reset-2fa -- me@example.com            # 개발 환경 (DATABASE_URL의 DB)
+docker compose exec db psql -U ppfp -d ppfp -c "UPDATE \"User\" SET \"totpSecret\" = NULL, \"totpPending\" = NULL, \"totpEnabledAt\" = NULL, \"totpLastStep\" = NULL, \"recoveryCodes\" = '{}' WHERE email = 'me@example.com'; DELETE FROM \"Session\" WHERE \"userId\" = (SELECT id FROM \"User\" WHERE email = 'me@example.com');"
+```
+
+- **인터넷에 열 때**: HTTPS 뒤에 두고 `COOKIE_SECURE=true`로 바꾸세요. 로그인한 기기 목록의 주소는 프록시가 넘기는 `X-Forwarded-For`를 그대로 씁니다.
+
 ### API 키 백업으로 옮기기
 
 DB를 새로 만들 때마다 키를 다시 넣지 않으려면, 한 번 키를 넣은 뒤 **연동 · 설정 › API 키 백업 · 복원**에서 백업 파일을 내려받아 둡니다. 파일은 백업 암호(scrypt + AES-256-GCM)로 잠기고 `APP_ENCRYPTION_KEY`와 상관없이 어느 서버에서나 열립니다. 새 DB에서는 같은 화면에서 되살리거나, 가입한 뒤 명령줄로 넣습니다.

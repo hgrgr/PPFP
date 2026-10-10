@@ -28,5 +28,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Daily pg_dump into ./backups, newest 14 kept (scripts/backup/backup.sh).
+  # Copy ./backups somewhere off this machine too; see README "DB 백업".
+  backup:
+    image: postgres:16
+    command: ["sh", "/scripts/backup.sh", "loop"]
+    environment:
+      PGHOST: db
+      PGUSER: ppfp
+      PGPASSWORD: ppfp
+      PGDATABASE: ppfp
+      BACKUP_DIR: /backups
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_GPG_PASSPHRASE: ${BACKUP_GPG_PASSPHRASE:-}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   db-data:

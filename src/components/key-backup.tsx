@@ -8,7 +8,7 @@ import type { RestoreLine } from '@/server/services/key-backup';
 const RESULT: Record<RestoreLine['result'], string> = { added: '추가', replaced: '바꿈', skipped: '건너뜀', failed: '실패' };
 
 /** Download every key as a passphrase-sealed file, or bring one back into this account. */
-export function KeyBackup() {
+export function KeyBackup({ twoStep = false }: { twoStep?: boolean }) {
   const router = useRouter();
   const exportRef = useRef<HTMLFormElement>(null);
   const [exportMsg, setExportMsg] = useState<{ ok?: string; error?: string } | null>(null);
@@ -40,10 +40,16 @@ export function KeyBackup() {
         }}
       >
         <h3 className="full">백업 파일 만들기</h3>
-        <label className="field full">
+        <label className={`field ${twoStep ? '' : 'full'}`}>
           로그인 비밀번호
           <input name="password" type="password" autoComplete="current-password" required />
         </label>
+        {twoStep && (
+          <label className="field">
+            2단계 인증 코드
+            <input name="code" inputMode="numeric" autoComplete="one-time-code" required maxLength={20} />
+          </label>
+        )}
         <label className="field">
           백업 암호 (12자 이상)
           <input name="passphrase" type="password" autoComplete="new-password" minLength={12} required />

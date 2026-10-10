@@ -70,15 +70,24 @@ enum TxnType {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
   name          String?
   passwordHash  String
-  baseCurrency  String   @default("KRW")
-  redUp         Boolean  @default(true) // 상승 빨강 / 하락 파랑
+  baseCurrency  String    @default("KRW")
+  redUp         Boolean   @default(true) // 상승 빨강 / 하락 파랑
   /// Show foreign assets in their own currency (converted at the latest published rate)
-  localCurrency Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  localCurrency Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  /// Two-step sign-in (TOTP): the secret encrypted with APP_ENCRYPTION_KEY, set once confirmed
+  totpSecret    String?
+  /// A secret shown during setup, not yet confirmed with a code
+  totpPending   String?
+  totpEnabledAt DateTime?
+  /// Last 30-second step accepted, so a code cannot be used twice
+  totpLastStep  Int?
+  /// SHA-256 of the unused recovery codes
+  recoveryCodes String[]  @default([])
 
   sessions         Session[]
   brokers          BrokerConnection[]
@@ -113,6 +122,7 @@ model User {
   tradeOrders      TradeOrder[]
   strategies       Strategy[]
   strategyRuns     StrategyRun[]
+  invitesMade      Invite[]           @relation("inviteCreator")
 }
 
 model Session {
@@ -121,6 +131,12 @@ model Session {
   expiresAt   DateTime
   /// Password re-entered; order execution, delegation changes and un-halting are allowed until then
   stepUpUntil DateTime?
+  /// Password checked, the two-step code not yet: not signed in until it is
+  pendingMfa  Boolean   @default(false)
+  userAgent   String?
+  ip          String?
+  /// Updated at most every 5 minutes
+  lastSeenAt  DateTime?
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -661,6 +677,23 @@ model PushSubscription {
 }
 
 /// Server-wide settings the app creates for itself (Web Push VAPID keys; secrets encrypted).
+/// Sign-up invitation; the code itself is shown once and stored as its SHA-256
+model Invite {
+  id          String    @id
+  createdById String
+  /// Only this address may use it, when set
+  email       String?
+  note        String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedBy      String?
+  createdAt   DateTime  @default(now())
+
+  createdBy User @relation("inviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+}
+
 model AppSetting {
   key   String @id
   value String

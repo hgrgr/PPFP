@@ -5,14 +5,18 @@ import { saveVworldKeyAction } from '@/app/alert-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { KeyBackup } from '@/components/key-backup';
+import { Devices, Invites, PasswordChange, TwoStep } from '@/components/account-security';
 import { ActionForm, Submit } from '@/components/forms';
 import { kstDateTime } from '@/lib/format';
 import { BROKERS, UNSUPPORTED_BROKERS } from '@/lib/brokers';
-import { requireUser } from '@/server/auth';
+import { currentSessionId, requireUser } from '@/server/auth';
 import { mask } from '@/server/crypto';
 import { listConnections } from '@/server/services/brokers';
 import { aiStatus } from '@/server/services/ai/agent';
 import { keyHints } from '@/server/services/api-keys';
+import { listDevices, listInvites, securityEvents, signupMode } from '@/server/services/security';
+import { prisma } from '@/server/db';
+import { SIGNUP_MODE_LABEL } from '@/domain/security';
 import { AskAiButton } from '@/components/ai/launcher';
 import { AgentModelFields, AiKeyFields } from '@/components/ai/model-settings';
 import { BRIEFING_PROMPT } from '@/domain/ai';
@@ -20,9 +24,20 @@ import { BRIEFING_PROMPT } from '@/domain/ai';
 export const metadata = { title: '연동 · 설정' };
 export const dynamic = 'force-dynamic';
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ recovery?: string }> }) {
   const user = await requireUser();
-  const [connections, ai, hints] = await Promise.all([listConnections(user.id), aiStatus(user.id), keyHints(user.id)]);
+  const sid = await currentSessionId();
+  const [connections, ai, hints, devices, invites, events, sec, { recovery }] = await Promise.all([
+    listConnections(user.id),
+    aiStatus(user.id),
+    keyHints(user.id),
+    listDevices(user.id, sid),
+    listInvites(user.id),
+    securityEvents(user.id),
+    prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { totpEnabledAt: true, recoveryCodes: true } }),
+    searchParams,
+  ]);
+  const mode = signupMode();
   const kakaoHint = hints.get('kakao');
   const kakaoServer = !kakaoHint && !!process.env.KAKAO_REST_API_KEY;
   const molitHint = hints.get('molit');
@@ -266,7 +281,51 @@ export default async function SettingsPage() {
             위에 저장한 증권사·거래소 키와 AI·카카오·공공데이터포털 키를 백업 암호로 잠근 파일 하나로 내려받습니다. 새 서버나 초기화한 DB, 다른 계정에서 이 파일과 백업 암호로 한 번에 되살립니다. 파일은 암호 없이는 열 수 없으므로 구글 드라이브 같은 곳에 두어도 됩니다. 접근 토큰은 넣지 않고 다시 발급받습니다.
           </p>
         </div>
-        <KeyBackup />
+        <KeyBackup twoStep={user.twoStep} />
+      </section>
+
+      <section className="card" id="security">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>계정 보안</h2>
+          <p className="sub">2단계 인증, 비밀번호, 로그인한 기기, 가입 초대를 관리합니다. 서버를 인터넷에 열어 쓴다면 2단계 인증을 켜 두세요.</p>
+        </div>
+        {recovery && <p className="msg err">복구 코드로 로그인했습니다. 휴대폰을 잃어버렸다면 2단계 인증을 끄고 새 휴대폰으로 다시 켜거나, 복구 코드를 새로 만드세요.</p>}
+        <div className="security-grid">
+          <div className="stack">
+            <h3>2단계 인증</h3>
+            <TwoStep enabledAt={sec.totpEnabledAt?.toISOString() ?? null} recoveryLeft={sec.recoveryCodes.length} />
+          </div>
+          <div className="stack">
+            <h3>비밀번호 바꾸기</h3>
+            <PasswordChange twoStep={user.twoStep} />
+          </div>
+          <div className="stack full">
+            <h3>로그인한 기기</h3>
+            <Devices devices={devices} />
+          </div>
+          <div className="stack">
+            <h3>가입 초대</h3>
+            <p className="sub">
+              이 서버의 가입 방식: <span className="strong">{SIGNUP_MODE_LABEL[mode]}</span> (서버의 <code>SIGNUP_MODE</code>로 정합니다). 가족처럼 같이 쓸 사람에게 초대 코드를 보내면 7일 안에 한 번 가입할 수 있습니다.
+            </p>
+            <Invites invites={invites} mode={mode} />
+          </div>
+          <div className="stack">
+            <h3>최근 보안 기록</h3>
+            {events.length ? (
+              <ul className="security-log">
+                {events.map((e, i) => (
+                  <li key={i}>
+                    <span className="sub">{kstDateTime(e.at)}</span> <span className="strong">{e.action}</span>
+                    {e.detail && <span className="sub"> · {e.detail}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="sub">아직 기록이 없습니다. 로그인, 2단계 인증 변경, 비밀번호 변경이 여기 남습니다.</p>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="row">

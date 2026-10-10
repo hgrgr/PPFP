@@ -161,7 +161,7 @@ export default async function AutopilotPage() {
           <h2>비밀번호 다시 확인</h2>
           <p className="sub">주문 실행, 단계 올리기, 정지 풀기는 비밀번호를 다시 넣은 뒤 10분 동안만 할 수 있습니다. 멈추기와 단계 내리기는 언제든 바로 됩니다.</p>
         </div>
-        <StepUpForm />
+        <StepUpForm twoStep={user.twoStep} />
       </section>
 
       <section className="card stack" id="new-policy">

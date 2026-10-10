@@ -9,7 +9,7 @@ import { journalAssets } from '@/server/services/journal';
 import { AskAiButton } from '@/components/ai/launcher';
 import { alertAgent, alertPrompt } from '@/domain/ai';
 
-const KIND_LABEL: Record<string, string> = { PRICE: '가격', DRIFT: '목표 비중', BRIEFING: 'AI 브리핑', REALESTATE: '부동산', TEST: '테스트' };
+const KIND_LABEL: Record<string, string> = { PRICE: '가격', DRIFT: '목표 비중', BRIEFING: 'AI 브리핑', REALESTATE: '부동산', SECURITY: '보안', TEST: '테스트' };
 
 export const metadata = { title: '알림' };
 export const dynamic = 'force-dynamic';
