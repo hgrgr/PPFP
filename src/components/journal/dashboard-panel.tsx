@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Donut, type DonutSlice } from '@/components/charts';
 import { STATUS_LABEL } from '@/domain/journal';
@@ -30,9 +31,13 @@ export function JournalPanelProvider({ counts, children }: { counts: Record<stri
   return <PanelContext.Provider value={{ counts, picked, pick }}>{children}</PanelContext.Provider>;
 }
 
-/** The allocation ring; in 종목 mode each stock opens its journals. */
-export function AllocationDonut({ slices, centerLabel, centerValue, byStock }: { slices: DonutSlice[]; centerLabel: string; centerValue: string; byStock: boolean }) {
+/**
+ * The allocation ring. With `byStock` each stock opens its journals; a slice listed in `links`
+ * (a child portfolio in 구성 mode) opens that portfolio's dashboard instead.
+ */
+export function AllocationDonut({ slices, centerLabel, centerValue, byStock, links = {} }: { slices: DonutSlice[]; centerLabel: string; centerValue: string; byStock: boolean; links?: Record<string, string> }) {
   const { counts, picked, pick } = useContext(PanelContext);
+  const router = useRouter();
   if (!byStock) return <Donut slices={slices} centerLabel={centerLabel} centerValue={centerValue} />;
   const pickable = new Set(slices.filter((s) => s.key !== 'OTHER' && s.key !== 'CASH_BAL').map((s) => s.key));
   const notes = Object.fromEntries(slices.filter((s) => counts[s.key]).map((s) => [s.key, `일지 ${counts[s.key]}`]));
@@ -44,7 +49,7 @@ export function AllocationDonut({ slices, centerLabel, centerValue, byStock }: {
       pickable={pickable}
       picked={picked?.assetId ?? null}
       notes={notes}
-      onPick={(s) => pick(picked?.assetId === s.key ? null : { assetId: s.key, name: s.label })}
+      onPick={(s) => (links[s.key] ? router.push(links[s.key]) : pick(picked?.assetId === s.key ? null : { assetId: s.key, name: s.label }))}
     />
   );
 }

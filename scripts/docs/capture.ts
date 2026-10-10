@@ -117,7 +117,15 @@ const SHOTS: Shot[] = [
     path: (ids) => `/portfolios/${ids.us}`,
     wait: 1500,
     clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목')],
-    marks: [{ sel: 'a', text: '보유종목 가져오기', within: { sel: '.page-head' } }, { sel: 'a', text: '+ 거래 추가' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목')],
+    marks: [{ sel: 'a', text: '보유종목 가져오기', within: { sel: '.page-head' } }, { sel: 'a', text: '+ 거래 추가' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목'), { sel: 'button', text: '제거', within: card('직접 보유 종목') }],
+  },
+  {
+    file: 'dashboard-own',
+    path: (ids) => `/dashboard?p=${ids.root}`,
+    wait: 2200,
+    width: 1280,
+    clip: [card('자산 배분')],
+    marks: [{ sel: '[aria-label="배분 기준"] a', text: '구성' }, { sel: 'li.pick-slice span', text: '미국 주식', closest: 'li' }],
   },
   {
     file: 'portfolio-add',
@@ -250,7 +258,7 @@ const SHOTS: Shot[] = [
   },
   {
     file: 'dashboard-journal',
-    path: () => '/dashboard',
+    path: () => '/dashboard?alloc=holding',
     wait: 2500,
     width: 1280,
     steps: [{ click: { sel: 'li.pick-slice span', text: '엔비디아', closest: 'li' } }, { until: "!!document.querySelector('#journal-panel .journal-list button')" }, { wait: 800 }],
@@ -259,7 +267,7 @@ const SHOTS: Shot[] = [
   },
   {
     file: 'dashboard-journal-drawer',
-    path: () => '/dashboard',
+    path: () => '/dashboard?alloc=holding',
     wait: 2500,
     steps: [
       { click: { sel: 'li.pick-slice span', text: '엔비디아', closest: 'li' } },

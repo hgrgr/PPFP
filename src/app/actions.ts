@@ -22,7 +22,7 @@ import { removeConnection, saveConnection, testConnection } from '@/server/servi
 import { addWatch, removeWatch } from '@/server/services/market-board';
 import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings, readPastedHoldings, uploadedTableText, type ImportSelection, type ImportSource } from '@/server/services/imports';
-import { deleteTransaction, recordBuy, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
+import { deleteTransaction, recordBuy, removeHolding, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
 
 export interface ActionState {
   ok?: string;
@@ -256,6 +256,18 @@ export async function deleteTransactionAction(_: ActionState, f: FormData) {
     if (r.tradeAt < kstDate()) await rebuildSnapshots(user.id, r.tradeAt);
     return '거래를 삭제했습니다. 감사 로그에는 남아 있습니다.';
   });
+}
+
+export async function removeHoldingAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  const r = await run(async () => {
+    const res = await removeHolding(user.id, s(f, 'id'));
+    if (res.firstDate && res.firstDate < kstDate()) await rebuildSnapshots(user.id, res.firstDate);
+    return `${res.name}을(를) 포트폴리오에서 뺐습니다 (거래 ${res.count}건 삭제). 감사 로그에는 남아 있습니다.`;
+  }, ['/']);
+  // From the stock's own page there is nothing left to show: back to the portfolio
+  if (r.ok && /^\/portfolios\/[\w-]+$/.test(s(f, 'back'))) redirect(s(f, 'back'));
+  return r;
 }
 
 // ── Broker links, imports & jobs ────────────────────

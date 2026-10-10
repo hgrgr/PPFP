@@ -135,7 +135,7 @@ export function Donut({
                   role: 'button',
                   tabIndex: 0,
                   'aria-pressed': picked === s.key,
-                  title: `${s.label} 매매일지 보기`,
+                  title: s.key.startsWith('P:') ? `${s.label} 포트폴리오 보기` : `${s.label} 매매일지 보기`,
                   onClick: () => onPick!(s),
                   onKeyDown: (e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick!(s)),
                 }

@@ -390,3 +390,23 @@ export async function deleteTransaction(userId: string, txnId: string) {
     return { portfolioId: txn.portfolioId, tradeAt: kstIso(txn.tradeAt).slice(0, 10) };
   });
 }
+
+/**
+ * Take a stock out of a portfolio as if it had never been held: every transaction of the
+ * holding (buys, sells, dividends, valuations, splits) goes, with its cash effect, and so do
+ * its lots. The audit log keeps a summary. Returns the first trade date so history can be redone.
+ */
+export async function removeHolding(userId: string, holdingId: string) {
+  const holding = await prisma.holding.findFirst({ where: { id: holdingId, portfolio: { userId } }, include: { asset: true } });
+  if (!holding) throw new UserError('보유 종목을 찾을 수 없습니다.');
+  return prisma.$transaction(async (tx) => {
+    await lockHolding(tx, holding.id);
+    const txns = await tx.transaction.findMany({ where: { holdingId: holding.id }, orderBy: { tradeAt: 'asc' } });
+    for (const t of txns) await addCash(tx, t.portfolioId, t.currency, dec(t.cashDelta).neg());
+    // A sell's lot consumptions go with it; the lots go with the holding
+    await tx.transaction.deleteMany({ where: { holdingId: holding.id } });
+    await tx.holding.delete({ where: { id: holding.id } });
+    await audit(tx, userId, 'holding', holding.id, 'delete', { asset: holding.asset.name, portfolioId: holding.portfolioId, transactions: txns.map((t) => t.id) });
+    return { portfolioId: holding.portfolioId, name: holding.asset.name, count: txns.length, firstDate: txns[0] ? kstIso(txns[0].tradeAt).slice(0, 10) : null };
+  });
+}
