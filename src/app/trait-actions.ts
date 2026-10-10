@@ -24,7 +24,7 @@ export interface TraitResult {
 async function run(fn: () => Promise<string | { ok: string; id?: string }>): Promise<TraitResult> {
   try {
     const r = await fn();
-    for (const p of ['/traits', '/dashboard', '/journal']) revalidatePath(p, 'layout');
+    for (const p of ['/traits', '/dashboard', '/journal', '/assets']) revalidatePath(p, 'layout');
     return typeof r === 'string' ? { ok: r } : r;
   } catch (e) {
     if (e instanceof UserError) return { error: e.message };

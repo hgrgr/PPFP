@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { buyAction, deleteTransactionAction, removeHoldingAction, sellAction, splitAction, valuationAction } from '@/app/actions';
+import { buyAction, deleteTransactionAction, moveHoldingAction, removeHoldingAction, sellAction, splitAction, valuationAction } from '@/app/actions';
 import { ActionForm, DateTimeField, Submit } from '@/components/forms';
 import { SellForm } from '@/components/sell-form';
 import { Dec } from '@/domain/decimal';
@@ -32,11 +32,12 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     },
   });
   if (!h) notFound();
-  const [quotes, usd, journals, txnJournals] = await Promise.all([
+  const [quotes, usd, journals, txnJournals, others] = await Promise.all([
     getQuotes(user.id, [h.asset]),
     fxRate(user.id, 'USD'),
     listJournals(user.id, { assetId: h.assetId }),
     journalsByTxn(user.id, h.transactions.map((t) => t.id)),
+    prisma.portfolio.findMany({ where: { userId: user.id, id: { not: h.portfolioId } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true } }),
   ]);
   const knowledge = await relatedView(user.id, { type: 'asset', id: h.assetId });
   const quote = quotes.get(h.assetId);
@@ -301,6 +302,40 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
           </table>
         </div>
       </section>
+
+      {others.length > 0 && (
+        <section className="card" aria-label="포트폴리오 옮기기">
+          <div className="spread">
+            <div className="stack" style={{ gap: 4 }}>
+              <h2>다른 포트폴리오로 옮기기</h2>
+              <p className="sub">
+                거래 {h.transactions.length}건과 Lot을 함께 옮겨 처음부터 그 포트폴리오에서 산 것처럼 만듭니다. 그곳에 같은 종목이 있으면 하나로 합칩니다. <em>두 포트폴리오 현금 유지</em>를 켜 두면 매매 대금만큼 현금을 한쪽에서 다른 쪽으로 보내 두 포트폴리오의 현금이 바뀌지 않습니다.
+              </p>
+            </div>
+            <ActionForm action={moveHoldingAction} className="inline" confirm={`${h.asset.name}을(를) ${h.portfolio.name}에서 고른 포트폴리오로 옮길까요?`}>
+              <input type="hidden" name="id" value={h.id} />
+              <input type="hidden" name="back" value="holding" />
+              <label className="check">
+                <input type="checkbox" name="settle" value="1" defaultChecked />
+                두 포트폴리오 현금 유지
+              </label>
+              <select name="to" aria-label="옮길 포트폴리오" defaultValue="" required style={{ width: 'auto' }}>
+                <option value="" disabled>
+                  옮길 곳
+                </option>
+                {others.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <Submit className="btn" pendingText="옮기는 중…">
+                옮기기
+              </Submit>
+            </ActionForm>
+          </div>
+        </section>
+      )}
 
       <section className="card danger-zone" aria-label="종목 제거">
         <div className="spread">

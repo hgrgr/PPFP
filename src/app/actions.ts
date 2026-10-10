@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { LOT_METHODS } from '@/domain/lots';
 import { kstDate, parseKstLocal, prisma } from '@/server/db';
+import { money } from '@/lib/format';
+import { fxRate as currentFx } from '@/server/market';
 import { createSession, destroySession, requireUser } from '@/server/auth';
 import { hashPassword, verifyPassword } from '@/server/crypto';
 import { createManualAsset, ensureListedAsset } from '@/server/services/assets';
@@ -22,7 +24,7 @@ import { removeConnection, saveConnection, testConnection } from '@/server/servi
 import { addWatch, removeWatch } from '@/server/services/market-board';
 import { syncExchangeHistory } from '@/server/services/exchange-sync';
 import { importHoldings, readPastedHoldings, uploadedTableText, type ImportSelection, type ImportSource } from '@/server/services/imports';
-import { deleteTransaction, recordBuy, removeHolding, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
+import { deleteTransaction, moveHolding, recordBuy, removeHolding, recordCash, recordSell, recordSplit, recordValuation } from '@/server/services/trading';
 
 export interface ActionState {
   ok?: string;
@@ -268,6 +270,43 @@ export async function removeHoldingAction(_: ActionState, f: FormData) {
   // From the stock's own page there is nothing left to show: back to the portfolio
   if (r.ok && /^\/portfolios\/[\w-]+$/.test(s(f, 'back'))) redirect(s(f, 'back'));
   return r;
+}
+
+export async function moveHoldingAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  let dest = '';
+  const r = await run(async () => {
+    if (!s(f, 'to')) throw new UserError('옮길 포트폴리오를 고르세요.');
+    const moved = await moveHolding(user.id, s(f, 'id'), s(f, 'to'), { settle: s(f, 'settle') === '1', usdkrw: (await currentFx(user.id, 'USD')).toString() });
+    if (moved.firstDate && moved.firstDate < kstDate()) await rebuildSnapshots(user.id, moved.firstDate);
+    dest = moved.holdingId;
+    const short = moved.negativeCash.length ? ` ${moved.to}의 현금이 ${moved.negativeCash.map((c) => money(c.amount.toString(), c.currency)).join(', ')}이 되었습니다. 필요하면 입금을 기록하세요.` : '';
+    const settled = moved.settled.length ? ` 현금 ${moved.settled.map((c) => money(c.amount.abs().toString(), c.currency)).join(', ')}을(를) ${moved.settled[0].amount.isPos() ? `${moved.from}에서 ${moved.to}(으)로` : `${moved.to}에서 ${moved.from}(으)로`} 보내 두 포트폴리오의 현금은 그대로입니다.` : '';
+    return `${moved.name}을(를) ${moved.from}에서 ${moved.to}(으)로 옮겼습니다 (거래 ${moved.count}건${moved.merged ? ', 기존 보유와 합침' : ''}).${settled}${short}`;
+  }, ['/']);
+  // The stock's page now lives under the new holding
+  if (r.ok && dest && s(f, 'back') === 'holding') redirect(`/holdings/${dest}`);
+  return r;
+}
+
+/** Take an asset out of every portfolio that holds it. */
+export async function removeAssetAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const holdings = await prisma.holding.findMany({ where: { assetId: s(f, 'assetId'), portfolio: { userId: user.id } }, select: { id: true } });
+    if (!holdings.length) throw new UserError('보유 중인 포트폴리오가 없습니다.');
+    let name = '';
+    let count = 0;
+    let first: string | null = null;
+    for (const h of holdings) {
+      const res = await removeHolding(user.id, h.id);
+      name = res.name;
+      count += res.count;
+      if (res.firstDate && (!first || res.firstDate < first)) first = res.firstDate;
+    }
+    if (first && first < kstDate()) await rebuildSnapshots(user.id, first);
+    return `${name}을(를) 포트폴리오 ${holdings.length}곳에서 모두 뺐습니다 (거래 ${count}건 삭제). 감사 로그에는 남아 있습니다.`;
+  }, ['/']);
 }
 
 // ── Broker links, imports & jobs ────────────────────

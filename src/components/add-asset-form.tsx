@@ -18,11 +18,14 @@ const MANUAL_TYPES: [string, string][] = [
 export function AddAssetForm({
   action,
   portfolioId,
+  portfolios,
   marketLinked,
   usdkrw,
 }: {
   action: (s: ActionState, f: FormData) => Promise<ActionState>;
-  portfolioId: string;
+  /** Fixed portfolio, or pick one from `portfolios` */
+  portfolioId?: string;
+  portfolios?: { id: string; name: string }[];
   marketLinked: boolean;
   usdkrw: string;
 }) {
@@ -32,7 +35,21 @@ export function AddAssetForm({
   const liability = kind === 'manual' && type === 'LIABILITY';
   return (
     <ActionForm action={action} className="grid" resetOnSuccess>
-      <input type="hidden" name="portfolioId" value={portfolioId} />
+      {portfolioId ? (
+        <input type="hidden" name="portfolioId" value={portfolioId} />
+      ) : (
+        <label className="field full">
+          담을 포트폴리오
+          <select name="portfolioId" required defaultValue="">
+            <option value="" disabled>
+              포트폴리오 고르기
+            </option>
+            {portfolios?.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <input type="hidden" name="kind" value={kind} />
       <div className="seg full" role="group" aria-label="자산 종류" style={{ justifySelf: 'start' }}>
         <button type="button" aria-pressed={kind === 'listed'} onClick={() => setKind('listed')}>
