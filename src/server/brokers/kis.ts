@@ -42,6 +42,7 @@ import {
   type RankingType,
   type TokenStore,
 } from './types';
+import { noteLimited } from '../services/api-usage';
 
 const REAL = 'https://openapi.koreainvestment.com:9443';
 const PAPER = 'https://openapivts.koreainvestment.com:29443';
@@ -145,6 +146,7 @@ export class KisAdapter implements BrokerAdapter {
         continue;
       }
       // EGW00201: calls per second exceeded
+      if (code === 'EGW00201') noteLimited(null, 'broker:KIS');
       if ((code === 'EGW00201' || r.status >= 500) && attempt < 3) {
         await sleep(backoff(attempt));
         continue;

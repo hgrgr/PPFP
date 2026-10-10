@@ -1,8 +1,8 @@
 import { AskAiButton } from '@/components/ai/launcher';
 import { ReturnChart } from '@/components/charts';
-import { ScopeSelect } from '@/components/client-bits';
+import { CurrencyToggle, ScopeSelect } from '@/components/client-bits';
 import { PeriodBar } from '@/components/period-bar';
-import { krwShort, signedKrwShort } from '@/lib/format';
+import { krwShort, signedKrwShort, signedMoney } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { performanceReport } from '@/server/services/performance';
 import { userGraph } from '@/server/services/portfolios';
@@ -16,7 +16,7 @@ const signed = (v: number | null, dp = 2) => (v === null ? '—' : `${v > 0 ? '+
 const tone = (v: number | null) => (v === null ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '');
 const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)'];
 
-function Bars({ rows, compact }: { compact?: boolean; rows: { key: string; label: string; sub?: string; pnlKrw: number; contributionPct: number | null }[] }) {
+function Bars({ rows, compact }: { compact?: boolean; rows: { key: string; label: string; sub?: string; pnlKrw: number; contributionPct: number | null; local?: string }[] }) {
   const max = Math.max(...rows.map((r) => Math.abs(r.contributionPct ?? 0)), 0.0001);
   return (
     <ul className={`contrib${compact ? ' compact' : ''}`}>
@@ -33,7 +33,11 @@ function Bars({ rows, compact }: { compact?: boolean; rows: { key: string; label
               <span className={`bar ${v >= 0 ? 'pos' : 'neg'}`} style={v >= 0 ? { left: '50%', width: w } : { right: '50%', width: w }} />
             </span>
             <span className={`num ${tone(v)}`}>{signed(r.contributionPct)}</span>
-            {!compact && <span className="num sub">{signedKrwShort(r.pnlKrw)}</span>}
+            {!compact && (
+              <span className="num sub" title={r.local ? signedKrwShort(r.pnlKrw) : undefined}>
+                {r.local ?? signedKrwShort(r.pnlKrw)}
+              </span>
+            )}
           </li>
         );
       })}
@@ -45,14 +49,11 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
   const user = await requireUser();
   const sp = await searchParams;
   const params = { p: one(sp.p), period: one(sp.period), from: one(sp.from), to: one(sp.to) };
-  const local = one(sp.fx) === 'local';
+  // ?fx= from an old link wins; otherwise the saved 원화 / 현지 통화 choice
+  const local = one(sp.fx) ? one(sp.fx) === 'local' : user.localCurrency;
   const [r, graph] = await Promise.all([performanceReport(user.id, params.p ?? null, params, !local), userGraph(user.id)]);
   const mine = r.mine === null ? null : r.mine * 100;
   const series = [{ key: 'mine', label: r.scope.name, color: 'var(--ink)', width: 2.5 }, ...r.benches.filter((b) => b.available).map((b, i) => ({ key: b.symbol, label: b.label, color: COLORS[i] }))];
-  const fxHref = (v: string | undefined) => {
-    const q = new URLSearchParams(Object.entries({ ...params, fx: v }).filter(([, x]) => x) as [string, string][]);
-    return `/performance?${q}`;
-  };
   const c = r.contributions;
 
   return (
@@ -66,11 +67,12 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
         </div>
         <div className="inline">
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
+          <CurrencyToggle on={local} />
           <AskAiButton label="AI 성과 해석" prompt={`${r.scope.name}의 ${r.range.start}~${r.range.end} 성과를 코스피 200, S&P 500, 나스닥 100과 비교해서 해석해 줘. 수익에 가장 크게 기여한 종목과 깎아 먹은 종목, 앞으로 고려할 점을 알려 줘.`} />
         </div>
       </header>
 
-      <PeriodBar base="/performance" params={{ ...params, fx: local ? 'local' : undefined }} range={r.range} />
+      <PeriodBar base="/performance" params={params} range={r.range} />
 
       <section className="row" aria-label="요약">
         <div className="card kpi">
@@ -102,14 +104,10 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
                 </span>
               ))}
             </span>
-            <nav className="seg" aria-label="통화">
-              <a href={fxHref(undefined)} aria-current={!local ? 'true' : undefined}>원화 기준</a>
-              <a href={fxHref('local')} aria-current={local ? 'true' : undefined}>현지 통화</a>
-            </nav>
           </div>
         </div>
         <ReturnChart data={r.chart} series={series} />
-        <p className="sub">지수 대신 같은 지수를 따르는 ETF(KODEX 200, VOO, QQQ)의 종가를 씁니다. 배당은 빠져 있어 지수의 총수익률보다 조금 낮습니다. 원화 기준은 그날의 원/달러 환율로 바꾼 수익률입니다.</p>
+        <p className="sub">지수 대신 같은 지수를 따르는 ETF(KODEX 200, VOO, QQQ)의 종가를 씁니다. 배당은 빠져 있어 지수의 총수익률보다 조금 낮습니다. {local ? '현지 통화로 보는 중이라 S&P 500·나스닥 100은 달러 기준 수익률입니다(위쪽 ₩ 원화로 바꾸면 그날 환율로 바꾼 원화 수익률).' : '원화로 보는 중이라 S&P 500·나스닥 100은 그날의 원/달러 환율로 바꾼 수익률입니다(위쪽 $ 현지 통화로 바꾸면 달러 기준).'}</p>
       </section>
 
       <section className="row" style={{ alignItems: 'flex-start' }}>
@@ -118,7 +116,16 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
             <h2>종목별 기여도</h2>
             <span className="sub">기간 손익 {signedKrwShort(c.totalPnlKrw)} · 시작 평가액 {krwShort(r.startTotal)}</span>
           </div>
-          {c.rows.length ? <Bars rows={c.rows.map((x) => ({ ...x, sub: x.group }))} /> : <p className="empty">이 기간에 손익이 난 종목이 없습니다.</p>}
+          {c.rows.length ? (
+            <Bars
+              rows={c.rows.map((x) => {
+                const ccy = r.currencies[x.key];
+                return { ...x, sub: x.group, local: local && ccy && ccy !== 'KRW' ? signedMoney(x.pnlKrw / r.usdkrw, ccy) : undefined };
+              })}
+            />
+          ) : (
+            <p className="empty">이 기간에 손익이 난 종목이 없습니다.</p>
+          )}
           <p className="sub">기여도 = 종목의 기간 손익(지금 평가액 − 시작 평가액 + 매도·배당으로 받은 돈 − 매수에 쓴 돈) ÷ 기간 시작 평가액. 합치면 단순 수익률이 되어 위의 시간가중수익률과는 다를 수 있습니다.</p>
         </div>
         <div className="card stack" id="contrib-group">

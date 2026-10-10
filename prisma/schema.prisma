@@ -67,20 +67,22 @@ enum TxnType {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  baseCurrency String   @default("KRW")
-  redUp        Boolean  @default(true) // 상승 빨강 / 하락 파랑
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  baseCurrency  String   @default("KRW")
+  redUp         Boolean  @default(true) // 상승 빨강 / 하락 파랑
+  /// Show foreign assets in their own currency (converted at the latest published rate)
+  localCurrency Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
-  sessions        Session[]
-  brokers         BrokerConnection[]
-  watchlist       WatchItem[]
-  portfolios      Portfolio[]
-  assets          Asset[]
-  auditLogs       AuditLog[]
+  sessions         Session[]
+  brokers          BrokerConnection[]
+  watchlist        WatchItem[]
+  portfolios       Portfolio[]
+  assets           Asset[]
+  auditLogs        AuditLog[]
   journals         JournalEntry[]
   journalTemplates JournalTemplate[]
   journalImages    JournalImage[]
@@ -114,27 +116,27 @@ model Session {
 
 /// A user's brokerage OpenAPI link. Secret and cached access token are AES-256-GCM encrypted.
 model BrokerConnection {
-  id              String    @id @default(cuid())
-  userId          String
-  broker          Broker
-  label           String
-  appKey          String
-  secretEncrypted String
+  id                 String    @id @default(cuid())
+  userId             String
+  broker             Broker
+  label              String
+  appKey             String
+  secretEncrypted    String
   /// KIS: "12345678-01". Toss: account sequence. Others bind the account to the app key.
-  accountNo       String?
+  accountNo          String?
   /// Mock-trading environment (KIS, Kiwoom).
-  paper           Boolean   @default(false)
-  tokenEncrypted  String?
-  tokenExpiresAt  DateTime?
+  paper              Boolean   @default(false)
+  tokenEncrypted     String?
+  tokenExpiresAt     DateTime?
   /// Crypto exchanges: portfolio the trade history is replayed into, where it started, and how far it has been synced.
   historyPortfolioId String?
   historySince       DateTime?
   historySyncedTo    DateTime?
-  lastSyncAt      DateTime?
-  lastError       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastSyncAt         DateTime?
+  lastError          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -154,26 +156,26 @@ model WatchItem {
 }
 
 model Portfolio {
-  id           String    @id @default(cuid())
-  userId       String
-  name         String
-  description  String?
-  color        String    @default("#2F4FC9")
-  baseCurrency String    @default("KRW")
-  lotMethod    LotMethod @default(FIFO)
-  archived     Boolean   @default(false)
-  sortOrder    Int       @default(0)
+  id             String    @id @default(cuid())
+  userId         String
+  name           String
+  description    String?
+  color          String    @default("#2F4FC9")
+  baseCurrency   String    @default("KRW")
+  lotMethod      LotMethod @default(FIFO)
+  archived       Boolean   @default(false)
+  sortOrder      Int       @default(0)
   /// Notify when a target weight is off by more than `driftTolerance` (fraction, 0.05 = 5%p).
-  driftAlert     Boolean  @default(false)
-  driftTolerance Decimal  @default(0.05) @db.Decimal(20, 10)
+  driftAlert     Boolean   @default(false)
+  driftTolerance Decimal   @default(0.05) @db.Decimal(20, 10)
   /// Target keys out of band at the last check, so each breach is told once.
-  driftBreaches  String[] @default([])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  driftBreaches  String[]  @default([])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentEdges  PortfolioEdge[] @relation("child")
-  childEdges   PortfolioEdge[] @relation("parent")
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentEdges  PortfolioEdge[]   @relation("child")
+  childEdges   PortfolioEdge[]   @relation("parent")
   holdings     Holding[]
   cash         CashBalance[]
   transactions Transaction[]
@@ -187,8 +189,8 @@ model Portfolio {
 model PortfolioEdge {
   parentId   String
   childId    String
-  allocation Decimal  @db.Decimal(20, 10)
-  createdAt  DateTime @default(now())
+  allocation Decimal   @db.Decimal(20, 10)
+  createdAt  DateTime  @default(now())
   parent     Portfolio @relation("parent", fields: [parentId], references: [id], onDelete: Cascade)
   child      Portfolio @relation("child", fields: [childId], references: [id], onDelete: Cascade)
 
@@ -197,20 +199,20 @@ model PortfolioEdge {
 }
 
 model Asset {
-  id          String     @id @default(cuid())
-  userId      String
-  type        AssetType
-  name        String
-  symbol      String?    // KRX 6 digits or US ticker, for listed assets
-  market      String?    // KOSPI, KOSDAQ, NASDAQ ...
-  currency    String     @default("KRW")
-  priceSource DataSource @default(MANUAL)
-  manualPrice Decimal?   @db.Decimal(24, 6)
+  id            String     @id @default(cuid())
+  userId        String
+  type          AssetType
+  name          String
+  symbol        String? // KRX 6 digits or US ticker, for listed assets
+  market        String? // KOSPI, KOSDAQ, NASDAQ ...
+  currency      String     @default("KRW")
+  priceSource   DataSource @default(MANUAL)
+  manualPrice   Decimal?   @db.Decimal(24, 6)
   manualPriceAt DateTime?
-  meta        Json?      // type specific: coupon, maturity, address, area ...
-  createdAt   DateTime   @default(now())
+  meta          Json? // type specific: coupon, maturity, address, area ...
+  createdAt     DateTime   @default(now())
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   holdings Holding[]
   journals JournalEntry[]
   traits   AssetTrait[]
@@ -254,26 +256,26 @@ model Lot {
 }
 
 model Transaction {
-  id          String    @id @default(cuid())
-  portfolioId String
-  holdingId   String?
-  type        TxnType
-  tradeAt     DateTime
-  qty         Decimal?  @db.Decimal(28, 8)
-  price       Decimal?  @db.Decimal(24, 6)
-  fee         Decimal   @default(0) @db.Decimal(24, 6)
-  tax         Decimal   @default(0) @db.Decimal(24, 6)
-  fxRate      Decimal   @default(1) @db.Decimal(20, 10)
-  splitRatio  Decimal?  @db.Decimal(20, 10)
-  currency    String
-  cashDelta   Decimal   @default(0) @db.Decimal(24, 6)
-  flow        Decimal   @default(0) @db.Decimal(24, 6)
-  lotMethod   LotMethod?
-  memo        String?
-  externalRef String?   // e.g. broker order id, for idempotency
+  id           String     @id @default(cuid())
+  portfolioId  String
+  holdingId    String?
+  type         TxnType
+  tradeAt      DateTime
+  qty          Decimal?   @db.Decimal(28, 8)
+  price        Decimal?   @db.Decimal(24, 6)
+  fee          Decimal    @default(0) @db.Decimal(24, 6)
+  tax          Decimal    @default(0) @db.Decimal(24, 6)
+  fxRate       Decimal    @default(1) @db.Decimal(20, 10)
+  splitRatio   Decimal?   @db.Decimal(20, 10)
+  currency     String
+  cashDelta    Decimal    @default(0) @db.Decimal(24, 6)
+  flow         Decimal    @default(0) @db.Decimal(24, 6)
+  lotMethod    LotMethod?
+  memo         String?
+  externalRef  String? // e.g. broker order id, for idempotency
   /// Where an imported opening lot came from, e.g. "KIS:12345678-01" or "paste:하나증권".
   importSource String?
-  createdAt   DateTime  @default(now())
+  createdAt    DateTime   @default(now())
 
   portfolio    Portfolio        @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   holding      Holding?         @relation(fields: [holdingId], references: [id], onDelete: SetNull)
@@ -289,14 +291,14 @@ model Transaction {
 
 /// How much of which lot a SELL consumed, and the profit realized on it.
 model LotConsumption {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   txnId       String
   lotId       String
-  qty         Decimal  @db.Decimal(28, 8)
-  cost        Decimal  @db.Decimal(24, 6)
-  proceeds    Decimal  @db.Decimal(24, 6)
-  pnl         Decimal  @db.Decimal(24, 6)
-  pnlBase     Decimal  @db.Decimal(24, 6)
+  qty         Decimal @db.Decimal(28, 8)
+  cost        Decimal @db.Decimal(24, 6)
+  proceeds    Decimal @db.Decimal(24, 6)
+  pnl         Decimal @db.Decimal(24, 6)
+  pnlBase     Decimal @db.Decimal(24, 6)
   holdingDays Int
 
   txn Transaction @relation(fields: [txnId], references: [id], onDelete: Cascade)
@@ -328,7 +330,7 @@ model PriceDaily {
 }
 
 model FxDaily {
-  pair String   // e.g. USDKRW
+  pair String // e.g. USDKRW
   date DateTime @db.Date
   rate Decimal  @db.Decimal(20, 10)
 
@@ -343,7 +345,7 @@ model Snapshot {
   value       Decimal  @db.Decimal(24, 6)
   flow        Decimal  @db.Decimal(24, 6)
   cash        Decimal  @db.Decimal(24, 6)
-  holdings    Json     // { [holdingId]: valueBase }
+  holdings    Json // { [holdingId]: valueBase }
   createdAt   DateTime @default(now())
 
   portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
@@ -550,16 +552,16 @@ model PortfolioTarget {
 
 /// In-app inbox; the same message also goes to the user's push subscriptions.
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  kind      String
-  title     String
-  body      String
-  url       String?
+  id               String    @id @default(cuid())
+  userId           String
+  kind             String
+  title            String
+  body             String
+  url              String?
   /// AI advisor conversation that analyzed this alert or holds this briefing
   aiConversationId String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  readAt           DateTime?
+  createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -704,19 +706,19 @@ model ApiKey {
 /// AI advisor settings: which model each agent uses (`{ MANAGER: { provider, model }, … }`),
 /// a monthly spending cap, and what runs by itself. API keys for each AI company are in ApiKey.
 model AiSettings {
-  userId       String   @id
-  agentModels  Json     @default("{}")
+  userId           String   @id
+  agentModels      Json     @default("{}")
   /// Monthly cap in USD, estimated from token usage; null = no cap
-  monthlyLimit Decimal? @db.Decimal(10, 2)
-  webSearch    Boolean  @default(true)
+  monthlyLimit     Decimal? @db.Decimal(10, 2)
+  webSearch        Boolean  @default(true)
   /// Morning briefing: on/off, hour (KST), weekdays only, and the KST date of the last one sent
-  briefing         Boolean @default(false)
-  briefingHour     Int     @default(8)
-  briefingWeekdays Boolean @default(true)
+  briefing         Boolean  @default(false)
+  briefingHour     Int      @default(8)
+  briefingWeekdays Boolean  @default(true)
   briefingLastDate String?
   /// Have the advisor look into each price / target-weight alert as it arrives
-  alertAnalysis    Boolean @default(false)
-  updatedAt    DateTime @updatedAt
+  alertAnalysis    Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -837,4 +839,31 @@ model Goal {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// Calls to outside services per day, for the usage page. userId is "" for calls not tied to a user (broker market data).
+model ApiUsage {
+  userId  String
+  /// "anthropic", "openai", "kakao-book", "github", "broker:KIS" ...
+  service String
+  /// KST date
+  day     DateTime @db.Date
+  calls   Int      @default(0)
+  errors  Int      @default(0)
+  /// Refused for going over a rate limit or quota (HTTP 429 and the like)
+  limited Int      @default(0)
+  lastAt  DateTime @default(now())
+
+  @@id([userId, service, day])
+  @@index([userId, day])
+}
+
+/// The latest rate-limit headers a service sent back (requests/tokens left and when they reset).
+model ApiLimit {
+  userId  String
+  service String
+  headers Json
+  at      DateTime @default(now())
+
+  @@id([userId, service])
 }

@@ -5,6 +5,7 @@
  * reused (memory first, then the encrypted copy in the database).
  */
 import { BrokerApiError, type BrokerId, type StoredToken, type TokenStore } from './types';
+import { noteCall, outcomeOf } from '../services/api-usage';
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -76,8 +77,10 @@ export async function fetchJson(broker: BrokerId, url: string, init: RequestInit
     res = await fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(20_000) });
   } catch (e) {
     const timeout = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    noteCall(null, `broker:${broker}`, 'error');
     throw new BrokerApiError(timeout ? '증권사 API 응답이 너무 늦습니다.' : '증권사 API 서버에 연결하지 못했습니다.', broker, 0, timeout ? 'timeout' : 'network');
   }
+  noteCall(null, `broker:${broker}`, outcomeOf(res.status), res.headers);
   const text = await res.text();
   let body: Record<string, unknown> = {};
   try {

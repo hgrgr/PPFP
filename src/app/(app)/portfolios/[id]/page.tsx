@@ -9,12 +9,14 @@ import {
   updatePortfolioAction,
 } from '@/app/actions';
 import { AddAssetForm } from '@/components/add-asset-form';
+import { FxAmount } from '@/components/amount';
+import { CurrencyToggle } from '@/components/client-bits';
 import { PortfolioTargets } from '@/components/alerts';
 import { ActionForm, DateTimeField, Submit } from '@/components/forms';
 import { Dec } from '@/domain/decimal';
 import { LOT_METHOD_LABEL, LOT_METHODS } from '@/domain/lots';
 import { effectiveWeights } from '@/domain/portfolio-graph';
-import { krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
+import { krw, krwShort, money, pct, qty, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { portfolioTargets } from '@/server/services/alerts';
@@ -69,6 +71,7 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
           {p.description && <p className="sub">{p.description}</p>}
         </div>
         <div className="inline">
+          <CurrencyToggle on={user.localCurrency} />
           <a className="btn" href={`/dashboard?p=${id}`}>기간 분석</a>
           <a className="btn" href={`/transactions?p=${id}`}>거래 내역</a>
           <a className="btn" href={`/import?p=${id}`}>보유종목 가져오기</a>
@@ -112,9 +115,11 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
                       <td className="money">{qty(h.qty.toString())}</td>
                       <td className="muted">{h.lots}</td>
                       <td>{h.price ? money(h.price.toString(), h.currency) : '—'}{h.stale && <span className="sub">지연</span>}</td>
-                      <td className="money">{krwShort(h.valueFull.toString())}</td>
+                      <td className="money">
+                        <FxAmount value={h.valueFull.toNumber()} currency={h.currency} usdkrw={state.usdkrw.toNumber()} local={user.localCurrency} />
+                      </td>
                       <td className={`money ${tone(u.toString())}`}>
-                        {signedKrwShort(u.toString())}
+                        <FxAmount value={u.toNumber()} currency={h.currency} usdkrw={state.usdkrw.toNumber()} local={user.localCurrency} signed />
                         <span className="sub">{h.costFull.isZero() ? '' : pct(u.div(h.costFull.abs()).toString())}</span>
                       </td>
                       <td>

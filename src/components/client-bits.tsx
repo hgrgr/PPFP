@@ -1,7 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { setLocalCurrencyAction } from '@/app/actions';
+
+/** 원화 / 현지 통화: how foreign assets' amounts are shown, saved for the user. */
+export function CurrencyToggle({ on }: { on: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const set = (v: boolean) =>
+    v !== on &&
+    start(async () => {
+      await setLocalCurrencyAction(v);
+      router.refresh();
+    });
+  return (
+    <div className="seg" role="group" aria-label="해외 자산 금액 통화" aria-busy={pending} title="해외 자산의 평가액·손익을 원화로 볼지, 그 자산의 통화로 볼지 고릅니다">
+      <button type="button" aria-pressed={!on} onClick={() => set(false)}>
+        ₩ 원화
+      </button>
+      <button type="button" aria-pressed={on} onClick={() => set(true)}>
+        $ 현지 통화
+      </button>
+    </div>
+  );
+}
 
 export function PrivacyToggle() {
   const [on, setOn] = useState(false);

@@ -1,17 +1,19 @@
 import { addAssetAndBuyAction } from '@/app/actions';
 import { AddAssetForm } from '@/components/add-asset-form';
 import { AssetBookView } from '@/components/asset-book';
+import { CurrencyToggle } from '@/components/client-bits';
 import { krw, pct, signedKrwShort, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { assetBook } from '@/server/services/asset-book';
+import { fxQuote } from '@/server/market';
 
 export const metadata = { title: '보유 자산' };
 export const dynamic = 'force-dynamic';
 
 export default async function AssetsPage() {
   const user = await requireUser();
-  const [book, linked] = await Promise.all([assetBook(user.id), prisma.brokerConnection.count({ where: { userId: user.id } })]);
+  const [book, linked, fx] = await Promise.all([assetBook(user.id), prisma.brokerConnection.count({ where: { userId: user.id } }), fxQuote(user.id, 'USD')]);
   const held = book.assets.filter((a) => a.type !== 'LIABILITY');
   const value = held.reduce((s, a) => s + a.value, 0);
   const cost = held.reduce((s, a) => s + a.cost, 0);
@@ -25,13 +27,17 @@ export default async function AssetsPage() {
         <div className="stack" style={{ gap: 6 }}>
           <h1>보유 자산</h1>
           <p className="sub">가진 종목과 자산을 포트폴리오와 상관없이 한곳에서 봅니다. 어느 포트폴리오에 담겼는지, 어떤 성질인지 보고, 옮기거나 빼거나 더 살 수 있습니다.</p>
+          <p className="sub">USD/KRW {fx.rate.toFixed(2)} ({fx.label}){user.localCurrency ? ' · 해외 자산은 이 환율로 바꾼 달러 금액을 먼저 보여 줍니다.' : ''}</p>
         </div>
-        <a className="btn primary" href="#add">
-          + 자산 추가
-        </a>
+        <div className="inline">
+          <CurrencyToggle on={user.localCurrency} />
+          <a className="btn primary" href="#add">
+            + 자산 추가
+          </a>
+        </div>
       </header>
 
-      <section className="row asset-kpis">
+      <section className="row four">
         <div className="card kpi">
           <div className="label">보유 자산</div>
           <div className="value">{held.length}개</div>
@@ -56,7 +62,7 @@ export default async function AssetsPage() {
         </div>
       </section>
 
-      <AssetBookView book={book} />
+      <AssetBookView book={book} local={user.localCurrency} />
 
       <section className="card" id="add">
         <h2>자산 추가 · 매수</h2>

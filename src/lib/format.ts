@@ -34,6 +34,20 @@ export function money(v: Num, currency: string): string {
   return (x < 0 ? '−' : '') + '$' + Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Like money(), with a + sign on gains */
+export function signedMoney(v: Num, currency: string): string {
+  const x = n(v);
+  if (!Number.isFinite(x)) return '—';
+  return (x > 0 ? '+' : '') + money(x, currency);
+}
+
+/** Small dollar amounts (AI costs): cents, or a tenth of a cent below a dollar */
+export function usd(v: Num): string {
+  const x = n(v);
+  if (!Number.isFinite(x)) return '—';
+  return '$' + (Math.abs(x) < 1 && x !== 0 ? x.toFixed(3) : x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+}
+
 export function pct(v: Num, dp = 2, signed = true): string {
   const x = n(v);
   if (!Number.isFinite(x)) return '—';

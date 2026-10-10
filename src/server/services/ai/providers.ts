@@ -10,6 +10,7 @@ import { PROVIDER_ORDER, PROVIDERS, type ProviderId } from '@/domain/ai-provider
 import { prisma } from '../../db';
 import { UserError } from '../portfolios';
 import { serviceKey } from '../api-keys';
+import { noteCall, outcomeOf } from '../api-usage';
 
 /** An error answer from an OpenAI-compatible endpoint. */
 export class ProviderError extends Error {
@@ -81,6 +82,7 @@ export async function compatStep(
     signal: opts.signal,
     cache: 'no-store',
   });
+  noteCall(userId, provider, outcomeOf(res.status), res.headers);
   if (!res.ok || !res.body) throw new ProviderError(provider, res.status, await errorMessage(res));
   const state = emptyState();
   const reader = res.body.getReader();

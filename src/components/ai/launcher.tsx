@@ -4,6 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AGENTS, type AgentKind } from '@/domain/ai';
 import { AiChat, type SageOption } from './chat';
+import { UsageChip } from '../usage-chip';
 
 export interface AskAiDetail {
   prompt?: string;
@@ -31,7 +32,18 @@ export function AskAiButton({ label, prompt, agent, sageId, className = 'btn' }:
  * Floating "AI" button (Alt+K) and the side window it opens. The chat knows which
  * screen it was opened on; buttons elsewhere open it with a question via askAi().
  */
-export function AiLauncher({ sages, configured, models }: { sages: SageOption[]; configured: boolean; models: Partial<Record<AgentKind, string | null>> }) {
+export function AiLauncher({
+  sages,
+  configured,
+  models,
+  spend,
+}: {
+  sages: SageOption[];
+  configured: boolean;
+  models: Partial<Record<AgentKind, string | null>>;
+  /** This month's AI spend, shown before asking */
+  spend: { spent: number; limit: number | null; usdkrw: number } | null;
+}) {
   const pathname = usePathname();
   const search = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -101,6 +113,7 @@ export function AiLauncher({ sages, configured, models }: { sages: SageOption[];
             </button>
           </div>
         </div>
+        {spend && <UsageChip {...spend} />}
         {configured ? (
           <AiChat
             key={session.key}

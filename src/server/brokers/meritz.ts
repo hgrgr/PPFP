@@ -26,6 +26,7 @@ import {
   type PriceQuote,
   type TokenStore,
 } from './types';
+import { noteLimited } from '../services/api-usage';
 
 const BASE = 'https://openapi.imeritz.com:9443';
 const MRKT_CLS: Record<UsMarket, string> = { NASDAQ: 'OQ', NYSE: 'NY', AMEX: 'AX' };
@@ -131,6 +132,7 @@ export class MeritzAdapter implements BrokerAdapter {
         continue;
       }
       // EGW00200: calls per second exceeded
+      if (code === 'EGW00200') noteLimited(null, 'broker:MERITZ');
       if ((code === 'EGW00200' || r.status === 429) && attempt < 3) {
         await sleep(backoff(attempt));
         continue;

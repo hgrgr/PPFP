@@ -8,6 +8,7 @@
  */
 import { memoryTokenStore, type TokenStore } from '../brokers/types';
 import { TokenManager } from '../brokers/http';
+import { noteCall, outcomeOf } from '../services/api-usage';
 
 export interface TossCredentials {
   clientId: string;
@@ -180,6 +181,7 @@ export class TossClient {
         headers: { Authorization: `Bearer ${await this.token()}`, Accept: 'application/json', ...headers },
         cache: 'no-store',
       });
+      noteCall(null, 'broker:TOSS', outcomeOf(res.status), res.headers);
       if (res.ok) return ((await res.json()) as { result: T }).result;
 
       if (res.status === 401 && !refreshed) {

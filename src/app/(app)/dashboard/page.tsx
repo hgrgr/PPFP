@@ -1,5 +1,7 @@
 import { refreshDataAction } from '@/app/actions';
-import { AutoRefresh, PrivacyToggle, ScopeSelect } from '@/components/client-bits';
+import { AutoRefresh, CurrencyToggle, PrivacyToggle, ScopeSelect } from '@/components/client-bits';
+import { FxAmount } from '@/components/amount';
+import { fxQuote } from '@/server/market';
 import { ValueChart, WeightChart } from '@/components/charts';
 import { AllocationDonut, JournalPanel, JournalPanelProvider, JournalPickButton } from '@/components/journal/dashboard-panel';
 import { ActionForm, Submit } from '@/components/forms';
@@ -23,7 +25,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const user = await requireUser();
   const sp = await searchParams;
   const params = { p: one(sp.p), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
-  const [d, graph, counts, groups] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id)]);
+  const [d, graph, counts, groups, fx] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id), fxQuote(user.id, 'USD')]);
+  const local = user.localCurrency;
+  const usdkrw = d.usdkrw.toNumber();
+  const usdHeld = d.allocation.byCurrency.find((x) => x.key === 'USD')?.value ?? 0;
   const s = d.summary;
   const allocKind = params.alloc === 'ccy' ? 'ccy' : params.alloc === 'type' ? 'type' : params.alloc === 'holding' ? 'holding' : params.alloc === 'trait' && groups.length ? 'trait' : 'own';
   // 성질: one of the user's trait groups, over the holdings in scope
@@ -92,12 +97,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           </nav>
           <h1>{d.scope.name}</h1>
           <p className="sub">
-            {kstDateTime(new Date())} 기준 · USD/KRW {d.usdkrw.toFixed(2)}
+            {kstDateTime(new Date())} 기준 · USD/KRW {d.usdkrw.toFixed(2)} ({fx.label})
             {d.stale && <span className="badge warn" style={{ marginLeft: 8 }}>일부 시세 지연</span>}
           </p>
         </div>
         <div className="inline">
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
+          <CurrencyToggle on={local} />
           <PrivacyToggle />
           <AskAiButton label="AI 점검" prompt={`${d.scope.name} 범위의 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지와 그 근거를 알려 줘.`} />
           <a className="btn" href={`/data?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
@@ -130,6 +136,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
             원가 <span className="money">{krwShort(d.costBase.toString())}</span> · 미실현{' '}
             <span className={`money ${tone(d.unrealized.toString())}`}>{signedKrwShort(d.unrealized.toString())}</span>
           </div>
+          {local && usdHeld > 0 && (
+            <div className="note">
+              달러 자산 <span className="money">{money(usdHeld / usdkrw, 'USD')}</span> (현금 포함)
+            </div>
+          )}
         </div>
         <div className="card kpi">
           <div className="label">기간 손익 (입출금 제외)</div>
@@ -287,10 +298,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
                         {h.price ? money(h.price.toString(), h.currency) : '—'}
                         {h.stale && <span className="sub">지연</span>}
                       </td>
-                      <td className="money">{krwShort(h.value.toString())}</td>
+                      <td className="money">
+                        <FxAmount value={h.value.toNumber()} currency={h.currency} usdkrw={usdkrw} local={local} />
+                      </td>
                       <td className="muted">{pct(h.weight, 1, false)}</td>
                       <td className={`money ${tone(h.unrealized.toString())}`}>
-                        {signedKrwShort(h.unrealized.toString())}
+                        <FxAmount value={h.unrealized.toNumber()} currency={h.currency} usdkrw={usdkrw} local={local} signed />
                         <span className="sub">{h.costBase.isZero() ? '' : pct(h.unrealized.div(h.costBase.abs()).toString())}</span>
                       </td>
                       <td><JournalPickButton assetId={h.assetId} name={h.name} /></td>
