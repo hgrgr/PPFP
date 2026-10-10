@@ -187,3 +187,5 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 a.btn, a.row { color: var(--ink); }
 a.btn.primary { color: var(--surface); }
 .btn svg { width: 18px; height: 18px; flex: none; }
+.row, .btn, .tabs, .seg, .topbar, .pill { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.app:has(input:focus, textarea:focus) .tabs { display: none; }

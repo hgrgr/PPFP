@@ -42,10 +42,11 @@ export function Backup() {
                 checkPassphrase(pass);
                 const sealed = await sealBackup(await backupPayload(), pass);
                 const how = await saveFile(`ppfp-app-backup-${kstToday()}.json`, JSON.stringify(sealed));
+                if (how === 'cancelled') return '저장할 곳을 고르지 않아 백업을 저장하지 않았습니다.';
                 await setSetting('lastBackupAt', new Date().toISOString());
                 setPass('');
                 setPass2('');
-                return how === 'shared' ? '저장할 곳(드라이브 등)을 고르면 백업이 끝납니다.' : '백업 파일을 내려받았습니다.';
+                return how === 'shared' ? '백업 파일을 넘겼습니다. 드라이브에 저장됐는지 확인하세요.' : '백업 파일을 내려받았습니다.';
               })
             }
           >
@@ -90,7 +91,7 @@ export function Files() {
           <p className="sub">포트폴리오, 거래 내역, 메모, 매매일지를 PPFP 웹 앱의 가져오기 형식(CSV, 엑셀에서 열림)으로 저장합니다. 잠기지 않은 파일이니 보관은 백업 파일로 하세요.</p>
           <button className="btn" disabled={act.busy} onClick={() => act.run(async () => {
             const files = await exportCsvs();
-            for (const f of files) if (f.rows) await saveFile(f.name, f.text, 'text/csv');
+            for (const f of files) if (f.rows && (await saveFile(f.name, f.text, 'text/csv')) === 'cancelled') return '저장을 취소했습니다.';
             return `${files.filter((f) => f.rows).map((f) => `${f.name} (${f.rows}줄)`).join(', ')}을(를) 저장했습니다.`;
           })}>CSV 저장</button>
         </section>

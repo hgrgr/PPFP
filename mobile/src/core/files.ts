@@ -8,11 +8,21 @@ import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
-export async function saveFile(name: string, text: string, mime = 'application/json'): Promise<'shared' | 'downloaded'> {
+export async function saveFile(name: string, text: string, mime = 'application/json'): Promise<'shared' | 'cancelled' | 'downloaded'> {
   if (Capacitor.isNativePlatform()) {
     const r = await Filesystem.writeFile({ path: name, data: text, directory: Directory.Cache, encoding: Encoding.UTF8 });
-    await Share.share({ title: name, text: name, files: [r.uri], dialogTitle: '저장할 곳 고르기 (드라이브 등)' });
-    return 'shared';
+    try {
+      await Share.share({ title: name, text: name, files: [r.uri], dialogTitle: '저장할 곳 고르기 (드라이브 등)' });
+      return 'shared';
+    } catch (e) {
+      // Closing the share sheet without picking a place rejects with "Share canceled"
+      if (/cancel/i.test(e instanceof Error ? e.message : String(e))) {
+        await Filesystem.deleteFile({ path: name, directory: Directory.Cache }).catch(() => {});
+        return 'cancelled';
+      }
+      throw e;
+    }
+    // Left in the cache when shared: the receiving app (Drive) may still be reading it
   }
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = document.createElement('a');
