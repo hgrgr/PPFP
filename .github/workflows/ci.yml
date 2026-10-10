@@ -41,3 +41,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The Android app (mobile/) shares src/domain: check it against the same code
+      - run: npm ci --prefix mobile
+      - run: npm run --prefix mobile typecheck
+      - run: npm run --prefix mobile test
+      - run: npm run --prefix mobile build

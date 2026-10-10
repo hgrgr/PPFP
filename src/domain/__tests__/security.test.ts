@@ -66,6 +66,7 @@ describe('devices', () => {
     assert.equal(deviceLabel(android), '삼성 인터넷 · Android');
     assert.equal(deviceLabel(iphone), 'Safari · iOS');
     assert.equal(deviceLabel(mac.replace('Chrome/140.0.0.0 Safari/537.36', 'Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0')), 'Edge · macOS');
+    assert.equal(deviceLabel('PPFP Android (Pixel 9)'), 'PPFP 앱 · Android');
     assert.equal(deviceLabel(null), '알 수 없는 기기');
     assert.equal(deviceLabel('???'), '알 수 없는 기기');
   });

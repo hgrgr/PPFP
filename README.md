@@ -54,6 +54,10 @@ docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지
 
 집 PC를 켜 두지 않고 24시간 돌리려면 Oracle Cloud 상시 무료 Arm VM에 같은 `docker compose`를 올리고, Tailscale로 내 기기와 허락한 가족 기기에만 엽니다. 포트를 인터넷에 열지 않고 `https://ppfp.<tailnet>.ts.net`으로 접속하며, 휴대폰에서는 웹 앱을 설치해 씁니다. VM에서 `bash deploy/cloud/setup.sh` 하나로 설치되고, 암호화 백업은 Google Drive로 복사할 수 있습니다. 단계별 안내와 주의할 점(무료 VM 회수 정책 등)은 [docs/deploy-cloud.md](docs/deploy-cloud.md)에 있습니다.
 
+### 안드로이드 앱
+
+서버 없이 휴대폰에서 동작하는 앱이 [mobile/](mobile/README.md)에 있다. 포트폴리오·거래·Lot 손익·순자산·대출·목표·세금을 폰 안(IndexedDB)에서 계산하고, 시세는 업비트 공개 시세·한국투자증권(내 키)·무료 환율에서 직접 받는다. 데이터는 암호로 잠근 백업 파일로 구글 드라이브 등에 둔다. 이 서버를 연결하면(`/api/mobile`, 토큰 로그인) 데이터를 주고받고, 서버의 알림을 받고, 웹 앱을 로그인한 채 연다. 빌드와 서명은 [mobile/README.md](mobile/README.md), 사용법은 [사용설명서](docs/user-guide.md#안드로이드-앱)를 본다.
+
 ### DB 백업
 
 `docker compose up -d`를 하면 앱·DB와 함께 `backup` 서비스가 뜹니다. 시작하자마자 한 번, 그 뒤 24시간마다 `pg_dump`로 저장소의 `backups/` 폴더에 `ppfp-YYYYMMDD-HHMMSS.dump`를 만들고 최근 14개만 남깁니다([scripts/backup/backup.sh](scripts/backup/backup.sh)). 마지막 백업 시각과 결과는 앱의 **가져오기 · 내보내기** 화면 맨 위에 나옵니다.
