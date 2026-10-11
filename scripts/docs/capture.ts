@@ -238,6 +238,23 @@ const SHOTS: Shot[] = [
       { sel: 'h3', text: '최근 보안 기록' },
     ],
   },
+  {
+    file: 'settings-menu',
+    path: () => '/settings',
+    wait: 1000,
+    width: 1100,
+    // Untick a few (not saved) so the card shows both states
+    steps: [{ click: { sel: '#menu label', text: '세금' } }, { click: { sel: '#menu label', text: '자산 성질' } }, { click: { sel: '#menu label', text: '사용량 · 비용' } }],
+    clip: [{ sel: '#menu' }],
+  },
+  {
+    file: 'help',
+    path: () => '/help',
+    wait: 1500,
+    width: 1280,
+    height: 900,
+    marks: [{ sel: 'a.btn', text: 'GitHub에서 보기' }],
+  },
   { file: 'data-backup', path: () => '/data', wait: 1000, width: 1100, clip: [{ sel: '.backup-status' }] },
   { file: 'transactions', path: () => '/transactions', wait: 1200, marks: [{ sel: 'form[method="get"]' }] },
   {

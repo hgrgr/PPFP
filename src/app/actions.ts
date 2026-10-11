@@ -4,6 +4,7 @@ import type { AssetType, LotMethod, TxnType } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { LOT_METHODS } from '@/domain/lots';
+import { cleanHidden, NAV_ITEMS } from '@/domain/nav';
 import { kstDate, parseKstLocal, prisma } from '@/server/db';
 import { money } from '@/lib/format';
 import { readApartmentMeta } from '@/domain/real-estate';
@@ -459,6 +460,17 @@ export async function setLocalCurrencyAction(on: boolean) {
   const user = await requireUser();
   await prisma.user.update({ where: { id: user.id }, data: { localCurrency: on } });
   revalidatePath('/', 'layout');
+}
+
+/** Which left-menu screens show: the form lists the shown ones; every other hideable one is hidden. */
+export async function saveMenuAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const shown = new Set(f.getAll('show').map(String));
+    const hidden = cleanHidden(NAV_ITEMS.map((i) => i.href).filter((h) => !shown.has(h)));
+    await prisma.user.update({ where: { id: user.id }, data: { hiddenNav: hidden } });
+    return hidden.length ? `메뉴에서 ${hidden.length}개를 숨겼습니다. 왼쪽 메뉴 맨 아래 숨긴 메뉴에서 열 수 있습니다.` : '모든 메뉴를 보여 줍니다.';
+  }, ['/']);
 }
 
 export async function updatePrefsAction(_: ActionState, f: FormData) {

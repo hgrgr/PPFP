@@ -11,6 +11,7 @@ import { aiStatus } from '@/server/services/ai/agent';
 import { modelLabels } from '@/domain/ai-providers';
 import { UsageChip } from '@/components/usage-chip';
 import { fxRate } from '@/server/market';
+import { splitNav } from '@/domain/nav';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     aiStatus(user.id),
     fxRate(user.id, 'USD').then((r) => r.toNumber()),
   ]);
+  const nav = splitNav(user.hiddenNav);
   const spend = ai.configured ? { spent: ai.spent, limit: ai.monthlyLimit, usdkrw } : null;
   const failing = links.filter((l) => l.lastError);
   const lastSync = links.map((l) => l.lastSyncAt).filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
@@ -34,31 +36,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </svg>
           PPFP
         </div>
-        <NavLink href="/dashboard">대시보드</NavLink>
-        <NavLink href="/performance">성과 분석</NavLink>
-        <NavLink href="/market">실시간 시세</NavLink>
-        <NavLink href="/portfolios">포트폴리오</NavLink>
-        <NavLink href="/assets">보유 자산</NavLink>
-        <NavLink href="/import">보유종목 가져오기</NavLink>
-        <NavLink href="/transactions">거래 내역</NavLink>
-        <NavLink href="/tax">세금</NavLink>
-        <NavLink href="/dividends">배당</NavLink>
-        <NavLink href="/goals">목표</NavLink>
-        <NavLink href="/journal">매매일지</NavLink>
-        <NavLink href="/traits">자산 성질</NavLink>
-        <NavLink href="/notes">투자 노트</NavLink>
-        <NavLink href="/ai">AI 어드바이저</NavLink>
-        <NavLink href="/alerts">
-          알림
-          {unread > 0 && (
-            <span className="nav-badge" aria-label={`새 알림 ${unread}개`}>
-              {unread > 99 ? '99+' : unread}
-            </span>
-          )}
-        </NavLink>
-        <NavLink href="/data">가져오기 · 내보내기</NavLink>
-        <NavLink href="/usage">사용량 · 비용</NavLink>
-        <NavLink href="/settings">연동 · 설정</NavLink>
+        {nav.shown.map((item) => (
+          <NavLink key={item.href} href={item.href}>
+            {item.label}
+            {item.href === '/alerts' && unread > 0 && (
+              <span className="nav-badge" aria-label={`새 알림 ${unread}개`}>
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </NavLink>
+        ))}
+        {nav.hidden.length > 0 && (
+          <details className="nav-more">
+            <summary className="nav">
+              숨긴 메뉴 {nav.hidden.length}
+              {nav.hidden.some((i) => i.href === '/alerts') && unread > 0 && <span className="nav-badge">{unread > 99 ? '99+' : unread}</span>}
+            </summary>
+            {nav.hidden.map((item) => (
+              <NavLink key={item.href} href={item.href}>
+                {item.label}
+              </NavLink>
+            ))}
+            <a className="nav sub" href="/settings#menu">
+              메뉴 고치기
+            </a>
+          </details>
+        )}
         <div className="side-foot">
           <div>
             <div className="strong" style={{ color: 'var(--ink)' }}>증권사 연동</div>

@@ -56,7 +56,7 @@ PPFP는 여러 계좌와 자산을 포트폴리오 단위로 묶어 관리하고
 
 ## 화면 구성
 
-**추가** [`db77f63`](https://github.com/hgrgr/PPFP/commit/db77f639c3e24f0a4d5affbf259d87e442975f8a) · 2026-10-07 · **바뀜** [`6156d44`](https://github.com/hgrgr/PPFP/commit/6156d44348ee35aa0d5d265030b3856bdc96a79a) (실시간 시세 메뉴), [`c99f35d`](https://github.com/hgrgr/PPFP/commit/c99f35dcc414d1e13afb8b7be55ce11998fc8d2e) (보유종목 가져오기 메뉴), [`72034c5`](https://github.com/hgrgr/PPFP/commit/72034c52db619e96bee37ba344491ab18d96a11b) · 2026-10-08 (매매일지 메뉴), [`69b342e`](https://github.com/hgrgr/PPFP/commit/69b342ed62f0292c09f37f67cb89e73ab555c154) · 2026-10-08 (자산 성질 메뉴), [`64b046f`](https://github.com/hgrgr/PPFP/commit/64b046fac2dd876a95bd627b3ba9ddc71ae44264) · 2026-10-08 (알림 메뉴), [`27b79fc`](https://github.com/hgrgr/PPFP/commit/27b79fc73d98b453b9b4bf395de2e5d553122f73) · 2026-10-08 (투자 노트 메뉴, 빠른 메모 버튼), [`57ab87e`](https://github.com/hgrgr/PPFP/commit/57ab87e100ea61b0a4042020f25cac070cfbe580) · 2026-10-08 (AI 어드바이저 메뉴, AI 버튼), [`3a2ebd2`](https://github.com/hgrgr/PPFP/commit/3a2ebd21e2860482117172ef07010c1f099bf8fa) · 2026-10-08 (성과 분석 메뉴), [`0982906`](https://github.com/hgrgr/PPFP/commit/0982906c172a739ce7c566c9967fe2a8cf63287b) · 2026-10-08 (세금 메뉴), [`0b04f87`](https://github.com/hgrgr/PPFP/commit/0b04f877a18a1867fde5348367db75c2672db4ae) · 2026-10-08 (배당 메뉴), [`c041869`](https://github.com/hgrgr/PPFP/commit/c041869dfa2ed36f5ca355b6317a0b937cdc74d8) · 2026-10-08 (목표 메뉴), [`a4f44eb`](https://github.com/hgrgr/PPFP/commit/a4f44eb11cda0136950ad5a0a7604586aaa6bf51) · 2026-10-09 (*Export* 메뉴가 *가져오기 · 내보내기*로), [`55360b4`](https://github.com/hgrgr/PPFP/commit/55360b464505d2f35d52fa358f82444d6b74ccfe) · 2026-10-10 (보유 자산 메뉴), [`35bd533`](https://github.com/hgrgr/PPFP/commit/35bd5336cda613428453324cc90b2359b7501811) · 2026-10-10 (사용량 · 비용 메뉴, 위쪽 AI 비용 표시)
+**추가** [`db77f63`](https://github.com/hgrgr/PPFP/commit/db77f639c3e24f0a4d5affbf259d87e442975f8a) · 2026-10-07 · **바뀜** [`6156d44`](https://github.com/hgrgr/PPFP/commit/6156d44348ee35aa0d5d265030b3856bdc96a79a) (실시간 시세 메뉴), [`c99f35d`](https://github.com/hgrgr/PPFP/commit/c99f35dcc414d1e13afb8b7be55ce11998fc8d2e) (보유종목 가져오기 메뉴), [`72034c5`](https://github.com/hgrgr/PPFP/commit/72034c52db619e96bee37ba344491ab18d96a11b) · 2026-10-08 (매매일지 메뉴), [`69b342e`](https://github.com/hgrgr/PPFP/commit/69b342ed62f0292c09f37f67cb89e73ab555c154) · 2026-10-08 (자산 성질 메뉴), [`64b046f`](https://github.com/hgrgr/PPFP/commit/64b046fac2dd876a95bd627b3ba9ddc71ae44264) · 2026-10-08 (알림 메뉴), [`27b79fc`](https://github.com/hgrgr/PPFP/commit/27b79fc73d98b453b9b4bf395de2e5d553122f73) · 2026-10-08 (투자 노트 메뉴, 빠른 메모 버튼), [`57ab87e`](https://github.com/hgrgr/PPFP/commit/57ab87e100ea61b0a4042020f25cac070cfbe580) · 2026-10-08 (AI 어드바이저 메뉴, AI 버튼), [`3a2ebd2`](https://github.com/hgrgr/PPFP/commit/3a2ebd21e2860482117172ef07010c1f099bf8fa) · 2026-10-08 (성과 분석 메뉴), [`0982906`](https://github.com/hgrgr/PPFP/commit/0982906c172a739ce7c566c9967fe2a8cf63287b) · 2026-10-08 (세금 메뉴), [`0b04f87`](https://github.com/hgrgr/PPFP/commit/0b04f877a18a1867fde5348367db75c2672db4ae) · 2026-10-08 (배당 메뉴), [`c041869`](https://github.com/hgrgr/PPFP/commit/c041869dfa2ed36f5ca355b6317a0b937cdc74d8) · 2026-10-08 (목표 메뉴), [`a4f44eb`](https://github.com/hgrgr/PPFP/commit/a4f44eb11cda0136950ad5a0a7604586aaa6bf51) · 2026-10-09 (*Export* 메뉴가 *가져오기 · 내보내기*로), [`55360b4`](https://github.com/hgrgr/PPFP/commit/55360b464505d2f35d52fa358f82444d6b74ccfe) · 2026-10-10 (보유 자산 메뉴), [`35bd533`](https://github.com/hgrgr/PPFP/commit/35bd5336cda613428453324cc90b2359b7501811) · 2026-10-10 (사용량 · 비용 메뉴, 위쪽 AI 비용 표시), [`cd9428a`](https://github.com/hgrgr/PPFP/commit/cd9428ab6b8ae1c8071fe36a3d1cb364b2076fc3) · 2026-10-11 (메뉴 숨기기, 사용설명서 메뉴)
 
 왼쪽 메뉴에서 화면을 옮겨 다닙니다.
 
@@ -79,7 +79,8 @@ PPFP는 여러 계좌와 자산을 포트폴리오 단위로 묶어 관리하고
 | AI 어드바이저 | 포트폴리오 매니저·투자 거장 관점 에이전트와 대화. 점검·리밸런싱·리서치, 메모·알림·목표 비중 제안 |
 | 가져오기 · 내보내기 | 포트폴리오·거래 내역·매매일지·투자 노트를 파일로 내보내고 같은 형식으로 가져오기, 형식 안내와 샘플 파일, 보유·Lot·실현손익·스냅샷 보고서 |
 | 사용량 · 비용 | 이번 달 AI 비용과 한도, 모델·에이전트별 비용, 외부 API 호출 수와 남은 한도 |
-| 연동 · 설정 | 증권사·거래소 연결, AI 어드바이저 키·사용 한도, 상승/하락 색, 과거 기록 다시 계산 |
+| 사용설명서 | 이 문서. 이 서버에 설치된 버전의 설명서를 앱 안에서 읽습니다 |
+| 연동 · 설정 | 증권사·거래소 연결, AI 어드바이저 키·사용 한도, 계정 보안, 메뉴, 상승/하락 색, 과거 기록 다시 계산 |
 
 *알림* 옆 빨간 숫자는 아직 읽지 않은 알림 수입니다. AI 키를 넣었으면 화면 오른쪽 위에 **✦ AI 이번 달 $0.32 / $20.00**처럼 이번 달 AI 비용과 월 한도가 작게 보입니다(누르면 [사용량 · 비용](#사용량--비용)). 메뉴 아래쪽에는 연결 상태(몇 곳 연결됨, 마지막 확인 시각, 오류가 난 연결)와 로그아웃 버튼이 있습니다. 화면 오른쪽 아래의 **✦ AI**는 [AI 어드바이저](#ai-어드바이저) 창(Alt+K), **✎ 메모**는 [빠른 메모](#빠른-메모)(Alt+M)를 엽니다.
 
@@ -88,6 +89,22 @@ PPFP는 여러 계좌와 자산을 포트폴리오 단위로 묶어 관리하고
 **휴대폰에서 쓰기** — 화면이 좁으면 메뉴가 위쪽으로 올라가고 카드가 한 줄씩 쌓입니다. 브라우저의 *홈 화면에 추가*로 설치하면 앱처럼 쓸 수 있습니다(PWA). 시스템이 다크 모드면 화면도 어둡게 바뀝니다([대시보드](#대시보드) 참고).
 
 <br clear="right">
+
+### 메뉴 고르기
+
+**추가** [`cd9428a`](https://github.com/hgrgr/PPFP/commit/cd9428ab6b8ae1c8071fe36a3d1cb364b2076fc3) · 2026-10-11
+
+<img src="images/settings-menu.webp" alt="메뉴 고르기" width="720">
+
+잘 쓰지 않는 화면은 왼쪽 메뉴에서 숨깁니다. **연동 · 설정 › 메뉴**에서 보일 화면에만 체크하고 *저장*을 누르세요. 끈 화면은 메뉴 맨 아래 **숨긴 메뉴 n**을 누르면 펼쳐지고, 주소로도 그대로 열립니다. 숨긴 메뉴 안의 *메뉴 고치기*는 이 설정으로 돌아옵니다. 대시보드와 연동 · 설정은 숨길 수 없습니다. 숨긴 *알림*에 읽지 않은 알림이 있으면 *숨긴 메뉴* 옆에 빨간 숫자가 붙습니다. 메뉴 설정은 계정마다 따로 저장돼 다른 기기에서도 같게 보입니다.
+
+### 사용설명서
+
+**추가** [`cd9428a`](https://github.com/hgrgr/PPFP/commit/cd9428ab6b8ae1c8071fe36a3d1cb364b2076fc3) · 2026-10-11
+
+![사용설명서](images/help.webp)
+
+왼쪽 메뉴 **사용설명서**에서 이 문서를 앱 안에서 읽습니다. 서버를 빌드할 때 함께 들어가므로 지금 서버에 설치된 버전과 맞는 설명입니다. 목차와 본문의 링크로 장 사이를 옮겨 다니고, 오른쪽 아래 *맨 위로*로 돌아옵니다. 커밋·README 같은 바깥 링크는 새 탭에서 GitHub로 열립니다. ① *GitHub에서 보기*는 저장소의 최신 문서를 엽니다.
 
 ## 대시보드
 
@@ -1081,6 +1098,7 @@ AI 비용은 답변마다 받은 토큰 수로 계산한 추정치라 실제 청
   <img src="images/settings-realestate.webp" alt="부동산 실거래가 키" width="560">
 
 - **API가 없는 증권사** — 하나·미래에셋·KB·NH·삼성·신한·대신 등은 웹 서버에서 호출할 수 있는 Open API가 없거나 확인되지 않았습니다. 잔고 붙여넣기로 가져오세요.
+- **메뉴** — 왼쪽 메뉴에 보일 화면 고르기. [메뉴 고르기](#메뉴-고르기)를 보세요.
 - **계정 보안** — 2단계 인증, 비밀번호 바꾸기, 로그인한 기기, 가입 초대, 최근 보안 기록. [계정 보안](#계정-보안)을 보세요.
 - **표시** — 이름과 상승/하락 색(*상승 빨강·하락 파랑* 또는 *상승 초록·하락 빨강*)을 고릅니다.
 - **데이터 다시 계산** — 과거 종가를 다시 받고 첫 거래일부터 일별 기록을 새로 계산합니다. 오래된 거래를 많이 고쳤을 때 씁니다.
@@ -1351,6 +1369,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-10 | [`1f8bec0`](https://github.com/hgrgr/PPFP/commit/1f8bec06f6dfcc7ff1d7e2c0af7f6e3cab835583) | [#25](https://github.com/hgrgr/PPFP/pull/25) | 아파트 찾기에서 *더 이전 거래까지 찾기*(3년 · 5년 · 전체 2006~), 단지마다 마지막 거래 달 표시 | 다른 아파트를 다시 고르면 자동으로 채운 이름도 바뀜. 1년 지난 실거래가는 30일 동안 저장 |
 | 2026-10-10 | [`b689fc0`](https://github.com/hgrgr/PPFP/commit/b689fc0ab324d3085f3b58030129da382e689013) | [#27](https://github.com/hgrgr/PPFP/pull/27) | 계정 보안(2단계 인증과 QR·복구 코드, 비밀번호 바꾸기, 로그인한 기기와 원격 로그아웃, 새 기기 로그인 *보안* 알림, 가입 초대, 최근 보안 기록), 로그인 실패 제한, 서버 DB 정기 백업(Docker `backup` 서비스)과 가져오기 · 내보내기의 *DB 백업* 상태 | 두 번째 계정부터 초대 코드가 있어야 가입(`SIGNUP_MODE`). 2단계 인증을 켜면 API 키 백업·AI 운용 승인 때 인증 코드도 확인 |
 | 2026-10-11 | [`e0ff761`](https://github.com/hgrgr/PPFP/commit/e0ff7616a812eb5770cd03b286dafd621af4c942) | [#29](https://github.com/hgrgr/PPFP/pull/29) | 안드로이드 앱: 서버 없이 폰에서 포트폴리오·거래·Lot 손익·순자산·대출 상환 일정·목표·세금·메모·매매일지, 업비트·한국투자증권·환율 시세, 가격 알림, 내 키로 AI 어드바이저, 암호로 잠근 백업 파일(드라이브 등)과 CSV. 서버 연동: 앱 토큰 로그인(2단계 인증), 데이터 보내기·가져오기, 서버 알림 받기, 웹 앱을 로그인한 채 열기 | 계정 보안의 로그인한 기기에 *PPFP 앱 · Android* 표시 |
+| 2026-10-11 | [`cd9428a`](https://github.com/hgrgr/PPFP/commit/cd9428ab6b8ae1c8071fe36a3d1cb364b2076fc3) | [#30](https://github.com/hgrgr/PPFP/pull/30) | 메뉴 고르기(연동 · 설정 › 메뉴, 숨긴 화면은 메뉴 맨 아래 *숨긴 메뉴*), 앱 안의 사용설명서(왼쪽 메뉴 *사용설명서*) | — |
 
 ## 사라진 기능
 
