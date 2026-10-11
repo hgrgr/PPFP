@@ -88,6 +88,8 @@ model User {
   totpLastStep  Int?
   /// SHA-256 of the unused recovery codes
   recoveryCodes String[]  @default([])
+  /// Left-menu screens the user hid (hrefs, src/domain/nav.ts)
+  hiddenNav     String[]  @default([])
 
   sessions         Session[]
   brokers          BrokerConnection[]

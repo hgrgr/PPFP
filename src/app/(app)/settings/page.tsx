@@ -2,7 +2,8 @@ import { saveAiSettingsAction } from '@/app/ai-actions';
 import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
-import { refreshDataAction, removeBrokerAction, saveBrokerAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
+import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
+import { NAV_ITEMS } from '@/domain/nav';
 import { BrokerConnectForm } from '@/components/broker-connect-form';
 import { KeyBackup } from '@/components/key-backup';
 import { Devices, Invites, PasswordChange, TwoStep } from '@/components/account-security';
@@ -326,6 +327,26 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             )}
           </div>
         </div>
+      </section>
+
+      <section className="card" id="menu">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>메뉴</h2>
+          <p className="sub">왼쪽 메뉴에 보일 화면을 고릅니다. 끈 화면은 메뉴 맨 아래 숨긴 메뉴에 모여 있고, 주소로도 그대로 열립니다. 대시보드와 연동 · 설정은 숨길 수 없습니다.</p>
+        </div>
+        <ActionForm action={saveMenuAction} className="stack">
+          <div className="menu-picks" role="group" aria-label="보일 메뉴">
+            {NAV_ITEMS.map((item) => (
+              <label key={item.href}>
+                <input type="checkbox" name="show" value={item.href} defaultChecked={item.locked || !user.hiddenNav.includes(item.href)} disabled={item.locked} />
+                {item.label}
+              </label>
+            ))}
+          </div>
+          <div>
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
       </section>
 
       <section className="row">

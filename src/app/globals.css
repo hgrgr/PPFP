@@ -98,6 +98,15 @@ p { margin: 0; }
 .nav { display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--ink-2); }
 .nav:hover { background: var(--line-soft); text-decoration: none; }
 .nav[aria-current='page'] { background: var(--line); color: var(--ink); font-weight: 600; }
+.nav-more > summary { cursor: pointer; list-style: none; color: var(--muted); }
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary::after { content: '▾'; margin-left: 6px; font-size: 11px; }
+.nav-more[open] > summary::after { content: '▴'; }
+.nav-more > .nav { padding-left: 24px; }
+.nav.sub { color: var(--muted); font-size: 13px; }
+.menu-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 16px; }
+.menu-picks label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+@media (max-width: 800px) { .nav-more { width: 100%; } }
 .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
 
 .page-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
@@ -606,3 +615,26 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .recovery-codes code { font-size: 15px; letter-spacing: 0.04em; }
 .security-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
 .invite-made code { word-break: break-all; }
+
+/* 사용설명서 */
+.guide { line-height: 1.7; overflow-wrap: anywhere; padding: 28px 32px; }
+.guide :is(h2, h3, h4) { scroll-margin-top: 16px; }
+.guide h2 { font-size: 20px; margin: 36px 0 10px; padding-top: 20px; border-top: 1px solid var(--line); }
+.guide h2:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.guide h3 { font-size: 16px; margin: 24px 0 8px; }
+.guide h4 { font-size: 14px; margin: 18px 0 6px; }
+.guide p, .guide ul, .guide ol { margin: 0 0 10px; }
+.guide ul, .guide ol { padding-left: 22px; }
+.guide li { margin: 3px 0; }
+.guide img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; margin: 6px 4px 6px 0; vertical-align: top; }
+.guide code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 0.9em; }
+.guide pre { background: var(--surface-2); padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
+.guide pre code { background: none; padding: 0; }
+.guide table { font-size: 13px; margin: 8px 0 14px; }
+.guide th, .guide td { vertical-align: top; }
+.guide hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+.guide-top { position: fixed; right: 24px; bottom: 96px; z-index: 5; }
+@media (max-width: 800px) { .guide { padding: 18px 16px; } .guide-top { right: 16px; bottom: 88px; } }
+.guide a { color: var(--focus); }
+.guide blockquote { margin: 10px 0 14px; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 10px 10px 0; color: var(--ink-2); }
+.guide blockquote p:last-child { margin-bottom: 0; }
