@@ -69,6 +69,8 @@ interface Ids {
   root: string;
   us: string;
   home: string;
+  /** A split strategy portfolio that shares holdings with the others */
+  growth: string;
   apartment: string;
   aapl: string;
   nvdaJournal: string;
@@ -120,6 +122,28 @@ const SHOTS: Shot[] = [
     wait: 1500,
     clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목')],
     marks: [{ sel: 'a', text: '보유종목 가져오기', within: { sel: '.page-head' } }, { sel: 'a', text: '+ 거래 추가' }, { sel: '.card.kpi', closest: 'section' }, card('직접 보유 종목'), { sel: 'button', text: '제거', within: card('직접 보유 종목') }],
+  },
+  {
+    file: 'portfolio-strategies',
+    path: () => '/portfolios',
+    wait: 1200,
+    width: 1280,
+    clip: [{ sel: '#strategies' }],
+    marks: [{ sel: 'td', text: '겹쳐 담기 허용' }, { sel: '#strategies .badge', text: '중복' }, { sel: 'a', text: '분석', within: { sel: '#strategies' } }],
+  },
+  {
+    file: 'strategy-detail',
+    path: (ids) => `/portfolios/${ids.growth}`,
+    wait: 1500,
+    width: 1280,
+    clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('담은 종목'), card('계좌에서 담기')],
+    marks: [
+      { sel: '.card.kpi', closest: 'section' },
+      { sel: '.share-form', within: card('담은 종목') },
+      { sel: '.strategy-tag', within: card('담은 종목') },
+      { sel: 'button', text: '빼기', within: card('담은 종목') },
+      { sel: 'button', text: '담기', within: card('계좌에서 담기') },
+    ],
   },
   {
     file: 'assets',
@@ -1049,6 +1073,7 @@ async function main() {
       equityStyle: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'equityStyle' } })).id,
       samsung: (await db.holding.findFirstOrThrow({ where: { asset: { symbol: '005930' } } })).id,
       home: pid('부동산'),
+      growth: pid('성장'),
       apartment: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE' } } })).id,
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
