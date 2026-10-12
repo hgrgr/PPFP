@@ -389,7 +389,9 @@ export async function importHoldingsAction(_: ActionState, f: FormData) {
     const tradeAt = parseKstLocal(s(f, 'tradeAt'));
     const n = await importHoldings(user.id, { sourceKey: s(f, 'sourceKey'), sourceLabel: s(f, 'sourceLabel'), tradeAt, rows });
     await refreshFrom(user.id, tradeAt);
-    return `${n}개 종목을 가져와 시작 Lot을 만들었습니다.`;
+    const ids = [...new Set(rows.map((r) => r.portfolioId))];
+    const names = (await prisma.portfolio.findMany({ where: { userId: user.id, id: { in: ids } }, select: { name: true } })).map((x) => x.name);
+    return `${n}개 종목을 ${names.join(', ')}에 가져와 시작 Lot을 만들었습니다.`;
   }, ['/import', '/dashboard', '/portfolios']);
 }
 

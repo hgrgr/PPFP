@@ -16,9 +16,11 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const portfolios = await prisma.portfolio.findMany({
     where: { userId: user.id, archived: false, kind: 'ACCOUNT' },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, name: true },
+    select: { id: true, name: true, _count: { select: { childEdges: true } } },
   });
-  const defaultPortfolioId = portfolios.some((x) => x.id === p) ? p! : (portfolios[0]?.id ?? '');
+  // Without ?p=, the first portfolio that holds directly (no children), not the top 순자산
+  const leaf = portfolios.find((x) => x._count.childEdges === 0) ?? portfolios[0];
+  const defaultPortfolioId = portfolios.some((x) => x.id === p) ? p! : (leaf?.id ?? '');
   const [sources, exchanges] = portfolios.length
     ? await Promise.all([loadBrokerSources(user.id), prisma.brokerConnection.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } }).then((l) => l.filter((c) => isCryptoBroker(c.broker)))])
     : [[], []];
