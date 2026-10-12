@@ -25,6 +25,8 @@ export interface CommodityDef {
   rollDay?: number;
   /** Troy ounces per unit, to show gold in 원/g */
   perGram?: boolean;
+  /** Yahoo Finance front-month symbol (GC=F), the fallback when the broker has no quote */
+  yahoo?: string;
 }
 
 /** Month codes of futures contracts, January first. */
@@ -32,16 +34,16 @@ export const MONTH_CODES = 'FGHJKMNQUVXZ';
 
 export const COMMODITIES: CommodityDef[] = [
   { id: 'krx-gold', name: '금 현물 (KRX)', unit: '원/g', currency: 'KRW', source: 'KRX_GOLD', code: 'M04020000', exchange: 'KRX 금시장' },
-  { id: 'gold', name: '금', unit: 'USD/oz', currency: 'USD', source: 'FUTURE', code: 'GC', exchange: 'COMEX', months: 'GJMQVZ', ahead: 1, rollDay: 25, perGram: true },
-  { id: 'silver', name: '은', unit: 'USD/oz', currency: 'USD', source: 'FUTURE', code: 'SI', exchange: 'COMEX', months: 'HKNUZ', ahead: 1, rollDay: 25 },
-  { id: 'copper', name: '구리', unit: 'USD/lb', currency: 'USD', source: 'FUTURE', code: 'HG', exchange: 'COMEX', months: 'HKNUZ', ahead: 1, rollDay: 25 },
-  { id: 'wti', name: 'WTI 원유', unit: 'USD/bbl', currency: 'USD', source: 'FUTURE', code: 'CL', exchange: 'NYMEX', months: MONTH_CODES, ahead: 1, rollDay: 15 },
-  { id: 'natgas', name: '천연가스', unit: 'USD/MMBtu', currency: 'USD', source: 'FUTURE', code: 'NG', exchange: 'NYMEX', months: MONTH_CODES, ahead: 1, rollDay: 22 },
-  { id: 'corn', name: '옥수수', unit: '¢/bu', currency: 'USD', source: 'FUTURE', code: 'ZC', exchange: 'CBOT', months: 'HKNUZ', ahead: 1, rollDay: 25 },
-  { id: 'soybean', name: '대두', unit: '¢/bu', currency: 'USD', source: 'FUTURE', code: 'ZS', exchange: 'CBOT', months: 'FHKNQUX', ahead: 1, rollDay: 25 },
-  { id: 'es', name: 'S&P 500 미니 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'ES', exchange: 'CME', months: 'HMUZ', ahead: 0, rollDay: 9 },
-  { id: 'nq', name: '나스닥 100 미니 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'NQ', exchange: 'CME', months: 'HMUZ', ahead: 0, rollDay: 9 },
-  { id: 'zn', name: '미국채 10년 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'ZN', exchange: 'CBOT', months: 'HMUZ', ahead: 1, rollDay: 25 },
+  { id: 'gold', name: '금', unit: 'USD/oz', currency: 'USD', source: 'FUTURE', code: 'GC', exchange: 'COMEX', months: 'GJMQVZ', ahead: 1, rollDay: 25, perGram: true, yahoo: 'GC=F' },
+  { id: 'silver', name: '은', unit: 'USD/oz', currency: 'USD', source: 'FUTURE', code: 'SI', exchange: 'COMEX', months: 'HKNUZ', ahead: 1, rollDay: 25, yahoo: 'SI=F' },
+  { id: 'copper', name: '구리', unit: 'USD/lb', currency: 'USD', source: 'FUTURE', code: 'HG', exchange: 'COMEX', months: 'HKNUZ', ahead: 1, rollDay: 25, yahoo: 'HG=F' },
+  { id: 'wti', name: 'WTI 원유', unit: 'USD/bbl', currency: 'USD', source: 'FUTURE', code: 'CL', exchange: 'NYMEX', months: MONTH_CODES, ahead: 1, rollDay: 15, yahoo: 'CL=F' },
+  { id: 'natgas', name: '천연가스', unit: 'USD/MMBtu', currency: 'USD', source: 'FUTURE', code: 'NG', exchange: 'NYMEX', months: MONTH_CODES, ahead: 1, rollDay: 22, yahoo: 'NG=F' },
+  { id: 'corn', name: '옥수수', unit: '¢/bu', currency: 'USD', source: 'FUTURE', code: 'ZC', exchange: 'CBOT', months: 'HKNUZ', ahead: 1, rollDay: 25, yahoo: 'ZC=F' },
+  { id: 'soybean', name: '대두', unit: '¢/bu', currency: 'USD', source: 'FUTURE', code: 'ZS', exchange: 'CBOT', months: 'FHKNQUX', ahead: 1, rollDay: 25, yahoo: 'ZS=F' },
+  { id: 'es', name: 'S&P 500 미니 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'ES', exchange: 'CME', months: 'HMUZ', ahead: 0, rollDay: 9, yahoo: 'ES=F' },
+  { id: 'nq', name: '나스닥 100 미니 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'NQ', exchange: 'CME', months: 'HMUZ', ahead: 0, rollDay: 9, yahoo: 'NQ=F' },
+  { id: 'zn', name: '미국채 10년 선물', unit: 'pt', currency: 'USD', source: 'FUTURE', code: 'ZN', exchange: 'CBOT', months: 'HMUZ', ahead: 1, rollDay: 25, yahoo: 'ZN=F' },
 ];
 
 /** Grams per troy ounce */
@@ -125,3 +127,54 @@ export function parseKisFuture(output1: unknown): CommodityQuote | null {
 
 /** USD/oz → 원/g */
 export const krwPerGram = (usdPerOz: number, usdKrw: number) => (usdPerOz * usdKrw) / OZ_GRAMS;
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Gold Dec 26" → GCZ26; null when the name has no month and year. */
+export function yahooContract(root: string, shortName: unknown): string | null {
+  // "Gold Dec 26" or "Corn Futures,Dec-2026"
+  const m = typeof shortName === 'string' ? /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*[\s-]+'?(?:\d{2})?(\d{2})\b/.exec(shortName) : null;
+  return m ? `${root}${MONTH_CODES[MONTH_NAMES.indexOf(m[1])]}${m[2]}` : null;
+}
+
+/** Closes come as float32 (4216.2998046875 for 4216.3): the shortest decimal with the same float32. */
+function shortestFloat32(v: number): number {
+  for (let d = 0; d <= 8; d++) {
+    const r = Number(v.toFixed(d));
+    if (Math.fround(r) === Math.fround(v)) return r;
+  }
+  return v;
+}
+
+/**
+ * Yahoo Finance chart (v8, range=5d, interval=1d) of a front-month future: the delayed public
+ * quote shown when 한국투자증권 refuses (an exchange the account has not subscribed to).
+ * The previous close is the last daily close before the bar of the latest trade.
+ */
+export function parseYahooChart(body: unknown): (CommodityQuote & { contractName: string | null }) | null {
+  const r = (body as { chart?: { result?: unknown[] } } | null)?.chart?.result?.[0] as
+    | { meta?: Record<string, unknown>; timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }
+    | undefined;
+  const meta = r?.meta;
+  if (!meta) return null;
+  const price = clean(meta.regularMarketPrice);
+  if (!price || Number(price) <= 0) return null;
+  const closes = (r.indicators?.quote?.[0]?.close ?? []).map((c, i) => ({ c, t: r.timestamp?.[i] ?? 0 })).filter((x): x is { c: number; t: number } => typeof x.c === 'number' && x.c > 0);
+  const offset = typeof meta.gmtoffset === 'number' ? meta.gmtoffset : 0;
+  const day = (t: number) => new Date((t + offset) * 1000).toISOString().slice(0, 10);
+  const tradeAt = typeof meta.regularMarketTime === 'number' ? meta.regularMarketTime : null;
+  const before = tradeAt ? closes.filter((x) => day(x.t) < day(tradeAt)) : closes.slice(0, -1);
+  const prev = before.length ? String(shortestFloat32(before[before.length - 1].c)) : clean(meta.chartPreviousClose);
+  return {
+    price,
+    prevClose: prev && Number(prev) > 0 ? prev : null,
+    open: null,
+    high: clean(meta.regularMarketDayHigh),
+    low: clean(meta.regularMarketDayLow),
+    volume: clean(meta.regularMarketVolume),
+    expiry: null,
+    // The exchange's local time, like the broker quotes
+    asOf: tradeAt ? new Date((tradeAt + offset) * 1000).toISOString().slice(0, 19).replace('T', ' ') : null,
+    contractName: typeof meta.shortName === 'string' ? meta.shortName : null,
+  };
+}

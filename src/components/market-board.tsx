@@ -18,6 +18,7 @@ const RANK_LABEL: Record<RankType, string> = { AMOUNT: '거래대금', VOLUME: '
 const BROKER_LABEL: Record<string, string> = {
   TOSS: '토스증권', KIS: '한국투자증권', KIWOOM: '키움증권', LS: 'LS증권', DB: 'DB증권', MERITZ: '메리츠증권',
   UPBIT: '업비트', BITHUMB: '빗썸', COINONE: '코인원', KORBIT: '코빗',
+  YAHOO: 'Yahoo Finance (지연)',
 };
 
 /** Fetch `url` every `ms` while the tab is visible; refetch at once when it comes back. */
@@ -448,10 +449,8 @@ function Commodities({ paused }: { paused: boolean }) {
       </div>
       {!data ? (
         <p className="empty">불러오는 중…</p>
-      ) : !data.kiwoom && !data.kis ? (
-        <p className="empty">
-          금 현물은 키움증권, 해외 선물(금·은·원유·곡물·지수)은 한국투자증권을 <a href="/settings">연동 · 설정</a>에서 연결하면 보입니다.
-        </p>
+      ) : !shown.length ? (
+        <p className="empty">시세를 받지 못했습니다. 잠시 뒤 다시 확인하세요.</p>
       ) : (
         <div className="table-wrap">
           <table>
@@ -486,11 +485,11 @@ function Commodities({ paused }: { paused: boolean }) {
           </table>
         </div>
       )}
-      {data && (data.kiwoom || data.kis) && (
+      {data && (
         <p className="sub">
           {!data.kiwoom && '금 현물(KRX)은 키움증권을 연결하면 보입니다. '}
-          {!data.kis && '해외 선물은 한국투자증권(실전 계좌)을 연결하면 보입니다. '}
-          해외 선물은 거래가 가장 많은 근월물을 날짜로 골라 보여 주며, 증권사 시세 신청 여부에 따라 지연될 수 있습니다. 금(COMEX)의 원/g은 현재 환율로 환산한 값입니다.
+          해외 선물은 한국투자증권(실전 계좌)에서 근월물 시세를 받고, 계좌가 그 거래소 시세를 신청하지 않았거나 연결이 없으면 Yahoo Finance의 지연 시세(약 10~15분)로
+          보여 줍니다. 금(COMEX)의 원/g은 현재 환율로 환산한 값입니다.
         </p>
       )}
     </div>

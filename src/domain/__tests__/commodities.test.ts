@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { activeContract, COMMODITIES, krwPerGram, parseKisFuture, parseKiwoomGold } from '../commodities';
+import { activeContract, COMMODITIES, krwPerGram, parseKisFuture, parseKiwoomGold, parseYahooChart, yahooContract } from '../commodities';
 
 const def = (id: string) => COMMODITIES.find((c) => c.id === id)!;
 
@@ -40,4 +40,31 @@ describe('commodities', () => {
   it('converts USD/oz to 원/g', () => {
     assert.equal(Math.round(krwPerGram(4000, 1400)), 180044);
   });
+});
+
+it('Yahoo front month: contract from the short name, previous close from the day before the last trade', () => {
+  assert.equal(yahooContract('GC', 'Gold Dec 26'), 'GCZ26');
+  assert.equal(yahooContract('ZC', 'Corn Futures,Dec-2026'), 'ZCZ26');
+  assert.equal(yahooContract('ES', 'E-Mini S&P 500'), null);
+  assert.equal(yahooContract('CL', 'Crude Oil Nov 26'), 'CLX26');
+  // 2026-10-08 … 2026-10-12 (New York, gmtoffset −4h); the last bar is the trading day
+  const day = (d: string) => Date.parse(`${d}T13:30:00Z`) / 1000;
+  const q = parseYahooChart({
+    chart: {
+      result: [
+        {
+          meta: { regularMarketPrice: 4211.7, priceHint: 2, regularMarketTime: day('2026-10-12') + 3600, gmtoffset: -14400, regularMarketDayHigh: 4242.3, regularMarketDayLow: 4209.1, regularMarketVolume: 24910, shortName: 'Gold Dec 26', chartPreviousClose: 4140.7 },
+          timestamp: ['2026-10-08', '2026-10-09', '2026-10-12'].map(day),
+          indicators: { quote: [{ close: [4150, 4216.2998046875, 4211.7] }] },
+        },
+      ],
+    },
+  });
+  assert.equal(q?.price, '4211.7');
+  assert.equal(q?.prevClose, '4216.3');
+  assert.equal(q?.high, '4242.3');
+  assert.equal(q?.contractName, 'Gold Dec 26');
+  assert.equal(q?.asOf, '2026-10-12 10:30:00');
+  assert.equal(parseYahooChart({ chart: { result: [] } }), null);
+  assert.equal(parseYahooChart({ chart: { result: [{ meta: { regularMarketPrice: 0 } }] } }), null);
 });

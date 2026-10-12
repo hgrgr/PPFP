@@ -24,7 +24,7 @@ import {
   type RankingType,
 } from '../brokers';
 import { kindOf, marketProviders, type Provider } from './brokers';
-import { activeContract, COMMODITIES, krwPerGram, type CommodityQuote } from '@/domain/commodities';
+import { activeContract, COMMODITIES, krwPerGram, parseYahooChart, yahooContract, type CommodityDef, type CommodityQuote } from '@/domain/commodities';
 import { BROKERS } from '@/lib/brokers';
 import { UserError } from './portfolios';
 
@@ -515,7 +515,24 @@ export interface CommodityBoard {
 }
 
 const COMMODITY_TTL = 15_000;
-const commodityCache = new Map<string, Cached<{ quote: CommodityQuote | null; source: string | null; error: string | null }>>();
+const commodityCache = new Map<string, Cached<{ quote: CommodityQuote | null; source: string | null; error: string | null; contract: string | null }>>();
+
+/** Delayed public quote of the front month, for futures the linked broker cannot quote. */
+async function yahooFuture(def: CommodityDef): Promise<{ quote: CommodityQuote; contract: string | null } | null> {
+  if (!def.yahoo) return null;
+  try {
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(def.yahoo)}?range=5d&interval=1d`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (PPFP)' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const q = parseYahooChart(await res.json());
+    return q ? { quote: q, contract: yahooContract(def.code, q.contractName) } : null;
+  } catch (e) {
+    console.error(`[market-board] yahoo ${def.yahoo}`, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
 
 /** KRX gold from 키움, overseas futures from 한국투자증권, 15-second cache. */
 export async function liveCommodities(userId: string): Promise<CommodityBoard> {
@@ -543,11 +560,21 @@ export async function liveCommodities(userId: string): Promise<CommodityBoard> {
             if (e instanceof BrokerApiError) error = `${BROKERS[p.conn.broker].label}: ${e.message}`;
           }
         }
-        c = { value: { quote, source, error: quote ? null : error }, at: Date.now() };
+        let contractShown: string | null = null;
+        if (!quote && def.source === 'FUTURE') {
+          // 한국투자증권 quotes only exchanges the account subscribed to (CBOT SUB거래소 …), or is not linked
+          const y = await yahooFuture(def);
+          if (y) {
+            quote = y.quote;
+            source = 'YAHOO';
+            contractShown = y.contract;
+          }
+        }
+        c = { value: { quote, source, error: quote ? null : error, contract: contractShown }, at: Date.now() };
         // Failures are cached too, so a broker that refuses is not asked on every poll.
         commodityCache.set(key, c);
       }
-      const { quote, source, error } = c!.value;
+      const { quote, source, error, contract: shownContract } = c!.value;
       const { change, changeRate } = changeOf(quote?.price ?? null, quote?.prevClose ?? null);
       return {
         id: def.id,
@@ -555,7 +582,7 @@ export async function liveCommodities(userId: string): Promise<CommodityBoard> {
         unit: def.unit,
         currency: def.currency,
         exchange: def.exchange,
-        contract,
+        contract: shownContract ?? contract,
         price: quote?.price ?? null,
         prevClose: quote?.prevClose ?? null,
         change,
