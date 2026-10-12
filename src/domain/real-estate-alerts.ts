@@ -4,7 +4,7 @@
  * 토지거래허가구역 status of the lot from 국토교통부 토지이용계획. Pure; the service fetches
  * and stores.
  */
-import { eok, isOwnComplex, monthsBefore, sameArea, areaLabel, type ApartmentMeta, type AptTrade } from './real-estate';
+import { eok, inDong, isOwnComplex, monthsBefore, sameArea, areaLabel, type ApartmentMeta, type AptTrade } from './real-estate';
 
 export const RE_EVENTS = ['TRADE', 'REGISTERED', 'CANCELLED', 'ZONE'] as const;
 export type ReEvent = (typeof RE_EVENTS)[number];
@@ -12,7 +12,7 @@ export const RE_EVENT_LABEL: Record<ReEvent, string> = { TRADE: '새 거래 신�
 
 export const RE_SCOPES = ['AREA', 'COMPLEX', 'DONG'] as const;
 export type ReScope = (typeof RE_SCOPES)[number];
-export const RE_SCOPE_LABEL: Record<ReScope, string> = { AREA: '이 단지 같은 면적', COMPLEX: '이 단지 전체', DONG: '같은 법정동 전체' };
+export const RE_SCOPE_LABEL: Record<ReScope, string> = { AREA: '이 건물 같은 면적', COMPLEX: '이 건물 전체', DONG: '같은 법정동 전체' };
 
 export const RE_DEALINGS = { ANY: '모두', BROKER: '중개거래만', DIRECT: '직거래만' } as const;
 export const RE_BUYERS = { ANY: '모두', PERSON: '개인만', CORP: '법인만' } as const;
@@ -37,8 +37,7 @@ const flags = (t: AptTrade) => `${t.rgstDate ? 'R' : ''}${t.cancelled ? 'C' : ''
 export type Seen = Record<string, string>;
 
 export function inScope(t: AptTrade, meta: ApartmentMeta, scope: ReScope): boolean {
-  const dong = t.umdCd ? t.umdCd === meta.umdCd : t.umdNm === meta.umdNm;
-  if (!dong) return false;
+  if (!inDong(t, meta)) return false;
   if (scope === 'DONG') return true;
   if (!isOwnComplex(t, meta)) return false;
   return scope === 'COMPLEX' || (meta.area !== null && sameArea(t.area, meta.area));
@@ -140,5 +139,5 @@ export function zoneFromLandUse(body: unknown): boolean | null {
 
 export const zoneMessage = (name: string, zone: boolean) => ({
   title: `${name} · 토지거래허가구역 ${zone ? '지정' : '해제'}`,
-  body: zone ? '이 아파트의 땅이 토지거래허가구역에 들어갔습니다. 매매하려면 시·군·구청의 허가를 받아야 합니다(실거주 의무 등).' : '이 아파트의 땅이 토지거래허가구역에서 빠졌습니다.',
+  body: zone ? '이 집의 땅이 토지거래허가구역에 들어갔습니다. 매매하려면 시·군·구청의 허가를 받아야 합니다(실거주 의무 등).' : '이 집의 땅이 토지거래허가구역에서 빠졌습니다.',
 });

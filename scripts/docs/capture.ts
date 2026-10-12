@@ -74,6 +74,7 @@ interface Ids {
   /** A strategy that takes whole accounts */
   accountStrategy: string;
   apartment: string;
+  house: string;
   aapl: string;
   nvdaJournal: string;
   aaplJournal: string;
@@ -235,13 +236,43 @@ const SHOTS: Shot[] = [
       { click: { sel: '[aria-label="자산 종류"] button', text: '수기 자산' } },
       { set: { sel: 'select[name="propertyKind"]' }, value: 'villa' },
       { wait: 400 },
-      { set: { sel: 'input[name="propertyAddress"]' }, value: '서울 마포구 망원동 123-4' },
-      { set: { sel: 'input[name="propertyArea"]' }, value: '59.8' },
-      { set: { sel: 'input[name="name"]' }, value: '망원동 빌라' },
-      { wait: 300 },
+      { set: { sel: '.apt-picker input' }, value: '대치동 903-12' },
+      { click: { sel: '.apt-picker button', text: '찾기' } },
+      { until: "!!document.querySelector('.apt-picker .book-hits li button')" },
+      { click: { sel: '.apt-picker .book-hits li button' } },
+      { until: "!!document.querySelector('.apt-picked select')" },
+      { wait: 600 },
     ],
     clip: [{ sel: '#add' }],
-    marks: [{ sel: 'select[name="propertyKind"]', closest: 'label' }, { sel: 'input[name="propertyAddress"]', closest: 'label' }, { sel: 'input[name="propertyArea"]', closest: 'label' }],
+    marks: [{ sel: 'select[name="propertyKind"]', closest: 'label' }, { sel: '.apt-picked label', text: '실거래가 건물' }, { sel: '.apt-picked label', text: '전용면적' }, { sel: 'input[name="name"]', closest: 'label' }],
+  },
+  {
+    file: 'realestate-lot-pick',
+    path: (ids) => `/portfolios/${ids.home}`,
+    wait: 1500,
+    steps: [
+      { click: { sel: '[aria-label="자산 종류"] button', text: '수기 자산' } },
+      { set: { sel: 'select[name="propertyKind"]' }, value: 'land' },
+      { wait: 400 },
+      { set: { sel: '.apt-picker input' }, value: '대치동 120' },
+      { click: { sel: '.apt-picker button', text: '찾기' } },
+      { until: "!!document.querySelector('.apt-picker .book-hits li button')" },
+      { click: { sel: '.apt-picker .book-hits li button' } },
+      { until: "!!document.querySelector('.apt-picked select')" },
+      { set: { sel: '.apt-picked input' }, value: '165' },
+      { wait: 600 },
+    ],
+    clip: [{ sel: '#add' }],
+    marks: [{ sel: 'select[name="propertyKind"]', closest: 'label' }, { sel: '.apt-picked label', text: '비교할 지목' }, { sel: '.apt-picked label', text: '토지 면적' }],
+  },
+  {
+    file: 'realestate-lot',
+    path: (ids) => `/holdings/${ids.house}`,
+    width: 1280,
+    height: 1800,
+    steps: [{ until: "!!document.querySelector('#real-estate .kpi')" }, { wait: 1200 }],
+    clip: [{ sel: '#real-estate' }],
+    marks: [{ sel: '#real-estate .kpi .label', text: '참고 시세', closest: '.kpi' }, { sel: '#real-estate .kpi .label', text: '단독 3.3㎡당', closest: '.kpi' }, { sel: '#real-estate tbody tr.strong' }, { sel: '#real-estate h3', text: '거래 (최근 2년)' }],
   },
   {
     file: 'realestate-holding',
@@ -1134,7 +1165,8 @@ async function main() {
       home: pid('부동산'),
       growth: pid('성장'),
       accountStrategy: pid('올웨더'),
-      apartment: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE' } } })).id,
+      apartment: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE', name: { startsWith: '한빛마을래미안' } } } })).id,
+      house: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE', name: '대치동 958 단독' } } })).id,
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,
       aiChat: '',

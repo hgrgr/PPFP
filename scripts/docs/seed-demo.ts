@@ -135,6 +135,21 @@ async function main() {
     meta: { kind: 'apartment', address: '서울 강남구 대치동 508', roadAddress: '서울 강남구 삼성로 51', placeName: '한빛마을래미안', lat: 37.4949, lng: 127.0631, lawdCd: '11680', umdCd: '10600', umdNm: '대치동', aptNm: '한빛마을래미안', jibun: '508', aptSeq: '11680-9001', area: 84.97 },
   });
   await recordBuy(uid, { portfolioId: home.id, assetId: apt.id, tradeAt: new Date(`${dash(ago(400))}T14:00:00+09:00`), qty: '1', price: '2780000000', tax: '91740000', fromCash: false, memo: '취득세 포함' });
+  // A villa linked to its building, and a house compared with its 동 (지번 masked in the deals).
+  const villa = await createManualAsset(uid, {
+    type: 'REAL_ESTATE',
+    name: '대치 그린빌 18평형',
+    currency: 'KRW',
+    meta: { kind: 'villa', address: '서울 강남구 대치동 903-12', roadAddress: '서울 강남구 역삼로18길 3', placeName: '대치 그린빌', lat: 37.4982, lng: 127.0601, lawdCd: '11680', umdCd: '10600', umdNm: '대치동', aptNm: '대치 그린빌', jibun: '903-12', aptSeq: null, area: 59.84 },
+  });
+  await recordBuy(uid, { portfolioId: home.id, assetId: villa.id, tradeAt: new Date(`${dash(ago(700))}T11:00:00+09:00`), qty: '1', price: '560000000', tax: '6160000', fromCash: false, memo: '임대용' });
+  const house = await createManualAsset(uid, {
+    type: 'REAL_ESTATE',
+    name: '대치동 958 단독',
+    currency: 'KRW',
+    meta: { kind: 'house', address: '서울 강남구 대치동 958', roadAddress: '서울 강남구 역삼로9길 58', placeName: '서울 강남구 대치동 958', lat: 37.4979, lng: 127.0598, lawdCd: '11680', umdCd: '10600', umdNm: '대치동', jibun: '958', area: 172, use: '단독' },
+  });
+  await recordBuy(uid, { portfolioId: home.id, assetId: house.id, tradeAt: new Date(`${dash(ago(1000))}T10:00:00+09:00`), qty: '1', price: '4100000000', tax: '188600000', fromCash: false, memo: '상속' });
   // 부동산 알림: the first check records what is there; pretend it ran before the latest sale,
   // one registration and the 토지거래허가구역 designation, so the next check reports them.
   const watch = await createReAlert(uid, { assetId: apt.id, events: ['TRADE', 'REGISTERED', 'CANCELLED', 'ZONE'], scope: 'COMPLEX', note: '실거주 단지' });

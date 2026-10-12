@@ -496,7 +496,7 @@ function Commodities({ paused }: { paused: boolean }) {
   );
 }
 
-/** Held apartments with their 실거래가 estimate (loaded once; deals change daily at most). */
+/** Held real estate with its 실거래가 estimate (loaded once; deals change daily at most). */
 function RealEstates() {
   const [data, setData] = useState<{ rows: ApartmentSummary[]; unlinked: number } | { error: string } | null>(null);
   useEffect(() => {
@@ -519,7 +519,7 @@ function RealEstates() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th scope="col" className="l">자산</th><th scope="col">추정 시세</th><th scope="col">같은 면적 최근 거래</th><th scope="col">동 3.3㎡당 1년 변화</th></tr>
+                  <tr><th scope="col" className="l">자산</th><th scope="col">추정 시세</th><th scope="col">최근 거래</th><th scope="col">동 3.3㎡당 1년 변화</th></tr>
                 </thead>
                 <tbody>
                   {data.rows.map((r) => (
@@ -532,7 +532,10 @@ function RealEstates() {
                         <td colSpan={2} className="l sub" style={{ whiteSpace: 'normal' }}>{r.error}</td>
                       ) : (
                         <>
-                          <td className="money strong">{r.estimate ? eok(r.estimate) : '—'}</td>
+                          <td className="money strong" title={r.basis ?? undefined}>
+                            {r.estimate ? eok(r.estimate) : '—'}
+                            {r.reference && r.estimate ? <span className="sub"> 참고</span> : null}
+                          </td>
                           <td className="money">{r.latest ? <>{eok(r.latest.price)} <span className="sub">{r.latest.date}</span></> : '—'}</td>
                           <td className={`money ${r.dongChange !== null ? tone(r.dongChange) : ''}`}>{r.dongChange !== null ? `${r.umdNm} ${pct(r.dongChange, 1)}` : '—'}</td>
                         </>
@@ -543,7 +546,8 @@ function RealEstates() {
               </table>
             </div>
           )}
-          {data.unlinked > 0 && <p className="sub">아파트를 연결하지 않은 부동산 {data.unlinked}개는 빠져 있습니다. 자산 화면에서 아파트를 고르면 실거래가가 나옵니다.</p>}
+          {data.unlinked > 0 && <p className="sub">실거래가에 연결하지 않은 부동산 {data.unlinked}개는 빠져 있습니다. 자산 화면에서 건물이나 위치를 고르면 실거래가가 나옵니다.</p>}
+          {data.rows.some((r) => r.reference) && <p className="sub">참고: 단독·토지·상가는 지번이 가려져 나와, 같은 동 거래의 ㎡당 중앙값에 면적을 곱한 값입니다. 최근 거래도 그 동의 거래입니다.</p>}
         </>
       )}
     </div>

@@ -135,7 +135,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
         <div className="stack" style={{ gap: 4 }}>
           <h2>부동산 알림</h2>
           <p className="sub">
-            아파트를 연결한 부동산 자산의 국토교통부 실거래가를 몇 시간마다 확인해, 새 거래 신고·등기 완료·거래 해제와 토지거래허가구역 지정·해제를 알립니다. 처음 만들 때 지금 있는 거래를 기준으로 삼으므로, 그 뒤에 생긴 일만 알립니다.
+            아파트·빌라·오피스텔을 연결한 부동산 자산의 국토교통부 실거래가를 몇 시간마다 확인해, 새 거래 신고·등기 완료·거래 해제와 토지거래허가구역 지정·해제를 알립니다. 처음 만들 때 지금 있는 거래를 기준으로 삼으므로, 그 뒤에 생긴 일만 알립니다.
           </p>
         </div>
         <ReAlertForm assets={apartments} initialAsset={initialAsset} />

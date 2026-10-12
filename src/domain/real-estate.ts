@@ -1,18 +1,46 @@
 /**
- * Apartments: reads 국토교통부 아파트 매매 실거래가 (apis.data.go.kr, XML) and 카카오 로컬
- * answers, and turns a district's trades into what an apartment asset shows — its own
- * recent deals, an estimated price, and how the neighborhood moved. Pure; the service
- * does the calls and the caching.
+ * Real estate: reads 국토교통부 매매 실거래가 (apis.data.go.kr, XML) and 카카오 로컬 answers,
+ * and turns a district's trades into what a real estate asset shows. Apartments, villas and
+ * officetels are buildings whose own deals can be found (by name and 지번): their recent
+ * deals, an estimated price, and how the neighborhood moved. Houses, land and shops are
+ * reported with the 지번 masked, so they get the 동's deals and a price per ㎡ to compare
+ * with. Pure; the service does the calls and the caching.
  */
+
+/** The 매매 실거래가 service of each kind (공공데이터포털 국토교통부, one 활용신청 each). */
+export const RTMS_SERVICES = {
+  apartment: { path: 'RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev', title: '아파트 매매 실거래가 상세 자료', dataId: '15126468' },
+  villa: { path: 'RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade', title: '연립다세대 매매 실거래가 자료', dataId: '15126467' },
+  officetel: { path: 'RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade', title: '오피스텔 매매 실거래가 자료', dataId: '15126464' },
+  house: { path: 'RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade', title: '단독/다가구 매매 실거래가 자료', dataId: '15126465' },
+  land: { path: 'RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade', title: '토지 매매 실거래가 자료', dataId: '15126466' },
+  commercial: { path: 'RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade', title: '상업업무용 부동산 매매 실거래가 자료', dataId: '15126463' },
+} as const;
+export type TradeKind = keyof typeof RTMS_SERVICES;
+export const TRADE_KINDS = Object.keys(RTMS_SERVICES) as TradeKind[];
+export const rtmsPortalUrl = (kind: TradeKind) => `https://www.data.go.kr/data/${RTMS_SERVICES[kind].dataId}/openapi.do`;
+
+/** Kinds whose own building can be picked from the deals: matched by name and 지번. */
+export const BUILDING_KINDS = ['apartment', 'villa', 'officetel'] as const;
+export type BuildingKind = (typeof BUILDING_KINDS)[number];
+/** Kinds reported with the 지번 masked ("1**"): compared with the 동's deals per ㎡. */
+export const LOT_KINDS = ['house', 'land', 'commercial'] as const;
+export type LotKind = (typeof LOT_KINDS)[number];
+export const isBuildingKind = (k: unknown): k is BuildingKind => (BUILDING_KINDS as readonly unknown[]).includes(k);
+export const isLotKind = (k: unknown): k is LotKind => (LOT_KINDS as readonly unknown[]).includes(k);
 
 /** One reported sale. Prices in 원 (the API reports 만원). */
 export interface AptTrade {
   /** YYYY-MM-DD contract date */
   date: string;
   price: number;
-  /** 전용면적 ㎡ */
+  /**
+   * ㎡ the price is compared on: 전용면적 for apartments, villas and officetels, 대지면적 for
+   * houses, the traded area for land, 건물면적 for shops
+   */
   area: number;
   floor: number | null;
+  /** Building name (아파트, 연립다세대, 오피스텔); empty for houses, land and shops */
   aptNm: string;
   /** 법정동 code (5 digits after the 시군구 code), when the API sends it */
   umdCd: string | null;
@@ -31,11 +59,26 @@ export interface AptTrade {
   /** 매수자 · 매도자: 개인, 법인, 공공기관, 기타 */
   buyer: string | null;
   seller: string | null;
+  /** 대지권면적 (villa) or 대지면적 (house, shop), ㎡ */
+  landArea?: number | null;
+  /** 연면적 of a house, ㎡ */
+  floorArea?: number | null;
+  /** 단독/다가구 (house), 지목 (land), 건물주용도 (shop) */
+  use?: string | null;
+  /** 용도지역 (land, shop) */
+  zoning?: string | null;
+  /** 일반/집합 (shop) */
+  buildingType?: string | null;
+  /** A share of the lot or building was sold (지분거래) */
+  share?: boolean;
 }
 
-/** What a real estate asset remembers about the apartment it is (Asset.meta). */
+/**
+ * What a real estate asset remembers about the building it is (Asset.meta): an apartment,
+ * a villa or an officetel. The 실거래가 fields name the building as the deals do.
+ */
 export interface ApartmentMeta {
-  kind: 'apartment';
+  kind: BuildingKind;
   /** 지번 주소, e.g. "서울 강남구 대치동 316" */
   address: string;
   roadAddress: string | null;
@@ -100,7 +143,7 @@ const MOLIT_ERRORS: Record<string, string> = {
   '03': '해당 기간에 거래가 없습니다.',
   '10': '요청값이 잘못되었습니다.',
   '12': '없어졌거나 바뀐 서비스입니다.',
-  '20': '이 서비스에 활용신청이 되어 있지 않습니다. 공공데이터포털에서 아파트 매매 실거래가 상세 자료를 활용신청하세요.',
+  '20': '이 서비스에 활용신청이 되어 있지 않습니다.',
   '22': '오늘 호출 한도를 넘었습니다. 내일 다시 시도하세요.',
   '23': '잠깐 사이 너무 많이 호출했습니다. 잠시 후 다시 시도하세요.',
   '30': '등록되지 않은 서비스 키입니다. 공공데이터포털의 일반 인증키(Decoding)를 넣었는지 확인하세요.',
@@ -108,15 +151,16 @@ const MOLIT_ERRORS: Record<string, string> = {
   '32': '등록되지 않은 IP에서 호출했습니다.',
 };
 
-/** Parses one page of the 실거래가 response. Throws MolitApiError for an error answer. */
-export function parseMolitTrades(xml: string): { trades: AptTrade[]; totalCount: number } {
+/** Parses one page of a 실거래가 response of `kind`. Throws MolitApiError for an error answer. */
+export function parseMolitTrades(xml: string, kind: TradeKind = 'apartment'): { trades: AptTrade[]; totalCount: number } {
+  const fail = (code: string, fallback: string | null) => {
+    const msg = code === '20' ? `이 서비스에 활용신청이 되어 있지 않습니다. 공공데이터포털에서 국토교통부 ${RTMS_SERVICES[kind].title}를 활용신청하세요.` : MOLIT_ERRORS[code] ?? fallback ?? '실거래가 서비스가 오류를 보냈습니다.';
+    return new MolitApiError(msg, code);
+  };
   const auth = tag(xml, 'returnReasonCode');
-  if (auth && auth !== '00') throw new MolitApiError(MOLIT_ERRORS[auth] ?? tag(xml, 'returnAuthMsg') ?? '실거래가 서비스가 오류를 보냈습니다.', auth);
+  if (auth && auth !== '00') throw fail(auth, tag(xml, 'returnAuthMsg'));
   const code = tag(xml, 'resultCode');
-  if (code && !/^0+$/.test(code) && code !== '03') {
-    const short = code.replace(/^0(?=\d\d$)/, '');
-    throw new MolitApiError(MOLIT_ERRORS[short] ?? tag(xml, 'resultMsg') ?? '실거래가 서비스가 오류를 보냈습니다.', short);
-  }
+  if (code && !/^0+$/.test(code) && code !== '03') throw fail(code.replace(/^0(?=\d\d$)/, ''), tag(xml, 'resultMsg'));
   const trades: AptTrade[] = [];
   for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
     const it = m[1];
@@ -124,16 +168,20 @@ export function parseMolitTrades(xml: string): { trades: AptTrade[]; totalCount:
     const mo = num(pick(it, 'dealMonth', '월'));
     const d = num(pick(it, 'dealDay', '일'));
     const man = num(pick(it, 'dealAmount', '거래금액'));
-    const area = num(pick(it, 'excluUseAr', 'exclUseAr', '전용면적'));
-    const aptNm = pick(it, 'aptNm', '아파트');
-    if (!y || !mo || !d || !man || !area || !aptNm) continue;
+    const landArea = num(pick(it, 'landAr', 'plottageAr', '대지권면적', '대지면적'));
+    const floorArea = kind === 'house' ? num(pick(it, 'totalFloorAr', '연면적')) : null;
+    const area =
+      kind === 'house' ? landArea : kind === 'land' ? num(pick(it, 'dealArea', '거래면적')) : kind === 'commercial' ? num(pick(it, 'buildingAr', '건물면적')) : num(pick(it, 'excluUseAr', 'exclUseAr', '전용면적'));
+    const name = isBuildingKind(kind) ? pick(it, 'aptNm', '아파트', 'mhouseNm', '연립다세대', 'offiNm', '단지') : '';
+    if (!y || !mo || !d || !man || !area || name === null) continue;
     const cdeal = pick(it, 'cdealType', '해제여부');
-    trades.push({
+    const share = pick(it, 'shareDealingType', '지분거래구분');
+    const trade: AptTrade = {
       date: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
       price: man * 10_000,
       area,
       floor: num(pick(it, 'floor', '층')),
-      aptNm: aptNm.replace(/\s+/g, ' '),
+      aptNm: name.replace(/\s+/g, ' '),
       umdCd: pad(pick(it, 'umdCd', '법정동읍면동코드'), 5),
       umdNm: (pick(it, 'umdNm', '법정동') ?? '').replace(/\s+/g, ' '),
       jibun: pick(it, 'jibun', '지번'),
@@ -145,7 +193,18 @@ export function parseMolitTrades(xml: string): { trades: AptTrade[]; totalCount:
       rgstDate: dayOf(pick(it, 'rgstDate', '등기일자')),
       buyer: pick(it, 'buyerGbn', '매수자'),
       seller: pick(it, 'slerGbn', '매도자'),
-    });
+    };
+    if (kind !== 'apartment') {
+      Object.assign(trade, {
+        landArea: kind === 'officetel' || kind === 'land' ? null : landArea,
+        floorArea,
+        use: kind === 'house' ? pick(it, 'houseType', '주택유형') : kind === 'land' ? pick(it, 'jimok', '지목') : kind === 'commercial' ? pick(it, 'buildingUse', '건물주용도') : null,
+        zoning: pick(it, 'landUse', '용도지역'),
+        buildingType: kind === 'commercial' ? pick(it, 'buildingType', '건물유형') : null,
+        share: !!share && /지분|^Y$/i.test(share),
+      });
+    }
+    trades.push(trade);
   }
   return { trades, totalCount: num(tag(xml, 'totalCount')) ?? trades.length };
 }
@@ -161,7 +220,10 @@ export interface PlaceHit {
   category: string;
 }
 
-export function parseKakaoPlaces(body: unknown): PlaceHit[] {
+/** Map categories that name each kind, so its places come first among keyword hits. */
+const KIND_CATEGORY: Partial<Record<TradeKind, RegExp>> = { apartment: /아파트/, officetel: /오피스텔/, villa: /빌라|연립|다세대|주택/ };
+
+export function parseKakaoPlaces(body: unknown, kind: TradeKind = 'apartment'): PlaceHit[] {
   const docs = (body as { documents?: unknown })?.documents;
   if (!Array.isArray(docs)) return [];
   const hits = docs.flatMap((d: Record<string, unknown>) => {
@@ -172,9 +234,28 @@ export function parseKakaoPlaces(body: unknown): PlaceHit[] {
     const road = typeof d.road_address_name === 'string' && d.road_address_name.trim() ? d.road_address_name.trim() : null;
     return [{ name, address, roadAddress: road, lat, lng, category: typeof d.category_name === 'string' ? d.category_name : '' }];
   });
-  // Apartment complexes first; stores and offices inside one come after.
-  const apt = (h: PlaceHit) => (/아파트$/.test(h.category) ? 0 : /아파트/.test(h.category) ? 1 : 2);
-  return hits.map((h, i) => ({ h, i })).sort((a, b) => apt(a.h) - apt(b.h) || a.i - b.i).map((x) => x.h);
+  // Places of the kind first (an apartment complex before the stores inside it); the rest after.
+  const re = KIND_CATEGORY[kind];
+  if (!re) return hits;
+  const last = new RegExp(`(${re.source})$`);
+  const rank = (h: PlaceHit) => (last.test(h.category) ? 0 : re.test(h.category) ? 1 : 2);
+  return hits.map((h, i) => ({ h, i })).sort((a, b) => rank(a.h) - rank(b.h) || a.i - b.i).map((x) => x.h);
+}
+
+/** 카카오 주소 검색 hits as places: named by the building when the road address has one, else by the address. */
+export function parseKakaoAddresses(body: unknown): PlaceHit[] {
+  const docs = (body as { documents?: unknown })?.documents;
+  if (!Array.isArray(docs)) return [];
+  return docs.flatMap((d: Record<string, unknown>) => {
+    const jibun = (d.address as Record<string, unknown> | null)?.address_name;
+    const road = d.road_address as Record<string, unknown> | null;
+    const address = typeof jibun === 'string' && jibun.trim() ? jibun.trim() : typeof d.address_name === 'string' ? d.address_name.trim() : '';
+    const lat = Number(d.y), lng = Number(d.x);
+    if (!address || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+    const roadAddress = typeof road?.address_name === 'string' && road.address_name.trim() ? road.address_name.trim() : null;
+    const building = typeof road?.building_name === 'string' ? road.building_name.trim() : '';
+    return [{ name: building || address, address, roadAddress, lat, lng, category: '주소' }];
+  });
 }
 
 /** 카카오 좌표→행정구역 answer: the 10-digit 법정동 code (region_type "B"). */
@@ -183,7 +264,20 @@ export function parseRegionCode(body: unknown): { lawdCd: string; umdCd: string;
   if (!Array.isArray(docs)) return null;
   const b = docs.find((d: Record<string, unknown>) => d.region_type === 'B' && typeof d.code === 'string' && /^\d{10}$/.test(d.code)) as Record<string, string> | undefined;
   if (!b) return null;
-  return { lawdCd: b.code.slice(0, 5), umdCd: b.code.slice(5), umdNm: (b.region_3depth_name || b.region_4depth_name || '').trim() };
+  // 읍·면 areas name the 리 too ("와부읍 도곡리"), as the deals of houses and land do.
+  const umdNm = [b.region_3depth_name, b.region_4depth_name].filter((x) => typeof x === 'string' && x.trim()).join(' ').trim();
+  return { lawdCd: b.code.slice(0, 5), umdCd: b.code.slice(5), umdNm };
+}
+
+/**
+ * Is a deal in the 동 of `place`? By code when the deal has one (apartments); else by name,
+ * where a 리 matches with or without its 읍·면 ("도곡리", "와부읍 도곡리").
+ */
+export function inDong(t: Pick<AptTrade, 'umdCd' | 'umdNm'>, place: { umdCd: string; umdNm: string }): boolean {
+  if (t.umdCd) return t.umdCd === place.umdCd;
+  if (t.umdNm === place.umdNm) return true;
+  const a = t.umdNm.split(' '), b = place.umdNm.split(' ');
+  return a.at(-1) === b.at(-1) && (a.length === 1 || b.length === 1 || a[0] === b[0]);
 }
 
 /** "서울 강남구 대치동 316" → "316"; "… 산 12-3" → "산12-3" */
@@ -243,9 +337,8 @@ export const sameArea = (a: number, b: number) => Math.abs(a - b) < 0.5;
 
 /** The complexes traded in one 법정동, with their areas. */
 export function complexesIn(trades: AptTrade[], dong: { umdCd: string; umdNm: string }): ComplexOption[] {
-  const inDong = trades.filter((t) => (t.umdCd ? t.umdCd === dong.umdCd : t.umdNm === dong.umdNm));
   const groups = new Map<string, AptTrade[]>();
-  for (const t of inDong) {
+  for (const t of trades.filter((x) => inDong(x, dong))) {
     const k = complexKey(t);
     groups.set(k, [...(groups.get(k) ?? []), t]);
   }
@@ -287,8 +380,7 @@ export function guessComplex(options: ComplexOption[], place: { name: string; ad
 export function isOwnComplex(t: AptTrade, meta: Pick<ApartmentMeta, 'aptSeq' | 'umdCd' | 'umdNm' | 'jibun' | 'aptNm'>): boolean {
   if (meta.aptSeq && t.aptSeq) return t.aptSeq === meta.aptSeq;
   if (!meta.aptNm) return false;
-  const dong = t.umdCd ? t.umdCd === meta.umdCd : t.umdNm === meta.umdNm;
-  return dong && t.aptNm === meta.aptNm && (!meta.jibun || !t.jibun || t.jibun === meta.jibun);
+  return inDong(t, meta) && t.aptNm === meta.aptNm && (!meta.jibun || !t.jibun || t.jibun === meta.jibun);
 }
 
 /** 3.3㎡ (1평) */
@@ -392,7 +484,7 @@ const perPyeong = (t: AptTrade) => (t.price / t.area) * PYEONG;
 
 /** Everything the apartment panel shows, from its 시군구's trades over the last two years. */
 export function apartmentReport(trades: AptTrade[], meta: ApartmentMeta, today: string): ApartmentReport {
-  const dongTrades = trades.filter((t) => (t.umdCd ? t.umdCd === meta.umdCd : t.umdNm === meta.umdNm));
+  const dongTrades = trades.filter((t) => inDong(t, meta));
   const own = dongTrades.filter((t) => isOwnComplex(t, meta)).sort((a, b) => b.date.localeCompare(a.date));
   const area = meta.area;
   const sameAreaDeals = area ? own.filter((t) => sameArea(t.area, area)) : [];
@@ -424,7 +516,19 @@ export function apartmentReport(trades: AptTrade[], meta: ApartmentMeta, today: 
     .sort((a, b) => Number(b.own) - Number(a.own) || b.deals - a.deals)
     .slice(0, 12);
 
-  // One month of a 동 holds few deals of mixed complexes, so each month pools the two before it.
+  return {
+    own,
+    sameAreaDeals,
+    estimate: area ? estimatePrice(own, area, today) : null,
+    areas,
+    nearby,
+    dong: dongTrend(live, today),
+  };
+}
+
+/** A 동's price per 3.3㎡: the last three months against a year earlier, and month by month. */
+function dongTrend(live: AptTrade[], today: string): DongTrend {
+  // One month of a 동 holds few deals of mixed buildings, so each month pools the two before it.
   const byMonth = new Map<string, number[]>();
   for (const t of live) byMonth.set(t.date.slice(0, 7), [...(byMonth.get(t.date.slice(0, 7)) ?? []), perPyeong(t)]);
   const months = [...byMonth.keys()].sort();
@@ -434,21 +538,91 @@ export function apartmentReport(trades: AptTrade[], meta: ApartmentMeta, today: 
     return { month, perPyeong: median(xs)!, deals: byMonth.get(month)!.length };
   });
   const window = (from: string, to: string) => live.filter((t) => t.date >= from && t.date < to).map(perPyeong);
-  const recentFrom = monthsBefore(today, 3);
-  const recent = window(recentFrom, '9999');
+  const recent = window(monthsBefore(today, 3), '9999');
   const yearAgo = window(monthsBefore(today, 15), monthsBefore(today, 12));
-
-  return {
-    own,
-    sameAreaDeals,
-    estimate: area ? estimatePrice(own, area, today) : null,
-    areas,
-    nearby,
-    dong: { recent: median(recent), yearAgo: median(yearAgo), recentDeals: recent.length, monthly },
-  };
+  return { recent: median(recent), yearAgo: median(yearAgo), recentDeals: recent.length, monthly };
 }
 
-/** Kinds of real estate a manual asset can be; only apartments link to 실거래가 (ApartmentMeta). */
+/**
+ * What a house, a piece of land or a shop remembers (Asset.meta): where it is, its area,
+ * and which deals of its 동 to compare with. Their deals hide the 지번, so the asset is
+ * not matched to its own deals.
+ */
+export interface LotMeta {
+  kind: LotKind;
+  /** 지번 주소 */
+  address: string;
+  roadAddress: string | null;
+  placeName: string;
+  lat: number;
+  lng: number;
+  lawdCd: string;
+  umdCd: string;
+  umdNm: string;
+  jibun: string | null;
+  /** ㎡ compared on: 대지면적 (house), 토지 면적 (land), 건물 면적 (shop) */
+  area: number | null;
+  /** Compare only deals of this 주택 유형 / 지목 / 건물 용도; null for all of the kind */
+  use: string | null;
+}
+
+/** What each lot kind's area is, in words. */
+export const LOT_AREA_LABEL: Record<LotKind, string> = { house: '대지면적', land: '토지 면적', commercial: '건물 면적' };
+/** What each lot kind's `use` is, in words. */
+export const LOT_USE_LABEL: Record<LotKind, string> = { house: '주택 유형', land: '지목', commercial: '건물 용도' };
+
+/** A masked 지번 ("1**", "12*-3") could be `jibun` ("123"): same length, same digits where shown. */
+export function maskedJibunFits(masked: string | null, jibun: string | null): boolean {
+  if (!masked || !jibun || !masked.includes('*')) return false;
+  const [m, j] = [masked.replace(/\s/g, ''), jibun.replace(/\s/g, '')];
+  return m.length === j.length && [...m].every((c, i) => c === '*' || c === j[i]);
+}
+
+export interface LotDeal extends AptTrade {
+  /** The masked 지번 fits the asset's own */
+  maybeOwn: boolean;
+}
+
+export interface LotReport {
+  /** The 동's deals of the kind (and use, when set) over the period read, newest first */
+  deals: LotDeal[];
+  /** Uses traded in the 동, most traded first */
+  uses: { use: string; deals: number }[];
+  /** Median price per ㎡ over the last year, leaving out cancelled and share deals */
+  perArea: number | null;
+  perAreaDeals: number;
+  /** perArea × the asset's area: what the 동's deals put it at, for reference */
+  reference: { price: number; basis: string } | null;
+  dong: DongTrend;
+}
+
+/** The 동's uses of a lot kind, most traded first. */
+export function lotUses(trades: AptTrade[], dong: { umdCd: string; umdNm: string }): { use: string; deals: number }[] {
+  const counts = new Map<string, number>();
+  for (const t of trades) if (t.use && inDong(t, dong)) counts.set(t.use, (counts.get(t.use) ?? 0) + 1);
+  return [...counts.entries()].map(([use, deals]) => ({ use, deals })).sort((a, b) => b.deals - a.deals || a.use.localeCompare(b.use, 'ko'));
+}
+
+/** Everything the panel of a house, land or shop shows, from its 시군구's trades of that kind. */
+export function lotReport(trades: AptTrade[], meta: LotMeta, today: string): LotReport {
+  const dongTrades = trades.filter((t) => inDong(t, meta));
+  const deals = dongTrades
+    .filter((t) => !meta.use || t.use === meta.use)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((t) => ({ ...t, maybeOwn: maskedJibunFits(t.jibun, meta.jibun) }));
+  // A share deal prices part of the lot; its 면적 is not always the part sold.
+  const live = deals.filter((t) => !t.cancelled && !t.share);
+  const year = live.filter((t) => t.date >= monthsBefore(today, 12));
+  const perArea = median(year.map((t) => t.price / t.area));
+  const what = [meta.umdNm, meta.use ?? propertyKindLabel(meta.kind)].join(' ');
+  const reference =
+    perArea !== null && meta.area
+      ? { price: Math.round((perArea * meta.area) / 10_000) * 10_000, basis: `${what} 최근 1년 거래 ${year.length}건의 ㎡당 중앙값 × ${LOT_AREA_LABEL[meta.kind]} ${meta.area}㎡` }
+      : null;
+  return { deals, uses: lotUses(dongTrades, meta), perArea, perAreaDeals: year.length, reference, dong: dongTrend(live, today) };
+}
+
+/** Kinds of real estate an asset can be; all but 기타 link to 실거래가 (ApartmentMeta or LotMeta). */
 export const PROPERTY_KINDS = [
   ['apartment', '아파트'],
   ['villa', '빌라 · 연립 · 다세대'],
@@ -460,8 +634,10 @@ export const PROPERTY_KINDS = [
 ] as const;
 export type PropertyKind = (typeof PROPERTY_KINDS)[number][0];
 export const propertyKindLabel = (kind: string) => PROPERTY_KINDS.find(([k]) => k === kind)?.[1] ?? '부동산';
+/** "빌라 · 연립 · 다세대" → "빌라", for short phrases */
+export const propertyKindShort = (kind: string) => propertyKindLabel(kind).split(' ')[0];
 
-/** Real estate other than an apartment: its kind, and the address and 전용면적 written by hand. */
+/** Real estate not linked to 실거래가: its kind, and the address and area written by hand. */
 export interface PropertyMeta {
   kind: Exclude<PropertyKind, 'apartment'>;
   address: string | null;
@@ -469,27 +645,56 @@ export interface PropertyMeta {
   area: number | null;
 }
 
-/** Reads a PropertyMeta back from Asset.meta or a form; null for an apartment or anything else. */
+const isLinked = (o: Record<string, unknown>) => typeof o.lawdCd === 'string';
+
+/** Reads a PropertyMeta back from Asset.meta or a form; null for an apartment, a linked property or anything else. */
 export function readPropertyMeta(v: unknown): PropertyMeta | null {
   const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
-  if (!o || typeof o !== 'object' || o.kind === 'apartment' || !PROPERTY_KINDS.some(([k]) => k === o.kind)) return null;
+  if (!o || typeof o !== 'object' || o.kind === 'apartment' || isLinked(o) || !PROPERTY_KINDS.some(([k]) => k === o.kind)) return null;
   const address = typeof o.address === 'string' && o.address.trim() ? o.address.trim().slice(0, 120) : null;
   const area = o.area === null || o.area === undefined || o.area === '' ? null : Number(o.area);
   if (area !== null && !(Number.isFinite(area) && area > 0 && area < 1_000_000)) return null;
   return { kind: o.kind as PropertyMeta['kind'], address, area };
 }
 
-/** Reads an ApartmentMeta back from Asset.meta or a form field; null when it is not one. */
-export function readApartmentMeta(v: unknown): ApartmentMeta | null {
-  const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
-  if (!o || typeof o !== 'object' || o.kind !== 'apartment') return null;
+/** The place fields both linked metas share, checked; null when any is missing or malformed. */
+function readPlace(o: Record<string, unknown>, maxArea: number) {
   const str = (k: string, max = 120) => (typeof o[k] === 'string' && (o[k] as string).trim() ? (o[k] as string).trim().slice(0, max) : null);
   const lat = Number(o.lat), lng = Number(o.lng), area = o.area === null || o.area === undefined || o.area === '' ? null : Number(o.area);
   const address = str('address'), placeName = str('placeName', 80), lawdCd = str('lawdCd', 5), umdCd = str('umdCd', 5);
   if (!address || !placeName || !lawdCd || !/^\d{5}$/.test(lawdCd) || !umdCd || !/^\d{5}$/.test(umdCd)) return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  if (area !== null && !(Number.isFinite(area) && area > 0 && area < 1000)) return null;
-  return { kind: 'apartment', address, roadAddress: str('roadAddress'), placeName, lat, lng, lawdCd, umdCd, umdNm: str('umdNm', 40) ?? '', aptNm: str('aptNm', 80), jibun: str('jibun', 20), aptSeq: str('aptSeq', 40), area };
+  if (area !== null && !(Number.isFinite(area) && area > 0 && area < maxArea)) return null;
+  return { str, place: { address, roadAddress: str('roadAddress'), placeName, lat, lng, lawdCd, umdCd, umdNm: str('umdNm', 40) ?? '', jibun: str('jibun', 20), area } };
+}
+
+/** Reads an ApartmentMeta (an apartment, villa or officetel) back from Asset.meta or a form field; null when it is not one. */
+export function readApartmentMeta(v: unknown): ApartmentMeta | null {
+  const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object' || !isBuildingKind(o.kind)) return null;
+  const r = readPlace(o, 1000);
+  if (!r) return null;
+  const { address, roadAddress, placeName, lat, lng, lawdCd, umdCd, umdNm, jibun, area } = r.place;
+  return { kind: o.kind, address, roadAddress, placeName, lat, lng, lawdCd, umdCd, umdNm, aptNm: r.str('aptNm', 80), jibun, aptSeq: r.str('aptSeq', 40), area };
+}
+
+/** Reads a LotMeta (a house, land or shop linked to its 동's deals) back; null when it is not one. */
+export function readLotMeta(v: unknown): LotMeta | null {
+  const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object' || !isLotKind(o.kind)) return null;
+  const r = readPlace(o, 10_000_000);
+  if (!r) return null;
+  return { kind: o.kind, ...r.place, use: r.str('use', 40) };
+}
+
+/** The 실거래가 link of a real estate asset, whichever kind it is. */
+export const readLinkedMeta = (v: unknown): ApartmentMeta | LotMeta | null => readApartmentMeta(v) ?? readLotMeta(v);
+
+/** The kind of a real estate asset from its meta; an asset without one is an apartment not yet linked. */
+export function propertyKindOf(v: unknown): PropertyKind {
+  const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
+  const k = o && typeof o === 'object' ? o.kind : null;
+  return PROPERTY_KINDS.some(([x]) => x === k) ? (k as PropertyKind) : 'apartment';
 }
 
 function safeJson(s: string): unknown {
