@@ -154,7 +154,15 @@ const MOLIT_ERRORS: Record<string, string> = {
 /** Parses one page of a 실거래가 response of `kind`. Throws MolitApiError for an error answer. */
 export function parseMolitTrades(xml: string, kind: TradeKind = 'apartment'): { trades: AptTrade[]; totalCount: number } {
   const fail = (code: string, fallback: string | null) => {
-    const msg = code === '20' ? `이 서비스에 활용신청이 되어 있지 않습니다. 공공데이터포털에서 국토교통부 ${RTMS_SERVICES[kind].title}를 활용신청하세요.` : MOLIT_ERRORS[code] ?? fallback ?? '실거래가 서비스가 오류를 보냈습니다.';
+    const title = `국토교통부 ${RTMS_SERVICES[kind].title}`;
+    // The gateway answers 30 also when the key is fine but not applied for this one service,
+    // as each kind of property is its own 활용신청.
+    const msg =
+      code === '20'
+        ? `이 서비스에 활용신청이 되어 있지 않습니다. 공공데이터포털에서 ${title}를 활용신청하세요.`
+        : code === '30'
+          ? `이 인증키로 ${title}를 쓸 수 없습니다. 공공데이터포털에서 이 서비스를 활용신청했는지(승인 뒤 반영까지 1시간쯤 걸립니다), 일반 인증키(Decoding)를 넣었는지 확인하세요.`
+          : MOLIT_ERRORS[code] ?? fallback ?? '실거래가 서비스가 오류를 보냈습니다.';
     return new MolitApiError(msg, code);
   };
   const auth = tag(xml, 'returnReasonCode');

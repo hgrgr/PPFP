@@ -94,6 +94,11 @@ describe('real estate', () => {
       () => parseMolitTrades('<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE ERROR</errMsg><returnAuthMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</returnAuthMsg><returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>'),
       (e: unknown) => e instanceof MolitApiError && e.code === '30' && /Decoding/.test(e.message),
     );
+    // 30 also comes back for a service the key was not applied for, so it names the service
+    assert.throws(
+      () => parseMolitTrades('<OpenAPI_ServiceResponse><cmmMsgHeader><returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>', 'officetel'),
+      (e: unknown) => e instanceof MolitApiError && /오피스텔 매매 실거래가 자료/.test(e.message) && /활용신청/.test(e.message),
+    );
     assert.throws(() => parseMolitTrades('<response><header><resultCode>22</resultCode><resultMsg>LIMITED</resultMsg></header></response>'), /한도/);
     assert.equal(parseMolitTrades('<response><header><resultCode>03</resultCode><resultMsg>NODATA_ERROR</resultMsg></header></response>').trades.length, 0);
   });

@@ -110,7 +110,7 @@ const SHOTS: Shot[] = [
       card('자산 배분'),
     ],
   },
-  { file: 'dashboard-tables', path: () => '/dashboard', wait: 2200, width: 1680, clip: [{ sel: 'h2', text: '비중 변화', closest: 'section' }, { sel: 'h2', text: '보유 종목', closest: 'section' }] },
+  { file: 'dashboard-tables', path: (ids) => `/dashboard?p=${ids.root}`, wait: 2200, width: 1680, clip: [{ sel: 'h2', text: '비중 변화', closest: 'section' }, { sel: 'h2', text: '보유 종목', closest: 'section' }] },
   { file: 'dashboard-dark', path: () => '/dashboard', wait: 2200, dark: true },
   {
     file: 'portfolios',
@@ -1074,6 +1074,9 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
       await s('Emulation.setDeviceMetricsOverride', { width, height: Math.min(full, 6000), deviceScaleFactor: scale, mobile: !!shot.mobile });
       // Charts that just came into view lay out and animate
       await sleep(2000);
+      // A chart sized while it was off screen can stay empty for a while; wait until each has drawn
+      const drawn = "[...document.querySelectorAll('.recharts-responsive-container')].every((c) => c.querySelector('.recharts-surface'))";
+      for (const end = Date.now() + 10_000; !(await run(drawn)) && Date.now() < end; ) await sleep(250);
       await run(PAGE_HELPERS);
     }
     if (shot.marks?.length) await run(`__docs.mark(${JSON.stringify(shot.marks)})`);

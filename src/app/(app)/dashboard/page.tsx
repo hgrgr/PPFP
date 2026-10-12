@@ -19,6 +19,9 @@ import { AskAiButton } from '@/components/ai/launcher';
 export const metadata = { title: '대시보드' };
 export const dynamic = 'force-dynamic';
 
+const weightBasisLabel = { own: '하위 포트폴리오 · 종목별', holding: '종목별', type: '자산유형별' } as const;
+const weightBasisHead = { own: '구성', holding: '종목', type: '자산유형' } as const;
+
 type SP = Promise<Record<string, string | string[] | undefined>>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
@@ -236,7 +239,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
       <section className="card">
         <div className="stack" style={{ gap: 4 }}>
           <h2>비중 변화</h2>
-          <p className="sub">기간 동안 자산유형별 비중 (100% 누적)</p>
+          <p className="sub">
+            기간 동안 {weightBasisLabel[d.weightChange.basis]} 비중 (100% 누적)
+            {allocKind === 'ccy' || allocKind === 'trait' ? ' · 통화·성질은 과거 기록이 없어 유형으로 보여 줍니다' : ''}
+          </p>
         </div>
         <div className="row">
           <div className="wide">
@@ -245,7 +251,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th scope="col">자산유형</th><th scope="col">시작</th><th scope="col">종료</th><th scope="col">변화</th></tr>
+                <tr><th scope="col">{weightBasisHead[d.weightChange.basis]}</th><th scope="col">시작</th><th scope="col">종료</th><th scope="col">변화</th></tr>
               </thead>
               <tbody>
                 {d.weightChange.keys.map((k) => {
