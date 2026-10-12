@@ -448,6 +448,37 @@ export function apartmentReport(trades: AptTrade[], meta: ApartmentMeta, today: 
   };
 }
 
+/** Kinds of real estate a manual asset can be; only apartments link to 실거래가 (ApartmentMeta). */
+export const PROPERTY_KINDS = [
+  ['apartment', '아파트'],
+  ['villa', '빌라 · 연립 · 다세대'],
+  ['officetel', '오피스텔'],
+  ['house', '단독 · 다가구 주택'],
+  ['land', '토지'],
+  ['commercial', '상가 · 사무실'],
+  ['other', '기타 부동산'],
+] as const;
+export type PropertyKind = (typeof PROPERTY_KINDS)[number][0];
+export const propertyKindLabel = (kind: string) => PROPERTY_KINDS.find(([k]) => k === kind)?.[1] ?? '부동산';
+
+/** Real estate other than an apartment: its kind, and the address and 전용면적 written by hand. */
+export interface PropertyMeta {
+  kind: Exclude<PropertyKind, 'apartment'>;
+  address: string | null;
+  /** ㎡ */
+  area: number | null;
+}
+
+/** Reads a PropertyMeta back from Asset.meta or a form; null for an apartment or anything else. */
+export function readPropertyMeta(v: unknown): PropertyMeta | null {
+  const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object' || o.kind === 'apartment' || !PROPERTY_KINDS.some(([k]) => k === o.kind)) return null;
+  const address = typeof o.address === 'string' && o.address.trim() ? o.address.trim().slice(0, 120) : null;
+  const area = o.area === null || o.area === undefined || o.area === '' ? null : Number(o.area);
+  if (area !== null && !(Number.isFinite(area) && area > 0 && area < 1_000_000)) return null;
+  return { kind: o.kind as PropertyMeta['kind'], address, area };
+}
+
 /** Reads an ApartmentMeta back from Asset.meta or a form field; null when it is not one. */
 export function readApartmentMeta(v: unknown): ApartmentMeta | null {
   const o = (typeof v === 'string' ? safeJson(v) : v) as Record<string, unknown> | null;

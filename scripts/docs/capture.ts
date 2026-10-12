@@ -71,6 +71,8 @@ interface Ids {
   home: string;
   /** A split strategy portfolio that shares holdings with the others */
   growth: string;
+  /** A strategy that takes whole accounts */
+  accountStrategy: string;
   apartment: string;
   aapl: string;
   nvdaJournal: string;
@@ -136,13 +138,26 @@ const SHOTS: Shot[] = [
     path: (ids) => `/portfolios/${ids.growth}`,
     wait: 1500,
     width: 1280,
-    clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('담은 종목'), card('계좌에서 담기')],
+    clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('담은 종목'), card('계좌의 종목 하나씩 담기')],
     marks: [
       { sel: '.card.kpi', closest: 'section' },
       { sel: '.share-form', within: card('담은 종목') },
       { sel: '.strategy-tag', within: card('담은 종목') },
       { sel: 'button', text: '빼기', within: card('담은 종목') },
-      { sel: 'button', text: '담기', within: card('계좌에서 담기') },
+      { sel: 'button', text: '담기', within: card('계좌의 종목 하나씩 담기') },
+    ],
+  },
+  {
+    file: 'strategy-accounts',
+    path: (ids) => `/portfolios/${ids.accountStrategy}`,
+    wait: 1500,
+    width: 1280,
+    clip: [{ sel: '.page-head' }, { sel: '.card.kpi', closest: 'section' }, card('담은 종목'), { sel: '#accounts' }],
+    marks: [
+      { sel: '.card.kpi .note' },
+      { sel: '.sub', text: '계좌로', within: card('담은 종목') },
+      { sel: '#accounts input', text: '미국 주식 담을 비율', closest: 'form' },
+      { sel: '#accounts button', text: '빼기' },
     ],
   },
   {
@@ -211,6 +226,22 @@ const SHOTS: Shot[] = [
     ],
     clip: [{ sel: '#add' }],
     marks: [{ sel: '.apt-picker label.field' }, { sel: '.apt-picked label', text: '실거래가 단지' }, { sel: '.apt-picked label', text: '전용면적' }, { sel: '.apt-widen' }, { sel: 'input[name="name"]', closest: 'label' }],
+  },
+  {
+    file: 'realestate-kinds',
+    path: (ids) => `/portfolios/${ids.home}`,
+    wait: 1500,
+    steps: [
+      { click: { sel: '[aria-label="자산 종류"] button', text: '수기 자산' } },
+      { set: { sel: 'select[name="propertyKind"]' }, value: 'villa' },
+      { wait: 400 },
+      { set: { sel: 'input[name="propertyAddress"]' }, value: '서울 마포구 망원동 123-4' },
+      { set: { sel: 'input[name="propertyArea"]' }, value: '59.8' },
+      { set: { sel: 'input[name="name"]' }, value: '망원동 빌라' },
+      { wait: 300 },
+    ],
+    clip: [{ sel: '#add' }],
+    marks: [{ sel: 'select[name="propertyKind"]', closest: 'label' }, { sel: 'input[name="propertyAddress"]', closest: 'label' }, { sel: 'input[name="propertyArea"]', closest: 'label' }],
   },
   {
     file: 'realestate-holding',
@@ -287,6 +318,13 @@ const SHOTS: Shot[] = [
     wait: 2500,
     clip: [{ sel: '.page-head' }, card('한국투자 데모 계좌')],
     marks: [{ sel: 'input', text: '카카오 선택' }, { sel: 'select', text: '카카오 넣을 포트폴리오' }, { sel: 'button', text: '가져오기', within: card('한국투자 데모 계좌') }],
+  },
+  {
+    file: 'import-coin',
+    path: () => '/import',
+    wait: 2500,
+    clip: [card('빗썸 (새로 연결)')],
+    marks: [{ sel: 'input', text: '비트코인 선택' }, { sel: 'select', text: '비트코인 넣을 포트폴리오' }],
   },
   {
     file: 'import-crypto',
@@ -535,6 +573,19 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '.memo-fab' }, { sel: '.memo-drawer textarea' }, { sel: '.memo-drawer .sub', text: 'Ctrl+Enter' }],
   },
   {
+    file: 'quick-memo-edit',
+    path: (ids) => `/holdings/${ids.samsung}`,
+    wait: 2000,
+    fabs: true,
+    steps: [
+      { click: { sel: '.memo-fab' } },
+      { until: "!!document.querySelector('.memo-recent li button')" },
+      { click: { sel: '.memo-recent li button' } },
+      { wait: 600 },
+    ],
+    marks: [{ sel: '.memo-recent li button' }, { sel: '.memo-drawer textarea' }, { sel: '.memo-drawer button', text: '다시 저장' }, { sel: '.memo-drawer button', text: '새 메모' }],
+  },
+  {
     file: 'sages',
     path: () => '/sages',
     wait: 1500,
@@ -725,6 +776,14 @@ const SHOTS: Shot[] = [
     clip: [{ sel: 'main' }],
     pad: 0,
     marks: [{ sel: '[aria-label="기간 선택"]' }, { sel: 'section[aria-label="요약"]' }, { sel: '[aria-label="해외 자산 금액 통화"]' }, { sel: '#contrib .contrib' }, { sel: '#contrib-group .contrib' }],
+  },
+  {
+    file: 'performance-benchmarks',
+    path: () => '/performance',
+    wait: 3000,
+    steps: [{ click: { sel: '#benchmarks summary' } }, { wait: 500 }],
+    clip: [{ sel: 'section[aria-label="요약"]' }, { sel: '#benchmarks' }],
+    marks: [{ sel: '.bench-remove' }, { sel: '#benchmarks summary' }, { sel: '.bench-group', nth: 2 }, { sel: '#benchmarks a', text: '연동 · 설정' }],
   },
   {
     file: 'goals',
@@ -1074,6 +1133,7 @@ async function main() {
       samsung: (await db.holding.findFirstOrThrow({ where: { asset: { symbol: '005930' } } })).id,
       home: pid('부동산'),
       growth: pid('성장'),
+      accountStrategy: pid('올웨더'),
       apartment: (await db.holding.findFirstOrThrow({ where: { asset: { type: 'REAL_ESTATE' } } })).id,
       buffett: (await db.sage.findFirstOrThrow({ where: { preset: 'buffett' } })).id,
       book: (await db.book.findFirstOrThrow()).id,

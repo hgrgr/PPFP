@@ -15,8 +15,8 @@ import { audit, UserError } from './portfolios';
 import { verifyIdentity } from './security';
 
 /** Outside services whose keys are kept in ApiKey */
-export const BACKUP_SERVICES = ['kakao', 'molit', 'vworld', ...PROVIDER_ORDER] as const;
-const SERVICE_LABEL: Record<string, string> = { kakao: '카카오', molit: '공공데이터포털', vworld: '브이월드', anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Google Gemini', xai: 'xAI', deepseek: 'DeepSeek' };
+export const BACKUP_SERVICES = ['kakao', 'molit', 'vworld', 'ecos', ...PROVIDER_ORDER] as const;
+const SERVICE_LABEL: Record<string, string> = { kakao: '카카오', molit: '공공데이터포털', vworld: '브이월드', ecos: '한국은행 ECOS', anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Google Gemini', xai: 'xAI', deepseek: 'DeepSeek' };
 
 const Payload = z.object({
   kind: z.literal('ppfp-key-backup'),

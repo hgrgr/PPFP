@@ -6,9 +6,10 @@ import { allocatedShare, buildForest, effectiveWeights, type TreeNode } from '@/
 import { PORTFOLIO_KIND_LABEL, PORTFOLIO_KINDS } from '@/domain/strategy-portfolios';
 import { krwShort, pct } from '@/lib/format';
 import { requireUser } from '@/server/auth';
-import { currentState } from '@/server/services/analytics';
+import { currentState, strategyValues } from '@/server/services/analytics';
 import { userGraph } from '@/server/services/portfolios';
-import { membershipsByHolding } from '@/server/services/strategy-portfolios';
+import { prisma } from '@/server/db';
+import { membershipsByHolding, strategyStates } from '@/server/services/strategy-portfolios';
 
 export const metadata = { title: '포트폴리오' };
 export const dynamic = 'force-dynamic';
@@ -16,25 +17,23 @@ export const dynamic = 'force-dynamic';
 export default async function PortfoliosPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const user = await requireUser();
   const { welcome } = await searchParams;
-  const [{ portfolios: all, edges }, state, members] = await Promise.all([userGraph(user.id), currentState(user.id), membershipsByHolding(user.id)]);
+  const [{ portfolios: all, edges }, state, members, states] = await Promise.all([
+    userGraph(user.id),
+    currentState(user.id),
+    membershipsByHolding(user.id),
+    strategyStates(user.id, prisma, { archived: true }),
+  ]);
+  const values = new Map(strategyValues(states, state).map((v) => [v.id, v]));
   // Accounts form the tree; strategies only weigh account holdings and are listed apart
   const portfolios = all.filter((p) => p.kind !== 'STRATEGY');
   const strategies = all.filter((p) => p.kind === 'STRATEGY');
   const byId = new Map(portfolios.map((p) => [p.id, p]));
   const forest = buildForest(portfolios.map((p) => p.id), edges);
+  // Value with the cash of whole accounts taken; 중복 counts held stocks other strategies take too
   const strategyValue = (id: string) => {
-    let v = Dec.ZERO;
-    let n = 0;
-    let shared = 0;
-    for (const h of state.holdings) {
-      const info = members.get(h.holdingId);
-      const m = info?.strategies.find((x) => x.strategyId === id);
-      if (!m) continue;
-      v = v.add(h.valueFull.mul(m.share));
-      n++;
-      if (info!.overlap) shared++;
-    }
-    return { value: v, count: n, shared };
+    const st = states.find((x) => x.id === id);
+    const shared = state.holdings.filter((h) => st?.shares.has(h.holdingId) && members.get(h.holdingId)?.overlap).length;
+    return { value: values.get(id)?.value ?? Dec.ZERO, count: values.get(id)?.members ?? 0, shared };
   };
   const rolled = new Map<string, Dec>();
   for (const p of portfolios) {

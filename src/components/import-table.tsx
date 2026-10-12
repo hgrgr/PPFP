@@ -184,7 +184,16 @@ export function ImportTable({
       <div className="inline" style={{ alignItems: 'end' }}>
         <label className="field" style={{ minWidth: 200 }}>
           <span className="sub">선택한 종목을 모두</span>
-          <select value={bulk} onChange={(e) => setBulk(e.target.value)}>
+          <select
+            value={bulk}
+            onChange={(e) => {
+              // Applies right away: a destination picked here but not applied sent everything to the first portfolio
+              const id = e.target.value;
+              setBulk(id);
+              setState((prev) => prev.map((s) => (s.checked ? { ...s, portfolioId: id } : s)));
+            }}
+            aria-label="선택한 종목을 넣을 포트폴리오"
+          >
             {portfolios.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -192,9 +201,7 @@ export function ImportTable({
             ))}
           </select>
         </label>
-        <button type="button" className="btn" onClick={() => setState((prev) => prev.map((s) => (s.checked ? { ...s, portfolioId: bulk } : s)))}>
-          에 넣기
-        </button>
+        <span className="sub" style={{ paddingBottom: 10 }}>에 넣기</span>
         <DateTimeField name="tradeAt" label="취득 기준 일시 (KST)" />
         <Submit pendingText="가져오는 중…">{`선택한 ${selected.length}종목 가져오기`}</Submit>
       </div>

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { Dec } from '../decimal';
-import { checkShare, overlapInfo, strategySeries, tradeFlow } from '../strategy-portfolios';
+import { checkShare, overlapInfo, strategySeries, tradeFlow, accountWeights, effectiveShares, shareBreach } from '../strategy-portfolios';
 
 const d = (v: string | number) => Dec.of(v);
 
@@ -66,5 +66,36 @@ describe('strategySeries', () => {
     const s = strategySeries([{ date: '2026-03-06', holdings: { h1: '1000' } }, { date: '2026-03-09', holdings: { h1: '1200' } }], [buy], shares);
     assert.equal(s[1].flow.toString(), '100.5');
     assert.equal(s[0].flow.toString(), '0');
+  });
+});
+
+describe('strategies that take whole accounts', () => {
+  const d = (v: string) => Dec.of(v);
+  const edges = [{ parentId: 'us', childId: 'us-growth', allocation: d('0.5') }];
+  const holdings = [
+    { id: 'aapl', portfolioId: 'us' },
+    { id: 'nvda', portfolioId: 'us-growth' },
+    { id: 'ss', portfolioId: 'kr' },
+  ];
+
+  it('weighs an account, its children by allocation, and adds direct shares', () => {
+    const via = accountWeights(new Map([['us', d('1')]]), edges);
+    assert.equal(via.get('us')!.toString(), '1');
+    assert.equal(via.get('us-growth')!.toString(), '0.5');
+    const eff = effectiveShares(new Map([['ss', d('0.3')]]), via, holdings);
+    assert.deepEqual([...eff].map(([k, v]) => [k, v.toString()]), [['aapl', '1'], ['nvda', '0.5'], ['ss', '0.3']]);
+  });
+
+  it('lets two overlapping strategies take the same account in full, but not two splitting ones', () => {
+    const take = (id: string, allowOverlap: boolean) => ({ id, name: id, allowOverlap, shares: effectiveShares(new Map(), accountWeights(new Map([['us', d('1')]]), edges), holdings) });
+    assert.equal(shareBreach([take('growth', true), take('allweather', true)], 'allweather', (h) => h), null);
+    assert.equal(shareBreach([take('growth', false), take('allweather', true)], 'allweather', (h) => h), null);
+    assert.match(shareBreach([take('growth', false), take('allweather', false)], 'allweather', (h) => h) ?? '', /aapl: growth 100%와\(과\) 합쳐 200%/);
+  });
+
+  it('stops one strategy from taking more than all of a holding through account and direct shares', () => {
+    const via = accountWeights(new Map([['us', d('1')]]), edges);
+    const self = { id: 's', name: 's', allowOverlap: true, shares: effectiveShares(new Map([['aapl', d('0.2')]]), via, holdings) };
+    assert.match(shareBreach([self], 's', (h) => h) ?? '', /aapl: .*120%/);
   });
 });

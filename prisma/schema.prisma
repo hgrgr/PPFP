@@ -70,26 +70,30 @@ enum TxnType {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  passwordHash  String
-  baseCurrency  String    @default("KRW")
-  redUp         Boolean   @default(true) // 상승 빨강 / 하락 파랑
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  name                 String?
+  passwordHash         String
+  baseCurrency         String    @default("KRW")
+  redUp                Boolean   @default(true) // 상승 빨강 / 하락 파랑
   /// Show foreign assets in their own currency (converted at the latest published rate)
-  localCurrency Boolean   @default(false)
-  createdAt     DateTime  @default(now())
+  localCurrency        Boolean   @default(false)
+  createdAt            DateTime  @default(now())
   /// Two-step sign-in (TOTP): the secret encrypted with APP_ENCRYPTION_KEY, set once confirmed
-  totpSecret    String?
+  totpSecret           String?
   /// A secret shown during setup, not yet confirmed with a code
-  totpPending   String?
-  totpEnabledAt DateTime?
+  totpPending          String?
+  totpEnabledAt        DateTime?
   /// Last 30-second step accepted, so a code cannot be used twice
-  totpLastStep  Int?
+  totpLastStep         Int?
   /// SHA-256 of the unused recovery codes
-  recoveryCodes String[]  @default([])
+  recoveryCodes        String[]  @default([])
   /// Left-menu screens the user hid (hrefs, src/domain/nav.ts)
-  hiddenNav     String[]  @default([])
+  hiddenNav            String[]  @default([])
+  /// Portfolio the dashboard opens on without ?p= (null: 순자산 전체); ?p=all shows everything
+  dashboardPortfolioId String?
+  /// Benchmark keys picked on 성과 분석 (domain/benchmark BENCHMARK_CATALOG); empty: the defaults
+  benchmarks           String[]  @default([])
 
   sessions         Session[]
   brokers          BrokerConnection[]
@@ -228,6 +232,10 @@ model Portfolio {
   loansPaid       Loan[]            @relation("loanPayFrom")
   autopilot       AutopilotPolicy?
   members         StrategyMember[]
+  /// STRATEGY: whole accounts it takes a share of (StrategyAccount)
+  accountMembers  StrategyAccount[] @relation("strategyAccounts")
+  /// ACCOUNT: strategies that take a share of this account
+  inStrategies    StrategyAccount[] @relation("inStrategies")
 
   @@index([userId])
   @@index([strategyVersionId])
@@ -247,6 +255,23 @@ model StrategyMember {
 
   @@id([portfolioId, holdingId])
   @@index([holdingId])
+}
+
+/// A strategy takes `share` of a whole account portfolio: its holdings and cash, and those of its
+/// children by their allocation. Combined with StrategyMember, a holding's effective share in a
+/// strategy is its direct share plus what comes through accounts.
+model StrategyAccount {
+  portfolioId String
+  accountId   String
+  /// Fraction of the account, 0 < share <= 1
+  share       Decimal  @db.Decimal(20, 10)
+  createdAt   DateTime @default(now())
+
+  portfolio Portfolio @relation("strategyAccounts", fields: [portfolioId], references: [id], onDelete: Cascade)
+  account   Portfolio @relation("inStrategies", fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, accountId])
+  @@index([accountId])
 }
 
 /// parent contains `allocation` (0 < a <= 1) of child. Cycles and over-allocation are rejected in code.

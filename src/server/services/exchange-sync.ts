@@ -42,6 +42,8 @@ export async function syncExchangeHistory(userId: string, connectionId: string, 
   const method: LotMethod = portfolio.lotMethod === 'SPECIFIC' ? 'FIFO' : portfolio.lotMethod;
 
   const first = !conn.historySyncedTo;
+  if (first && (await prisma.transaction.count({ where: { portfolio: { userId }, importSource: sourceKey(conn) } })))
+    throw new UserError('이 거래소의 보유 코인을 이미 보유종목 가져오기로 넣었습니다. 거래내역까지 가져오면 같은 코인이 두 번 들어가므로, 그 종목을 포트폴리오에서 먼저 제거하세요.');
   const until = new Date();
   // Later syncs overlap the last two hours; duplicates are skipped by reference.
   const requested = first ? (opts.since ?? new Date(until.getTime() - 365 * 86_400_000)) : new Date(conn.historySyncedTo!.getTime() - 2 * 3_600_000);

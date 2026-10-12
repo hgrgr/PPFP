@@ -212,3 +212,15 @@ describe('real estate', () => {
     assert.equal(naverLandUrl(meta), 'https://m.land.naver.com/search/result/%EB%9E%98%EB%AF%B8%EC%95%88%EB%8C%80%EC%B9%98%ED%8C%B0%EB%A6%AC%EC%8A%A4');
   });
 });
+
+describe('other kinds of real estate', () => {
+  it('reads a villa back, and leaves apartments to readApartmentMeta', async () => {
+    const { readPropertyMeta, propertyKindLabel } = await import('../real-estate');
+    assert.deepEqual(readPropertyMeta({ kind: 'villa', address: ' 서울 마포구 망원동 123-4 ', area: '59.8' }), { kind: 'villa', address: '서울 마포구 망원동 123-4', area: 59.8 });
+    assert.deepEqual(readPropertyMeta(JSON.stringify({ kind: 'land', address: '', area: '' })), { kind: 'land', address: null, area: null });
+    assert.equal(readPropertyMeta({ kind: 'apartment', address: 'x' }), null);
+    assert.equal(readPropertyMeta({ kind: 'castle' }), null);
+    assert.equal(readPropertyMeta({ kind: 'villa', area: -3 }), null);
+    assert.equal(propertyKindLabel('officetel'), '오피스텔');
+  });
+});

@@ -26,7 +26,7 @@ import { addLink, addPresetSage, createBook, createNote, saveBook } from '@/serv
 import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
-import { setMember } from '@/server/services/strategy-portfolios';
+import { setAccount, setMember } from '@/server/services/strategy-portfolios';
 import { checkRealEstateAlerts, createReAlert } from '@/server/services/real-estate-alerts';
 import { SKILL_STARTERS } from '@/domain/ai-skills';
 import { BUILTIN_FORMATS } from '@/domain/journal';
@@ -195,6 +195,11 @@ async function seedStrategies(uid: string) {
   ] as const) {
     await setMember(uid, s, await h(symbol), pct);
   }
+  // A strategy over whole accounts, overlapping the others
+  const allWeather = await createPortfolio(uid, { name: '올웨더', color: '#CA8A04', kind: 'STRATEGY', allowOverlap: true, description: '계좌를 통째로 담아 국면별 비중을 본다' });
+  const account = (name: string) => prisma.portfolio.findFirstOrThrow({ where: { userId: uid, name, kind: 'ACCOUNT' } }).then((x) => x.id);
+  await setAccount(uid, allWeather.id, await account('미국 주식'), '100');
+  await setAccount(uid, allWeather.id, await account('예금 · 현금'), '100');
 }
 
 // ---------------------------------------------------------------- account security

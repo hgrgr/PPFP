@@ -107,8 +107,9 @@ const fromBroker = (h: BrokerHolding): RawRow => ({
 
 /** Current holdings of every linked account, side by side with what was already imported. */
 export async function loadBrokerSources(userId: string): Promise<ImportSource[]> {
-  // Crypto exchanges replay their full history instead (services/exchange-sync), so their holdings are not offered here.
-  const conns = (await listConnections(userId)).filter((c) => !isCryptoBroker(c.broker));
+  // A crypto exchange either hands over its coins here, like a stock account, or replays its full history
+  // (services/exchange-sync). Once its history is synced its coins come from there, so it is left out.
+  const conns = (await listConnections(userId)).filter((c) => !isCryptoBroker(c.broker) || !c.historySyncedTo);
   return Promise.all(
     conns.map(async (c) => {
       const key = sourceKey(c);
@@ -216,7 +217,9 @@ export async function importHoldings(
   if (!key || key.length > 80) throw new UserError('가져올 출처가 올바르지 않습니다.');
   if (fromApi) {
     const conns = await listConnections(userId);
-    if (!conns.some((c) => sourceKey(c) === key)) throw new UserError('연결된 계좌를 찾을 수 없습니다. 화면을 새로 고치세요.');
+    const conn = conns.find((c) => sourceKey(c) === key);
+    if (!conn) throw new UserError('연결된 계좌를 찾을 수 없습니다. 화면을 새로 고치세요.');
+    if (isCryptoBroker(conn.broker) && conn.historySyncedTo) throw new UserError('이 거래소는 거래내역 동기화로 코인을 넣고 있어 보유종목으로 다시 가져오지 않습니다.');
   }
   if (!input.rows.length) throw new UserError('가져올 종목을 하나 이상 선택하세요.');
   if (input.rows.length > 300) throw new UserError('한 번에 300종목까지 가져올 수 있습니다.');

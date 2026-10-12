@@ -7,7 +7,7 @@ import { LOT_METHODS } from '@/domain/lots';
 import { cleanHidden, NAV_ITEMS } from '@/domain/nav';
 import { kstDate, parseKstLocal, prisma } from '@/server/db';
 import { money } from '@/lib/format';
-import { readApartmentMeta } from '@/domain/real-estate';
+import { readApartmentMeta, readPropertyMeta } from '@/domain/real-estate';
 import { fxRate as currentFx } from '@/server/market';
 import { completePendingSession, createSession, destroySession, pendingSession, requestMeta, requireUser } from '@/server/auth';
 import { checkPassword, signedIn, signUp, verifySecondFactor } from '@/server/services/security';
@@ -257,9 +257,16 @@ export async function cashAction(_: ActionState, f: FormData) {
   });
 }
 
-/** A real estate asset's apartment, picked on the map (see ApartmentPicker). */
+/** A real estate asset's apartment, picked on the map (see ApartmentPicker), or another kind of property. */
 function manualMeta(f: FormData) {
-  if (s(f, 'type') !== 'REAL_ESTATE' || !s(f, 'apartment')) return undefined;
+  if (s(f, 'type') !== 'REAL_ESTATE') return undefined;
+  const kind = s(f, 'propertyKind') || 'apartment';
+  if (kind !== 'apartment') {
+    const meta = readPropertyMeta({ kind, address: s(f, 'propertyAddress'), area: s(f, 'propertyArea') });
+    if (!meta) throw new UserError('부동산 종류나 면적을 확인하세요.');
+    return { ...meta };
+  }
+  if (!s(f, 'apartment')) return undefined;
   const meta = readApartmentMeta(s(f, 'apartment'));
   if (!meta) throw new UserError('아파트를 다시 골라 주세요.');
   return { ...meta };
@@ -389,7 +396,9 @@ export async function importHoldingsAction(_: ActionState, f: FormData) {
     const tradeAt = parseKstLocal(s(f, 'tradeAt'));
     const n = await importHoldings(user.id, { sourceKey: s(f, 'sourceKey'), sourceLabel: s(f, 'sourceLabel'), tradeAt, rows });
     await refreshFrom(user.id, tradeAt);
-    return `${n}개 종목을 가져와 시작 Lot을 만들었습니다.`;
+    const ids = [...new Set(rows.map((r) => r.portfolioId))];
+    const names = (await prisma.portfolio.findMany({ where: { userId: user.id, id: { in: ids } }, select: { name: true } })).map((x) => x.name);
+    return `${n}개 종목을 ${names.join(', ')}에 가져와 시작 Lot을 만들었습니다.`;
   }, ['/import', '/dashboard', '/portfolios']);
 }
 
@@ -473,6 +482,18 @@ export async function saveMenuAction(_: ActionState, f: FormData) {
     await prisma.user.update({ where: { id: user.id }, data: { hiddenNav: hidden } });
     return hidden.length ? `메뉴에서 ${hidden.length}개를 숨겼습니다. 왼쪽 메뉴 맨 아래 숨긴 메뉴에서 열 수 있습니다.` : '모든 메뉴를 보여 줍니다.';
   }, ['/']);
+}
+
+/** The scope the dashboard opens on; empty is 순자산 전체. */
+export async function setDashboardHomeAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const id = s(f, 'portfolioId');
+    const p = id ? await prisma.portfolio.findFirst({ where: { id, userId: user.id }, select: { name: true } }) : null;
+    if (id && !p) throw new UserError('포트폴리오를 찾을 수 없습니다.');
+    await prisma.user.update({ where: { id: user.id }, data: { dashboardPortfolioId: id || null } });
+    return `대시보드를 열면 ${p ? p.name : '순자산 전체'}이(가) 먼저 나옵니다.`;
+  }, ['/dashboard']);
 }
 
 export async function updatePrefsAction(_: ActionState, f: FormData) {

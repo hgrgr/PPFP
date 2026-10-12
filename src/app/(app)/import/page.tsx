@@ -16,12 +16,17 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const portfolios = await prisma.portfolio.findMany({
     where: { userId: user.id, archived: false, kind: 'ACCOUNT' },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, name: true },
+    select: { id: true, name: true, _count: { select: { childEdges: true } } },
   });
-  const defaultPortfolioId = portfolios.some((x) => x.id === p) ? p! : (portfolios[0]?.id ?? '');
+  // Without ?p=, the first portfolio that holds directly (no children), not the top 순자산
+  const leaf = portfolios.find((x) => x._count.childEdges === 0) ?? portfolios[0];
+  const defaultPortfolioId = portfolios.some((x) => x.id === p) ? p! : (leaf?.id ?? '');
   const [sources, exchanges] = portfolios.length
     ? await Promise.all([loadBrokerSources(user.id), prisma.brokerConnection.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } }).then((l) => l.filter((c) => isCryptoBroker(c.broker)))])
     : [[], []];
+  // Coins go by default to the account that already holds the most coins
+  const coinHolders = await prisma.holding.groupBy({ by: ['portfolioId'], where: { portfolioId: { in: portfolios.map((x) => x.id) }, asset: { type: 'CRYPTO' } }, _count: true });
+  const coinPortfolioId = coinHolders.sort((a, b) => b._count - a._count)[0]?.portfolioId ?? defaultPortfolioId;
   const yearAgo = new Date(Date.now() + 9 * 3_600_000 - 365 * 86_400_000).toISOString().slice(0, 10);
   const nameOf = new Map(portfolios.map((x) => [x.id, x.name]));
 
@@ -31,8 +36,8 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
         <div className="stack" style={{ gap: 6 }}>
           <h1>보유종목 가져오기</h1>
           <p className="sub">
-            연결한 증권사 계좌의 보유종목을 골라 포트폴리오에 넣습니다. 같은 계좌에서 이미 가져온 수량은 빼고 보여주므로, 나중에 다시 와도 새로 산 만큼만 가져올 수
-            있습니다.
+            연결한 증권사 계좌와 코인 거래소의 보유종목을 골라 포트폴리오에 넣습니다. 같은 계좌에서 이미 가져온 수량은 빼고 보여주므로, 나중에 다시 와도 새로 산 만큼만
+            가져올 수 있습니다.
           </p>
         </div>
         <a className="btn" href="/settings">
@@ -68,7 +73,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
                   {s.error} <a href="/settings">연결 확인하기</a>
                 </p>
               ) : (
-                <ImportTable source={s} portfolios={portfolios} defaultPortfolioId={defaultPortfolioId} action={importHoldingsAction} />
+                <ImportTable source={s} portfolios={portfolios} defaultPortfolioId={s.broker && isCryptoBroker(s.broker) && !p ? coinPortfolioId : defaultPortfolioId} action={importHoldingsAction} />
               )}
             </section>
           ))}
@@ -77,7 +82,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
             <section className="card" id="crypto">
               <h2>코인 거래소 거래내역</h2>
               <p className="sub">
-                거래소의 체결·원화 입출금·코인 입출고를 같은 날짜·가격·수수료로 포트폴리오에 기록해 Lot·실현손익·수익률을 계산합니다. 시작일 이전부터 갖고 있던 코인과 원화는 시작
+                보유 코인만 넣으려면 위 거래소 표에서 가져오고, 매매 기록까지 남기려면 여기서 거래내역을 가져오세요. 둘 중 하나만 씁니다. 거래내역은 거래소의 체결·원화 입출금·코인 입출고를 같은 날짜·가격·수수료로 포트폴리오에 기록해 Lot·실현손익·수익률을 계산합니다. 시작일 이전부터 갖고 있던 코인과 원화는 시작
                 시점에 거래소 평균단가로 넣고, 외부 지갑과 주고받은 코인은 그날 종가로 평가합니다. 한 번 가져온 뒤에는 새로 생긴 내역만 이어서 가져옵니다.
               </p>
               {exchanges.map((c) => (

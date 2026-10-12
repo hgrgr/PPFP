@@ -17,7 +17,7 @@ import { TargetBar } from '@/components/journal/viewer';
 import { STATUS_LABEL } from '@/domain/journal';
 import { AskAiButton } from '@/components/ai/launcher';
 import { RealEstatePanel } from '@/components/real-estate-panel';
-import { readApartmentMeta } from '@/domain/real-estate';
+import { areaLabel, propertyKindLabel, readApartmentMeta, readPropertyMeta, RTMS_URL } from '@/domain/real-estate';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +34,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     },
   });
   if (!h) notFound();
+  const property = h.asset.type === 'REAL_ESTATE' ? readPropertyMeta(h.asset.meta) : null;
   const [quotes, usd, journals, txnJournals, others] = await Promise.all([
     getQuotes(user.id, [h.asset]),
     fxRate(user.id, 'USD'),
@@ -99,7 +100,29 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </div>
       </section>
 
-      {h.asset.type === 'REAL_ESTATE' && <RealEstatePanel assetId={h.assetId} holdingId={h.id} linked={!!readApartmentMeta(h.asset.meta)} />}
+      {h.asset.type === 'REAL_ESTATE' && property ? (
+        <section className="card" id="real-estate">
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>{propertyKindLabel(property.kind)}</h2>
+            <p className="sub">
+              {[property.address, property.area ? `전용 ${areaLabel(property.area)}` : null].filter(Boolean).join(' · ') || '주소와 면적은 적지 않았습니다.'}
+            </p>
+          </div>
+          <p className="sub">
+            실거래가 자동 추정은 아파트만 됩니다. 시세가 바뀌면 아래 <a href="#valuation">평가 갱신</a>으로 기록하세요. 비슷한 거래는{' '}
+            <a href={RTMS_URL} target="_blank" rel="noreferrer">국토교통부 실거래가 공개시스템</a>
+            {property.address && (
+              <>
+                이나{' '}
+                <a href={`https://m.land.naver.com/search/result/${encodeURIComponent(property.address)}`} target="_blank" rel="noreferrer">네이버 부동산</a>
+              </>
+            )}
+            에서 볼 수 있습니다.
+          </p>
+        </section>
+      ) : h.asset.type === 'REAL_ESTATE' ? (
+        <RealEstatePanel assetId={h.assetId} holdingId={h.id} linked={!!readApartmentMeta(h.asset.meta)} />
+      ) : null}
 
       <section className="card">
         <h2>보유 Lot</h2>
@@ -187,7 +210,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
         </div>
 
         {manual ? (
-          <div className="card">
+          <div className="card" id="valuation">
             <h2>평가 갱신</h2>
             <p className="sub">부동산·채권·대출처럼 시세가 자동으로 들어오지 않는 자산의 현재 가치를 기록합니다. 기록한 날부터 이 값으로 평가됩니다.</p>
             <ActionForm action={valuationAction} className="grid" resetOnSuccess>
