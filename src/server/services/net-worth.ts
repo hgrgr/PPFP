@@ -180,7 +180,7 @@ export async function saveLoan(userId: string, input: LoanInput): Promise<string
   const paymentDay = input.paymentDay.trim() ? Math.trunc(num(input.paymentDay)) : Number(input.startDate.slice(8, 10));
   if (!(paymentDay >= 1 && paymentDay <= 31)) throw new UserError('납입일은 1~31일 사이로 넣으세요.');
   const payFromId = input.payFromId || null;
-  if (payFromId && !(await prisma.portfolio.findFirst({ where: { id: payFromId, userId } }))) throw new UserError('납입 포트폴리오를 찾을 수 없습니다.');
+  if (payFromId && !(await prisma.portfolio.findFirst({ where: { id: payFromId, userId, kind: 'ACCOUNT' } }))) throw new UserError('납입 포트폴리오를 찾을 수 없습니다.');
   const collateralId = input.collateralId || null;
   if (collateralId && !(await prisma.asset.findFirst({ where: { id: collateralId, userId } }))) throw new UserError('담보 자산을 찾을 수 없습니다.');
   const kind = input.kind && (LIABILITY_KINDS[input.kind] || input.kind === 'RECEIVABLE') ? input.kind : null;

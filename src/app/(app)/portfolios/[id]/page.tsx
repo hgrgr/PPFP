@@ -24,20 +24,24 @@ import { currentState } from '@/server/services/analytics';
 import { ASSET_TYPE_LABEL } from '@/server/services/assets';
 import { userGraph } from '@/server/services/portfolios';
 import { AskAiButton } from '@/components/ai/launcher';
+import { StrategyPortfolio, StrategyTag } from '@/components/strategy-portfolio';
+import { membershipsByHolding } from '@/server/services/strategy-portfolios';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [graph, state, linked] = await Promise.all([
+  const [graph, state, linked, members] = await Promise.all([
     userGraph(user.id),
     currentState(user.id),
     prisma.brokerConnection.count({ where: { userId: user.id } }),
+    membershipsByHolding(user.id),
   ]);
   const { portfolios, edges } = graph;
   const p = portfolios.find((x) => x.id === id);
   if (!p) notFound();
+  if (p.kind === 'STRATEGY') return <StrategyPortfolio userId={user.id} portfolio={p} state={state} members={members} local={user.localCurrency} />;
   const targets = await portfolioTargets(user.id, id, state, graph);
   const names = new Map(portfolios.map((x) => [x.id, x.name]));
   const parents = edges.filter((e) => e.childId === id);
@@ -110,7 +114,11 @@ export default async function PortfolioPage({ params }: { params: Promise<{ id: 
                   const u = h.valueFull.sub(h.costFull);
                   return (
                     <tr key={h.holdingId}>
-                      <td><a className="strong" href={`/holdings/${h.holdingId}`}>{h.name}</a><span className="sub">{h.symbol ?? '수기'}</span></td>
+                      <td>
+                        <a className="strong" href={`/holdings/${h.holdingId}`}>{h.name}</a>
+                        <span className="sub">{h.symbol ?? '수기'}</span>
+                        <StrategyTag info={members.get(h.holdingId)} />
+                      </td>
                       <td className="muted">{ASSET_TYPE_LABEL[h.type]}</td>
                       <td className="money">{qty(h.qty.toString())}</td>
                       <td className="muted">{h.lots}</td>

@@ -39,7 +39,7 @@ export default async function HoldingPage({ params }: { params: Promise<{ id: st
     fxRate(user.id, 'USD'),
     listJournals(user.id, { assetId: h.assetId }),
     journalsByTxn(user.id, h.transactions.map((t) => t.id)),
-    prisma.portfolio.findMany({ where: { userId: user.id, id: { not: h.portfolioId } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true } }),
+    prisma.portfolio.findMany({ where: { userId: user.id, kind: 'ACCOUNT', id: { not: h.portfolioId } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true } }),
   ]);
   const knowledge = await relatedView(user.id, { type: 'asset', id: h.assetId });
   const quote = quotes.get(h.assetId);

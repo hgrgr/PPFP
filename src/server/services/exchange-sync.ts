@@ -15,7 +15,7 @@ import { dec, kstDate, prisma } from '../db';
 import { BrokerApiError } from '../brokers';
 import { ensureListedAsset } from './assets';
 import { adapterFor, markStatus, sourceKey } from './brokers';
-import { ownedPortfolio, UserError } from './portfolios';
+import { ownedAccount, UserError } from './portfolios';
 import { rebuildSnapshots } from './snapshots';
 import { recordBuy, recordCash, recordSell } from './trading';
 
@@ -38,7 +38,7 @@ export async function syncExchangeHistory(userId: string, connectionId: string, 
   if (!portfolioId) throw new UserError('거래내역을 넣을 포트폴리오를 고르세요.');
   if (conn.historyPortfolioId && opts.portfolioId && opts.portfolioId !== conn.historyPortfolioId)
     throw new UserError('이 거래소는 이미 다른 포트폴리오로 동기화하고 있습니다. 같은 포트폴리오로만 이어서 가져올 수 있습니다.');
-  const portfolio = await ownedPortfolio(userId, portfolioId);
+  const portfolio = await ownedAccount(userId, portfolioId);
   const method: LotMethod = portfolio.lotMethod === 'SPECIFIC' ? 'FIFO' : portfolio.lotMethod;
 
   const first = !conn.historySyncedTo;

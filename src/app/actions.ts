@@ -121,8 +121,10 @@ export async function createPortfolioAction(_: ActionState, f: FormData) {
       lotMethod: (s(f, 'lotMethod') || undefined) as LotMethod | undefined,
       parentId: s(f, 'parentId') || undefined,
       allocation: s(f, 'allocation') ? pct(s(f, 'allocation')) : undefined,
+      kind: s(f, 'kind') || undefined,
+      allowOverlap: s(f, 'allowOverlap') === 'on',
     });
-    return `'${p.name}' 포트폴리오를 만들었습니다.`;
+    return p.kind === 'STRATEGY' ? `'${p.name}' 전략을 만들었습니다. 전략 화면에서 계좌의 종목을 담으세요.` : `'${p.name}' 포트폴리오를 만들었습니다.`;
   });
 }
 

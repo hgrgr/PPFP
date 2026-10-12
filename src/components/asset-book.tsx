@@ -174,9 +174,11 @@ export function AssetBookView({ book, local }: { book: AssetBook; local: boolean
                       <td className="l">
                         <div className="inline" style={{ gap: 4, flexWrap: 'wrap' }}>
                           {a.positions.map((p) => (
-                            <a key={p.holdingId} className="badge port-chip" href={`/holdings/${p.holdingId}`} title={`${p.portfolioName}의 ${a.name} 보기`}>
+                            <a key={p.holdingId} className="badge port-chip" href={`/holdings/${p.holdingId}`} title={`${p.portfolioName}의 ${a.name} 보기${p.strategies ? `\n전략: ${p.strategies}` : ''}`}>
                               <span className="dot" style={{ background: p.color }} />
                               {p.portfolioName}
+                              {p.strategies && <span className="strategy-chip"> → {p.strategies}</span>}
+                              {p.overlap && <span className="badge warn">중복</span>}
                             </a>
                           ))}
                         </div>

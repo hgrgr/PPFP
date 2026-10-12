@@ -208,6 +208,10 @@ model Portfolio {
   driftBreaches     String[]  @default([])
   /// Strategy version the advisor checks this portfolio against (advice only, no orders)
   strategyVersionId String?
+  /// ACCOUNT holds shares and cash; STRATEGY only takes shares of account holdings (StrategyMember)
+  kind              String    @default("ACCOUNT")
+  /// STRATEGY: may take holdings other strategies already took in full (shown as 중복, never counted twice)
+  allowOverlap      Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -223,9 +227,26 @@ model Portfolio {
   strategyVersion StrategyVersion?  @relation(fields: [strategyVersionId], references: [id], onDelete: NoAction)
   loansPaid       Loan[]            @relation("loanPayFrom")
   autopilot       AutopilotPolicy?
+  members         StrategyMember[]
 
   @@index([userId])
   @@index([strategyVersionId])
+}
+
+/// A share of an account holding taken by a strategy portfolio. Values in the strategy are
+/// the holding's times `share`; net worth counts the holding once, in its account.
+model StrategyMember {
+  portfolioId String
+  holdingId   String
+  /// Fraction of the holding, 0 < share <= 1
+  share       Decimal  @db.Decimal(20, 10)
+  createdAt   DateTime @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  holding   Holding   @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, holdingId])
+  @@index([holdingId])
 }
 
 /// parent contains `allocation` (0 < a <= 1) of child. Cycles and over-allocation are rejected in code.
@@ -280,10 +301,11 @@ model Holding {
   qtySource   DataSource @default(MANUAL)
   createdAt   DateTime   @default(now())
 
-  portfolio    Portfolio     @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  asset        Asset         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  portfolio    Portfolio        @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  asset        Asset            @relation(fields: [assetId], references: [id], onDelete: Restrict)
   lots         Lot[]
   transactions Transaction[]
+  strategies   StrategyMember[]
 
   @@unique([portfolioId, assetId])
 }
