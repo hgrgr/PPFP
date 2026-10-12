@@ -80,7 +80,7 @@ export async function listReAlerts(userId: string): Promise<ReAlertView[]> {
   }));
 }
 
-/** Apartment assets that can carry a rule (a linked apartment is needed). */
+/** Assets that can carry a rule: an apartment, villa or officetel linked to its building. */
 export async function apartmentAssets(userId: string): Promise<{ id: string; name: string }[]> {
   const rows = await prisma.asset.findMany({ where: { userId, type: 'REAL_ESTATE' }, select: { id: true, name: true, meta: true }, orderBy: { name: 'asc' } });
   return rows.filter((r) => readApartmentMeta(r.meta)).map((r) => ({ id: r.id, name: r.name }));
@@ -100,7 +100,7 @@ export async function createReAlert(
   input: { assetId: string; events: string[]; scope?: string; minEok?: string; maxEok?: string; newHighOnly?: boolean; dealing?: string; buyer?: string; note?: string },
 ) {
   const asset = await prisma.asset.findFirst({ where: { id: input.assetId, userId } });
-  if (!asset || !readApartmentMeta(asset.meta)) throw new UserError('아파트를 연결한 부동산 자산을 고르세요.');
+  if (!asset || !readApartmentMeta(asset.meta)) throw new UserError('아파트·빌라·오피스텔을 연결한 부동산 자산을 고르세요.');
   const events = [...new Set(input.events)].filter((e) => (RE_EVENTS as readonly string[]).includes(e));
   if (!events.length) throw new UserError('알릴 일을 하나 이상 고르세요.');
   const minPrice = eokToWon(input.minEok, '최저 가격');
@@ -168,7 +168,7 @@ async function checkOne(id: string): Promise<number> {
   if (!r || !r.active) return 0;
   const meta = readApartmentMeta(r.asset.meta);
   if (!meta) {
-    await prisma.realEstateAlert.update({ where: { id }, data: { lastError: '자산에 연결된 아파트가 없습니다.', checkedAt: new Date() } });
+    await prisma.realEstateAlert.update({ where: { id }, data: { lastError: '자산에 연결된 건물이 없습니다.', checkedAt: new Date() } });
     return 0;
   }
   const rule = ruleOf(r);
@@ -179,7 +179,7 @@ async function checkOne(id: string): Promise<number> {
 
   if (rule.events.some((e) => e !== 'ZONE')) {
     try {
-      const trades = await districtTrades(r.userId, meta.lawdCd, 24);
+      const trades = await districtTrades(r.userId, meta.lawdCd, 24, meta.kind);
       const prev = (r.seen as Seen | null) ?? null;
       const { hits, seen } = diffSales(trades, meta, rule, prev, kstDate());
       data.seen = seen;

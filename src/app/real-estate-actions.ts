@@ -1,10 +1,24 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import type { PlaceHit } from '@/domain/real-estate';
+import type { BuildingKind, LotKind, PlaceHit, TradeKind } from '@/domain/real-estate';
 import { requireUser } from '@/server/auth';
 import { UserError } from '@/server/services/portfolios';
-import { apartmentOptions, apartmentView, myApartments, saveRealEstateKey, searchApartments, setApartment, type ApartmentOptions, type ApartmentSummary, type ApartmentView } from '@/server/services/real-estate';
+import {
+  apartmentOptions,
+  apartmentView,
+  lotOptions,
+  lotView,
+  myApartments,
+  saveRealEstateKey,
+  searchPlaces,
+  setRealEstateLink,
+  type ApartmentOptions,
+  type ApartmentSummary,
+  type ApartmentView,
+  type LotOptions,
+  type LotView,
+} from '@/server/services/real-estate';
 
 async function attempt<T>(tag: string, fn: () => Promise<T>): Promise<T | { error: string }> {
   try {
@@ -16,14 +30,24 @@ async function attempt<T>(tag: string, fn: () => Promise<T>): Promise<T | { erro
   }
 }
 
-export async function searchApartmentsAction(query: string): Promise<{ hits: PlaceHit[] } | { error: string }> {
+export async function searchPlacesAction(query: string, kind: TradeKind = 'apartment'): Promise<{ hits: PlaceHit[] } | { error: string }> {
   const user = await requireUser();
-  return attempt('search', async () => ({ hits: await searchApartments(user.id, query) }));
+  return attempt('search', async () => ({ hits: await searchPlaces(user.id, query, kind) }));
 }
 
-export async function apartmentOptionsAction(place: PlaceHit, months = 12): Promise<ApartmentOptions | { error: string }> {
+export async function apartmentOptionsAction(place: PlaceHit, months = 12, kind: BuildingKind = 'apartment'): Promise<ApartmentOptions | { error: string }> {
   const user = await requireUser();
-  return attempt('options', () => apartmentOptions(user.id, place, months));
+  return attempt('options', () => apartmentOptions(user.id, place, months, kind));
+}
+
+export async function lotOptionsAction(place: PlaceHit, kind: LotKind): Promise<LotOptions | { error: string }> {
+  const user = await requireUser();
+  return attempt('lot-options', () => lotOptions(user.id, place, kind));
+}
+
+export async function lotViewAction(assetId: string): Promise<LotView | { error: string }> {
+  const user = await requireUser();
+  return attempt('lot-view', () => lotView(user.id, assetId));
 }
 
 export async function apartmentViewAction(assetId: string): Promise<ApartmentView | { error: string }> {
@@ -31,10 +55,10 @@ export async function apartmentViewAction(assetId: string): Promise<ApartmentVie
   return attempt('view', () => apartmentView(user.id, assetId));
 }
 
-export async function setApartmentAction(assetId: string, meta: string): Promise<{ ok: true } | { error: string }> {
+export async function setRealEstateLinkAction(assetId: string, meta: string): Promise<{ ok: true } | { error: string }> {
   const user = await requireUser();
   return attempt('set', async () => {
-    await setApartment(user.id, assetId, meta);
+    await setRealEstateLink(user.id, assetId, meta);
     revalidatePath('/', 'layout');
     return { ok: true as const };
   });

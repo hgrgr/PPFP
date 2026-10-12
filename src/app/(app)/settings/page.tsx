@@ -2,6 +2,7 @@ import { saveAiSettingsAction } from '@/app/ai-actions';
 import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
+import { propertyKindShort, rtmsPortalUrl, TRADE_KINDS } from '@/domain/real-estate';
 import { saveEcosKeyAction } from '@/app/benchmark-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { NAV_ITEMS } from '@/domain/nav';
@@ -232,7 +233,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <section className="card" id="real-estate">
         <h2>부동산 실거래가</h2>
         <p className="sub">
-          부동산 자산에 아파트를 연결하면 국토교통부 아파트 매매 실거래가로 추정 시세와 인근 거래를 보여 줍니다. 아파트를 지도에서 찾을 때는 위 책 검색의 카카오 REST API 키를 같이 씁니다(카카오 앱에서 카카오맵 사용 설정 필요). 매물은 가져오지 않고 네이버 부동산으로 연결합니다.
+          부동산 자산을 실거래가에 연결하면 국토교통부 매매 실거래가로 시세와 인근 거래를 보여 줍니다. 아파트·빌라·오피스텔은 그 건물의 거래로 추정 시세를, 단독·토지·상가는 지번이 가려져 나와 같은 동 거래의 ㎡당 가격으로 참고 시세를 냅니다. 지도에서 찾을 때는 위 책 검색의 카카오 REST API 키를 같이 씁니다(카카오 앱에서 카카오맵 사용 설정 필요). 매물은 가져오지 않고 네이버 부동산으로 연결합니다.
+        </p>
+        <p className="sub">
+          공공데이터포털에서 쓰려는 종류마다 따로 활용신청해야 합니다(자동 승인, 무료, 같은 인증키):{' '}
+          {TRADE_KINDS.map((k, i) => (
+            <span key={k}>
+              {i > 0 && ' · '}
+              <a href={rtmsPortalUrl(k)} target="_blank" rel="noreferrer">{propertyKindShort(k)}</a>
+            </span>
+          ))}
         </p>
         <ActionForm action={saveRealEstateKeyAction} className="grid">
           <label className="field">
@@ -241,7 +251,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <span className="sub">
               {molitHint ? '바꾸려면 새 키를 넣으세요.' : (
                 <>
-                  <a href="https://www.data.go.kr/data/15126468/openapi.do" target="_blank" rel="noreferrer">공공데이터포털 › 국토교통부 아파트 매매 실거래가 상세 자료</a>에서 활용신청(자동 승인, 무료)한 뒤 마이페이지의 일반 인증키를 넣으세요. 암호화해 저장합니다.
+                  위 종류 가운데 쓸 것을 활용신청한 뒤 공공데이터포털 마이페이지의 일반 인증키를 넣으세요. 암호화해 저장합니다.
                 </>
               )}
             </span>

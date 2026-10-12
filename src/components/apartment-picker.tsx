@@ -1,20 +1,106 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { apartmentOptionsAction, searchApartmentsAction } from '@/app/real-estate-actions';
-import { areaLabel, eok, periodLabel, PICK_PERIODS, type ApartmentMeta, type PlaceHit } from '@/domain/real-estate';
+import { apartmentOptionsAction, searchPlacesAction } from '@/app/real-estate-actions';
+import { areaLabel, eok, periodLabel, PICK_PERIODS, type ApartmentMeta, type BuildingKind, type PlaceHit, type TradeKind } from '@/domain/real-estate';
 import type { ApartmentOptions } from '@/server/services/real-estate';
 
 /** A name for the asset: "래미안대치팰리스 34평형" */
 export const apartmentName = (m: ApartmentMeta) => `${m.aptNm ?? m.placeName}${m.area ? ` ${areaLabel(m.area).match(/약 (\d+평형)/)?.[1] ?? ''}` : ''}`.trim();
 
+/** How the search and the picked building are worded, by kind. */
+const SEARCH_TEXT: Record<TradeKind, { label: string; placeholder: string }> = {
+  apartment: { label: '아파트 찾기', placeholder: '아파트 이름 또는 주소 (예: 래미안대치팰리스)' },
+  villa: { label: '빌라 찾기', placeholder: '주소 또는 건물 이름 (예: 망원동 412-5)' },
+  officetel: { label: '오피스텔 찾기', placeholder: '오피스텔 이름 또는 주소' },
+  house: { label: '주택 찾기', placeholder: '주소 (예: 연희동 130-12)' },
+  land: { label: '토지 찾기', placeholder: '주소 (예: 양평군 서종면 문호리 500)' },
+  commercial: { label: '상가 · 사무실 찾기', placeholder: '주소 또는 건물 이름' },
+};
+const UNIT: Record<BuildingKind, string> = { apartment: '단지', villa: '건물', officetel: '단지' };
+const KIND_NAME: Record<BuildingKind, string> = { apartment: '아파트', villa: '연립 · 다세대', officetel: '오피스텔' };
+
 /**
- * Find an apartment on the map, then pick its complex and 전용면적 from the deals reported
- * around it. Lives inside other forms, so it has no <form> of its own: Enter searches.
+ * A search box and its map hits; `onPick` gets the chosen place. Lives inside other forms,
+ * so it has no <form> of its own: Enter searches.
  */
-export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta | null) => void }) {
+export function PlaceSearch({ kind, help, busy, onPick, onReset }: { kind: TradeKind; help: string; busy: boolean; onPick: (p: PlaceHit) => void; onReset: () => void }) {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<PlaceHit[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const text = SEARCH_TEXT[kind];
+  const search = () => {
+    if (query.trim().length < 2) return;
+    setError(null);
+    onReset();
+    start(async () => {
+      const r = await searchPlacesAction(query, kind);
+      if ('error' in r) {
+        setError(r.error);
+        setHits(null);
+      } else setHits(r.hits);
+    });
+  };
+  return (
+    <>
+      <label className="field">
+        {text.label}
+        <span className="inline">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                search();
+              }
+            }}
+            placeholder={text.placeholder}
+            maxLength={80}
+            aria-describedby={`place-help-${kind}`}
+          />
+          <button type="button" className="btn" onClick={search} disabled={pending || query.trim().length < 2}>
+            {pending ? '찾는 중…' : '찾기'}
+          </button>
+        </span>
+        <span className="sub" id={`place-help-${kind}`}>{help}</span>
+      </label>
+      {error && <p className="msg err">{error}</p>}
+      {hits && (
+        <div className="book-hits" role="region" aria-label="검색 결과">
+          {hits.length ? (
+            <ul>
+              {hits.map((h, i) => (
+                <li key={`${h.name}:${i}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHits(null);
+                      onPick(h);
+                    }}
+                    disabled={busy}
+                  >
+                    <span className="strong">{h.name}</span>
+                    <span className="sub">{h.roadAddress ?? h.address} · {h.category.split(' > ').at(-1) || '장소'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="sub">찾은 곳이 없습니다. 이름을 줄이거나 동 이름과 지번을 함께 넣어 보세요.</p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Find an apartment, villa or officetel on the map, then pick its building and 전용면적 from
+ * the deals reported around it.
+ */
+export function ApartmentPicker({ kind = 'apartment', onChange }: { kind?: BuildingKind; onChange: (meta: ApartmentMeta | null) => void }) {
   const [opts, setOpts] = useState<ApartmentOptions | null>(null);
   const [complex, setComplex] = useState('');
   const [area, setArea] = useState('');
@@ -26,7 +112,7 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
   const emit = (o: ApartmentOptions, key: string, a: string) => {
     const c = o.complexes.find((x) => x.key === key);
     onChange({
-      kind: 'apartment',
+      kind,
       address: o.place.address,
       roadAddress: o.place.roadAddress,
       placeName: o.place.name,
@@ -42,29 +128,14 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
     });
   };
 
-  const search = () => {
-    if (query.trim().length < 2) return;
-    setError(null);
-    setOpts(null);
-    onChange(null);
-    start(async () => {
-      const r = await searchApartmentsAction(query);
-      if ('error' in r) {
-        setError(r.error);
-        setHits(null);
-      } else setHits(r.hits);
-    });
-  };
-
   const pickPlace = (p: PlaceHit) => {
     setError(null);
     start(async () => {
-      const r = await apartmentOptionsAction(p);
+      const r = await apartmentOptionsAction(p, 12, kind);
       if ('error' in r) {
         setError(r.error);
         return;
       }
-      setHits(null);
       setOpts(r);
       const key = r.suggested ?? '';
       const a = r.complexes.find((c) => c.key === key)?.areas[0]?.area;
@@ -80,7 +151,7 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
     setError(null);
     setWideningTo(months);
     startWiden(async () => {
-      const r = await apartmentOptionsAction(opts.place, months);
+      const r = await apartmentOptionsAction(opts.place, months, kind);
       setWideningTo(null);
       if ('error' in r) {
         setError(r.error);
@@ -101,47 +172,20 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
   const current = opts?.complexes.find((c) => c.key === complex);
   return (
     <div className="apt-picker full">
-      <label className="field">
-        아파트 찾기
-        <span className="inline">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                search();
-              }
-            }}
-            placeholder="아파트 이름 또는 주소 (예: 래미안대치팰리스)"
-            maxLength={80}
-            aria-describedby="apt-help"
-          />
-          <button type="button" className="btn" onClick={search} disabled={pending || query.trim().length < 2}>
-            {pending ? '찾는 중…' : '찾기'}
-          </button>
-        </span>
-        <span className="sub" id="apt-help">고르면 실거래가에 나온 단지와 전용면적을 고를 수 있습니다. 아파트가 아니면 비워 두고 이름만 적으세요.</span>
-      </label>
-      {error && <p className="msg err">{error}</p>}
-      {hits && (
-        <div className="book-hits" role="region" aria-label="아파트 검색 결과">
-          {hits.length ? (
-            <ul>
-              {hits.map((h, i) => (
-                <li key={`${h.name}:${i}`}>
-                  <button type="button" onClick={() => pickPlace(h)} disabled={pending}>
-                    <span className="strong">{h.name}</span>
-                    <span className="sub">{h.roadAddress ?? h.address} · {h.category.split(' > ').at(-1) || '장소'}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="sub">찾은 곳이 없습니다. 단지 이름을 줄이거나 동 이름을 함께 넣어 보세요.</p>
-          )}
-        </div>
+      {!opts && (
+        <PlaceSearch
+          kind={kind}
+          busy={pending}
+          help={`고르면 실거래가에 나온 ${UNIT[kind]}와 전용면적을 고를 수 있습니다.${kind === 'apartment' ? ' 아파트가 아니면 비워 두고 이름만 적으세요.' : ''}`}
+          onPick={pickPlace}
+          onReset={() => {
+            setError(null);
+            onChange(null);
+          }}
+        />
       )}
+      {pending && <p className="sub">실거래가를 읽는 중…</p>}
+      {error && <p className="msg err">{error}</p>}
       {opts && (
         <div className="apt-picked">
           <p className="sub">
@@ -160,7 +204,7 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
           {opts.complexes.length ? (
             <div className="grid">
               <label className="field">
-                실거래가 단지 ({opts.umdNm} {periodLabel(opts.months)})
+                {`실거래가 ${UNIT[kind]} (${opts.umdNm} ${periodLabel(opts.months)})`}
                 <select
                   value={complex}
                   onChange={(e) => {
@@ -198,11 +242,11 @@ export function ApartmentPicker({ onChange }: { onChange: (meta: ApartmentMeta |
               </label>
             </div>
           ) : (
-            <p className="sub">{opts.umdNm}에서 {periodLabel(opts.months)} 동안 신고된 아파트 거래가 없습니다. 주소만 저장합니다.</p>
+            <p className="sub">{opts.umdNm}에서 {periodLabel(opts.months)} 동안 신고된 {KIND_NAME[kind]} 거래가 없습니다. 주소만 저장합니다.</p>
           )}
           {wider.length > 0 && (
             <div className="inline apt-widen" role="group" aria-label="더 이전 거래까지 찾기">
-              <span className="sub">찾는 단지나 면적이 없나요? 더 이전 거래까지 찾기:</span>
+              <span className="sub">찾는 {UNIT[kind]}나 면적이 없나요? 더 이전 거래까지 찾기:</span>
               {wider.map((p) => (
                 <button key={p.months} type="button" className="btn small" disabled={widening} onClick={() => widen(p.months)}>
                   {wideningTo === p.months ? '읽는 중…' : p.label}

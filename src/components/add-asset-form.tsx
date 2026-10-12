@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import type { ActionState } from '@/app/actions';
-import type { ApartmentMeta } from '@/domain/real-estate';
+import { isBuildingKind, isLotKind, PROPERTY_KINDS, propertyKindShort, type ApartmentMeta, type LotMeta, type PropertyKind } from '@/domain/real-estate';
 import { ApartmentPicker, apartmentName } from './apartment-picker';
-import { PROPERTY_KINDS, propertyKindLabel, type PropertyKind } from '@/domain/real-estate';
+import { LotPicker, lotName } from './lot-picker';
 import { ActionForm, DateTimeField, Submit } from './forms';
 
 const MANUAL_TYPES: [string, string][] = [
@@ -36,12 +36,20 @@ export function AddAssetForm({
   const [type, setType] = useState('REAL_ESTATE');
   const [currency, setCurrency] = useState('KRW');
   const [name, setName] = useState('');
-  const [apartment, setApartment] = useState<ApartmentMeta | null>(null);
+  const [linked, setLinked] = useState<ApartmentMeta | LotMeta | null>(null);
   const [property, setProperty] = useState<PropertyKind>('apartment');
   /** The name last filled in from a pick, so a new pick replaces it but not a name typed by hand */
   const [autoName, setAutoName] = useState('');
   const liability = kind === 'manual' && type === 'LIABILITY';
   const realEstate = kind === 'manual' && type === 'REAL_ESTATE';
+  /** Fill the name from a pick unless the user already wrote one. */
+  const picked = (m: ApartmentMeta | LotMeta | null, label: string | null) => {
+    if (label && (!name || name === autoName)) {
+      setName(label);
+      setAutoName(label);
+    }
+    setLinked(m);
+  };
   return (
     <ActionForm action={action} className="grid" resetOnSuccess>
       {portfolioId ? (
@@ -89,42 +97,43 @@ export function AddAssetForm({
           {realEstate && (
             <label className="field">
               부동산 종류
-              <select name="propertyKind" value={property} onChange={(e) => setProperty(e.target.value as PropertyKind)}>
+              <select
+                name="propertyKind"
+                value={property}
+                onChange={(e) => {
+                  setProperty(e.target.value as PropertyKind);
+                  setLinked(null);
+                }}
+              >
                 {PROPERTY_KINDS.map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
                 ))}
               </select>
             </label>
           )}
-          {realEstate && property !== 'apartment' && (
+          {realEstate && isBuildingKind(property) && <ApartmentPicker key={property} kind={property} onChange={(m) => picked(m, m && apartmentName(m))} />}
+          {realEstate && isLotKind(property) && <LotPicker key={property} kind={property} onChange={(m) => picked(m, m && lotName(m))} />}
+          {realEstate && linked && <input type="hidden" name="realEstate" value={JSON.stringify(linked)} />}
+          {realEstate && property !== 'apartment' && !linked && (
             <>
               <label className="field">
                 주소 (선택)
                 <input name="propertyAddress" maxLength={120} placeholder="예: 서울 마포구 망원동 123-4" />
               </label>
               <label className="field">
-                전용면적 ㎡ (선택)
+                면적 ㎡ (선택)
                 <input name="propertyArea" type="number" inputMode="decimal" min="0" step="any" placeholder="예: 59.8" />
               </label>
-              <p className="sub full">실거래가 자동 추정은 아파트만 됩니다. 이 자산은 시세가 바뀔 때 종목 화면의 평가 갱신으로 기록하세요.</p>
+              <p className="sub full">
+                {property === 'other'
+                  ? '기타 부동산은 실거래가와 잇지 않습니다. 시세가 바뀔 때 종목 화면의 평가 갱신으로 기록하세요.'
+                  : '위에서 찾아 고르면 실거래가와 이어집니다. 고르지 않으면 적은 주소와 면적만 저장하고, 나중에 자산 화면에서 이을 수 있습니다.'}
+              </p>
             </>
           )}
-          {realEstate && property === 'apartment' && (
-            <ApartmentPicker
-              onChange={(m) => {
-                // Fill the name from the pick unless the user already wrote one.
-                if (m && (!name || name === autoName)) {
-                  setName(apartmentName(m));
-                  setAutoName(apartmentName(m));
-                }
-                setApartment(m);
-              }}
-            />
-          )}
-          {realEstate && property === 'apartment' && apartment && <input type="hidden" name="apartment" value={JSON.stringify(apartment)} />}
           <label className="field">
             이름
-            <input name="name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder={liability ? '예: 주택담보대출' : realEstate && property !== 'apartment' ? `예: 망원동 ${propertyKindLabel(property).split(' ')[0]}` : '예: 서울 아파트'} />
+            <input name="name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder={liability ? '예: 주택담보대출' : realEstate && property !== 'apartment' ? `예: 망원동 ${propertyKindShort(property)}` : '예: 서울 아파트'} />
           </label>
           <label className="field">
             통화

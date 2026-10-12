@@ -4,12 +4,13 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from 'recharts';
 import { valuationAction } from '@/app/actions';
-import { apartmentViewAction, setApartmentAction } from '@/app/real-estate-actions';
-import { areaLabel, eok, naverLandUrl, PYEONG, RTMS_URL, type ApartmentMeta } from '@/domain/real-estate';
+import { apartmentViewAction, setRealEstateLinkAction } from '@/app/real-estate-actions';
+import { areaLabel, eok, isLotKind, naverLandUrl, propertyKindShort, PYEONG, RTMS_SERVICES, RTMS_URL, type ApartmentMeta, type BuildingKind, type LotKind, type LotMeta, type PropertyMeta } from '@/domain/real-estate';
 import { pct, tone } from '@/lib/format';
 import type { ApartmentView } from '@/server/services/real-estate';
 import { ApartmentPicker } from './apartment-picker';
 import { ActionForm, nowLocal, Submit } from './forms';
+import { LotPicker } from './lot-picker';
 
 const axis = { fontSize: 11.5, fill: 'var(--muted)' };
 const day = (d: string) => Date.parse(`${d}T00:00:00+09:00`);
@@ -18,14 +19,17 @@ const yymm = (t: number) => {
   return `${String(d.getUTCFullYear()).slice(2)}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-/** Pick (or change) the apartment a real estate asset is. */
-function Connect({ assetId, onDone, onCancel }: { assetId: string; onDone: () => void; onCancel?: () => void }) {
-  const [meta, setMeta] = useState<ApartmentMeta | null>(null);
+/** What a building of each kind calls itself: 단지 for apartments and officetels, 건물 for villas. */
+export const UNIT: Record<BuildingKind, string> = { apartment: '단지', villa: '건물', officetel: '단지' };
+
+/** Pick (or change) the building or 동 a real estate asset is. */
+export function Connect({ kind, assetId, onDone, onCancel }: { kind: BuildingKind | LotKind; assetId: string; onDone: () => void; onCancel?: () => void }) {
+  const [meta, setMeta] = useState<ApartmentMeta | LotMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   return (
     <div className="stack">
-      <ApartmentPicker onChange={setMeta} />
+      {isLotKind(kind) ? <LotPicker kind={kind} onChange={setMeta} /> : <ApartmentPicker kind={kind} onChange={setMeta} />}
       {error && <p className="msg err">{error}</p>}
       <div className="inline">
         <button
@@ -34,13 +38,13 @@ function Connect({ assetId, onDone, onCancel }: { assetId: string; onDone: () =>
           disabled={!meta || pending}
           onClick={() =>
             start(async () => {
-              const r = await setApartmentAction(assetId, JSON.stringify(meta));
+              const r = await setRealEstateLinkAction(assetId, JSON.stringify(meta));
               if ('error' in r) setError(r.error);
               else onDone();
             })
           }
         >
-          {pending ? '저장 중…' : '이 아파트로 연결'}
+          {pending ? '저장 중…' : '실거래가에 연결'}
         </button>
         {onCancel && (
           <button type="button" className="btn" onClick={onCancel}>
@@ -54,6 +58,7 @@ function Connect({ assetId, onDone, onCancel }: { assetId: string; onDone: () =>
 
 function DealChart({ view }: { view: ApartmentView }) {
   const { report, meta } = view;
+  const unit = UNIT[meta.kind];
   const deals = report.sameAreaDeals.filter((t) => !t.cancelled).map((t) => ({ t: day(t.date), price: t.price }));
   // The 동's median price per 3.3㎡, scaled to this apartment's area, as a reference line.
   const dong = meta.area ? report.dong.monthly.map((m) => ({ t: day(`${m.month}-15`), dong: (m.perPyeong / PYEONG) * meta.area! })) : [];
@@ -85,7 +90,7 @@ function DealChart({ view }: { view: ApartmentView }) {
             <YAxis type="number" domain={[lo, hi]} ticks={yTicks} tickFormatter={(v) => yLabel(Number(v))} tick={axis} tickLine={false} axisLine={false} width={64} />
             <Tooltip
               labelFormatter={(l) => yymm(Number(l))}
-              formatter={(v, name) => [eok(Number(v)), name === 'dong' ? `${meta.umdNm} 3개월 중앙값 (이 면적 환산)` : '이 단지 같은 면적 거래']}
+              formatter={(v, name) => [eok(Number(v)), name === 'dong' ? `${meta.umdNm} 3개월 중앙값 (이 면적 환산)` : `이 ${unit} 같은 면적 거래`]}
               contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
             />
             <Line data={dong} dataKey="dong" stroke="var(--muted)" strokeDasharray="5 4" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -93,16 +98,17 @@ function DealChart({ view }: { view: ApartmentView }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <p className="sub">● 이 단지 같은 면적 거래 · ┄ {meta.umdNm} 전체 3.3㎡당 3개월 중앙값을 이 면적으로 환산</p>
+      <p className="sub">● 이 {unit} 같은 면적 거래 · ┄ {meta.umdNm} 전체 3.3㎡당 3개월 중앙값을 이 면적으로 환산</p>
     </div>
   );
 }
 
 /**
- * The 실거래가 · 인근 시세 card on a real estate asset: its estimated price from reported deals,
- * the deals themselves, the neighborhood, and a link to 네이버 부동산 for listings.
+ * The 실거래가 · 인근 시세 card on an apartment, villa or officetel asset: its estimated price
+ * from reported deals, the deals themselves, the neighborhood, and a link to 네이버 부동산.
+ * Unlinked, it offers to pick the building, showing what was written by hand (`manual`).
  */
-export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: string; holdingId: string; linked: boolean }) {
+export function RealEstatePanel({ kind = 'apartment', assetId, holdingId, linked, manual }: { kind?: BuildingKind; assetId: string; holdingId: string; linked: boolean; manual?: PropertyMeta | null }) {
   const router = useRouter();
   const [view, setView] = useState<ApartmentView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,14 +133,17 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
     router.refresh();
   };
 
+  const short = propertyKindShort(kind);
+  const unit = UNIT[kind];
   if (!linked || editing) {
     return (
       <section className="card" id="real-estate">
         <div className="stack" style={{ gap: 4 }}>
-          <h2>{linked ? '아파트 바꾸기' : '실거래가 · 인근 시세'}</h2>
-          <p className="sub">이 자산이 어느 아파트인지 고르면 국토교통부 실거래가로 추정 시세와 인근 거래를 보여 주고, 네이버 부동산 매물로 바로 갈 수 있습니다.</p>
+          <h2>{linked ? `${short} 바꾸기` : '실거래가 · 인근 시세'}</h2>
+          <ManualNote manual={manual} />
+          <p className="sub">이 자산이 어느 {short}인지 고르면 국토교통부 실거래가로 추정 시세와 인근 거래를 보여 주고, 네이버 부동산 매물로 바로 갈 수 있습니다.</p>
         </div>
-        <Connect assetId={assetId} onDone={reconnected} onCancel={linked ? () => setEditing(false) : undefined} />
+        <Connect kind={kind} assetId={assetId} onDone={reconnected} onCancel={linked ? () => setEditing(false) : undefined} />
       </section>
     );
   }
@@ -169,7 +178,7 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
             알림 설정
           </a>
           <button type="button" className="btn small" onClick={() => setEditing(true)}>
-            아파트 바꾸기
+            {short} 바꾸기
           </button>
         </div>
       </div>
@@ -183,7 +192,7 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
             <div className="kpi">
               <div className="label">추정 시세</div>
               <div className="value money">{r.estimate ? eok(r.estimate.price) : '—'}</div>
-              <div className="note">{r.estimate ? r.estimate.basis : meta.aptNm ? '최근 1년 동안 이 단지 거래가 없습니다.' : '실거래가 단지를 고르지 않았습니다. 아파트 바꾸기에서 단지를 고르세요.'}</div>
+              <div className="note">{r.estimate ? r.estimate.basis : meta.aptNm ? `최근 1년 동안 이 ${unit} 거래가 없습니다.` : `실거래가 ${unit}를 고르지 않았습니다. ${short} 바꾸기에서 ${unit}를 고르세요.`}</div>
             </div>
             <div className="kpi">
               <div className="label">같은 면적 최근 거래</div>
@@ -264,16 +273,16 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
 
           {r.nearby.length > 0 && (
             <>
-              <h3>{meta.umdNm} 단지 (최근 1년)</h3>
+              <h3>{`${meta.umdNm} ${unit} (최근 1년)`}</h3>
               <div className="table-wrap">
                 <table>
                   <thead>
-                    <tr><th scope="col">단지</th><th scope="col">건축</th><th scope="col">거래</th><th scope="col">최근 거래</th><th scope="col">3.3㎡당 중앙값</th></tr>
+                    <tr><th scope="col">{unit}</th><th scope="col">건축</th><th scope="col">거래</th><th scope="col">최근 거래</th><th scope="col">3.3㎡당 중앙값</th></tr>
                   </thead>
                   <tbody>
                     {r.nearby.map((n) => (
                       <tr key={`${n.aptNm}:${n.buildYear}`} className={n.own ? 'strong' : undefined}>
-                        <td className="l">{n.aptNm}{n.own ? ' (이 단지)' : ''}</td>
+                        <td className="l">{n.aptNm}{n.own ? ` (이 ${unit})` : ''}</td>
                         <td className="muted">{n.buildYear ?? '—'}</td>
                         <td>{n.deals}건</td>
                         <td className="money">{eok(n.lastPrice)} <span className="sub">{n.lastDate} · {n.lastArea}㎡</span></td>
@@ -287,10 +296,16 @@ export function RealEstatePanel({ assetId, holdingId, linked }: { assetId: strin
           )}
 
           <p className="sub">
-            출처: 국토교통부 아파트 매매 실거래가 ({view.asOf} 조회). 계약일 기준이며 신고 기한이 30일이라 최근 한 달은 덜 모였을 수 있습니다. 매물은 네이버 부동산에서 확인하세요.
+            출처: 국토교통부 {RTMS_SERVICES[meta.kind].title} ({view.asOf} 조회). 계약일 기준이며 신고 기한이 30일이라 최근 한 달은 덜 모였을 수 있습니다. 매물은 네이버 부동산에서 확인하세요.
           </p>
         </>
       )}
     </section>
   );
+}
+
+/** The address and area written by hand before the asset was linked, if any. */
+export function ManualNote({ manual }: { manual?: PropertyMeta | null }) {
+  if (!manual || (!manual.address && !manual.area)) return null;
+  return <p className="sub">적어 둔 정보: {[manual.address, manual.area ? `면적 ${manual.area}㎡` : null].filter(Boolean).join(' · ')}</p>;
 }

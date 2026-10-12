@@ -1,39 +1,55 @@
 /**
- * Apartments: finds one on the map (카카오 로컬, with the 카카오 REST key also used for book
- * search), lists the complexes and areas traded around it, and reads two years of its
- * 시군구's deals from 국토교통부 아파트 매매 실거래가 (공공데이터포털 key) for the asset page.
- * Listings (매물) are not fetched: the page links to 네이버 부동산 instead.
+ * Real estate: finds a property on the map (카카오 로컬, with the 카카오 REST key also used for
+ * book search), lists the buildings and areas traded around it, and reads two years of its
+ * 시군구's deals from 국토교통부 매매 실거래가 of its kind (공공데이터포털 key) for the asset
+ * page. Listings (매물) are not fetched: the page links to 네이버 부동산 instead.
  */
 import {
   apartmentReport,
   complexesIn,
   guessComplex,
+  inDong,
+  isBuildingKind,
+  isLotKind,
+  jibunOf,
+  lotReport,
+  lotUses,
   MolitApiError,
+  parseKakaoAddresses,
   parseKakaoPlaces,
   parseMolitTrades,
   parseRegionCode,
   pickMonths,
   PICK_PERIODS,
+  propertyKindShort,
   readApartmentMeta,
+  readLinkedMeta,
+  readLotMeta,
   recentMonths,
+  RTMS_SERVICES,
   type ApartmentMeta,
   type ApartmentReport,
   type AptTrade,
+  type BuildingKind,
   type ComplexOption,
+  type LotKind,
+  type LotMeta,
+  type LotReport,
   type PlaceHit,
+  type TradeKind,
 } from '@/domain/real-estate';
 import { kstDate, prisma } from '../db';
 import { clearServiceKey, serviceKey, setServiceKey } from './api-keys';
 import { noteCall, outcomeOf } from './api-usage';
 import { audit, UserError } from './portfolios';
 
-const MOLIT_URL = 'https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev';
+const molitUrl = (kind: TradeKind) => `https://apis.data.go.kr/1613000/${RTMS_SERVICES[kind].path}`;
 /** Months of deals the asset page reads: two years, for the year-on-year comparison. */
 const REPORT_MONTHS = 24;
 
 async function kakaoKey(userId: string) {
   const k = await serviceKey(userId, 'kakao', 'KAKAO_REST_API_KEY');
-  if (!k) throw new UserError('아파트를 찾으려면 연동 · 설정의 책 검색 칸에 카카오 REST API 키를 넣으세요. 같은 키로 지도 검색도 합니다.');
+  if (!k) throw new UserError('부동산을 지도에서 찾으려면 연동 · 설정의 책 검색 칸에 카카오 REST API 키를 넣으세요. 같은 키로 지도 검색도 합니다.');
   return k.key;
 }
 
@@ -59,11 +75,22 @@ async function kakao(userId: string, path: string, params: Record<string, string
   return res.json();
 }
 
-export async function searchApartments(userId: string, query: string): Promise<PlaceHit[]> {
+/**
+ * Places for a search: by name for apartments and officetels, which the map knows by name; by
+ * address first for the rest, which mostly it does not. Either way the other search fills in.
+ */
+export async function searchPlaces(userId: string, query: string, kind: TradeKind = 'apartment'): Promise<PlaceHit[]> {
   const q = query.trim().replace(/\s+/g, ' ').slice(0, 80);
-  if (q.length < 2) throw new UserError('아파트 이름이나 주소를 두 글자 이상 입력하세요.');
+  if (q.length < 2) throw new UserError('이름이나 주소를 두 글자 이상 입력하세요.');
   try {
-    return parseKakaoPlaces(await kakao(userId, '/v2/local/search/keyword.json', { query: q, size: '10' }));
+    const byName = async () => parseKakaoPlaces(await kakao(userId, '/v2/local/search/keyword.json', { query: q, size: '10' }), kind);
+    const byAddress = async () => parseKakaoAddresses(await kakao(userId, '/v2/local/search/address.json', { query: q, size: '10' }));
+    const [first, then] = kind === 'apartment' || kind === 'officetel' ? [byName, byAddress] : [byAddress, byName];
+    const hits = await first();
+    if (hits.length >= 3) return hits;
+    const more = await then();
+    const seen = new Set(hits.map((h) => h.address));
+    return [...hits, ...more.filter((h) => !seen.has(h.address))].slice(0, 10);
   } catch (e) {
     if (e instanceof UserError) throw e;
     console.error('[real-estate] place search failed', e instanceof Error ? e.message : e);
@@ -85,8 +112,8 @@ function fresh(ym: string, at: number, today: string) {
   return Date.now() - at < ttl;
 }
 
-async function monthTrades(userId: string, key: string, lawdCd: string, ym: string, today: string): Promise<AptTrade[]> {
-  const ck = `${lawdCd}:${ym}`;
+async function monthTrades(userId: string, key: string, kind: TradeKind, lawdCd: string, ym: string, today: string): Promise<AptTrade[]> {
+  const ck = `${kind}:${lawdCd}:${ym}`;
   const hit = cache.get(ck);
   if (hit && fresh(ym, hit.at, today)) {
     cache.delete(ck);
@@ -101,7 +128,7 @@ async function monthTrades(userId: string, key: string, lawdCd: string, ym: stri
       const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: ym, pageNo: String(pageNo), numOfRows: '1000' });
       let res: Response;
       try {
-        res = await fetch(`${MOLIT_URL}?${params}`, { headers: { accept: 'application/xml' }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+        res = await fetch(`${molitUrl(kind)}?${params}`, { headers: { accept: 'application/xml' }, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
       } catch (e) {
         noteCall(userId, 'molit', 'error');
         throw e;
@@ -109,7 +136,7 @@ async function monthTrades(userId: string, key: string, lawdCd: string, ym: stri
       const text = await res.text();
       let page: ReturnType<typeof parseMolitTrades>;
       try {
-        page = parseMolitTrades(text);
+        page = parseMolitTrades(text, kind);
       } catch (e) {
         noteCall(userId, 'molit', e instanceof MolitApiError && ['22', '23'].includes(e.code) ? 'limited' : 'error');
         // 23: too many calls per second, which reading years at once can hit; wait and ask again
@@ -133,15 +160,15 @@ async function monthTrades(userId: string, key: string, lawdCd: string, ym: stri
   return job;
 }
 
-/** A 시군구's deals over the last `months` months, a few months at a time. */
-export async function districtTrades(userId: string, lawdCd: string, months: number): Promise<AptTrade[]> {
+/** A 시군구's deals of `kind` over the last `months` months, a few months at a time. */
+export async function districtTrades(userId: string, lawdCd: string, months: number, kind: TradeKind = 'apartment'): Promise<AptTrade[]> {
   const key = await molitKey(userId);
   const today = kstDate();
   const yms = recentMonths(today, months);
   const out: AptTrade[] = [];
   try {
     for (let i = 0; i < yms.length; i += 4) {
-      const batch = await Promise.all(yms.slice(i, i + 4).map((ym) => monthTrades(userId, key, lawdCd, ym, today)));
+      const batch = await Promise.all(yms.slice(i, i + 4).map((ym) => monthTrades(userId, key, kind, lawdCd, ym, today)));
       out.push(...batch.flat());
     }
   } catch (e) {
@@ -153,6 +180,7 @@ export async function districtTrades(userId: string, lawdCd: string, months: num
 }
 
 export interface ApartmentOptions {
+  kind: BuildingKind;
   place: PlaceHit;
   lawdCd: string;
   umdCd: string;
@@ -164,11 +192,7 @@ export interface ApartmentOptions {
   suggested: string | null;
 }
 
-/**
- * For a picked map place: its 법정동, and the complexes and areas traded there over the last
- * `months` (12, 36, 60, or 0 for everything since 2006; see PICK_PERIODS).
- */
-export async function apartmentOptions(userId: string, place: PlaceHit, months = 12): Promise<ApartmentOptions> {
+async function regionOf(userId: string, place: PlaceHit) {
   let region: ReturnType<typeof parseRegionCode>;
   try {
     region = parseRegionCode(await kakao(userId, '/v2/local/geo/coord2regioncode.json', { x: String(place.lng), y: String(place.lat) }));
@@ -178,18 +202,51 @@ export async function apartmentOptions(userId: string, place: PlaceHit, months =
     throw new UserError('주소의 법정동을 찾지 못했습니다. 잠시 후 다시 시도하세요.');
   }
   if (!region) throw new UserError('이 위치의 법정동을 찾지 못했습니다. 다른 검색 결과를 고르세요.');
-  const period = PICK_PERIODS.some((p) => p.months === months) ? months : 12;
-  const trades = await districtTrades(userId, region.lawdCd, pickMonths(period, kstDate()));
-  const complexes = complexesIn(trades, region);
-  return { place, ...region, months: period, complexes, suggested: guessComplex(complexes, place) };
+  return region;
 }
 
-export async function setApartment(userId: string, assetId: string, raw: string) {
-  const meta = readApartmentMeta(raw);
-  if (!meta) throw new UserError('아파트를 다시 골라 주세요.');
+/**
+ * For a picked map place: its 법정동, and the buildings of `kind` and their areas traded there
+ * over the last `months` (12, 36, 60, or 0 for everything since 2006; see PICK_PERIODS).
+ */
+export async function apartmentOptions(userId: string, place: PlaceHit, months = 12, kind: BuildingKind = 'apartment'): Promise<ApartmentOptions> {
+  if (!isBuildingKind(kind)) throw new UserError('건물을 고를 수 없는 부동산 종류입니다.');
+  const region = await regionOf(userId, place);
+  const period = PICK_PERIODS.some((p) => p.months === months) ? months : 12;
+  const trades = await districtTrades(userId, region.lawdCd, pickMonths(period, kstDate()), kind);
+  const complexes = complexesIn(trades, region);
+  return { kind, place, ...region, months: period, complexes, suggested: guessComplex(complexes, place) };
+}
+
+export interface LotOptions {
+  kind: LotKind;
+  place: PlaceHit;
+  lawdCd: string;
+  umdCd: string;
+  umdNm: string;
+  /** 지번 of the picked address, to flag deals whose masked 지번 could be it */
+  jibun: string | null;
+  /** Uses (주택 유형, 지목, 건물 용도) traded in the 동 over the last two years */
+  uses: { use: string; deals: number }[];
+  deals: number;
+}
+
+/** For a picked map place: its 법정동 and the uses of `kind` traded there over the last two years. */
+export async function lotOptions(userId: string, place: PlaceHit, kind: LotKind): Promise<LotOptions> {
+  if (!isLotKind(kind)) throw new UserError('동네 거래와 비교하는 부동산 종류가 아닙니다.');
+  const region = await regionOf(userId, place);
+  const trades = await districtTrades(userId, region.lawdCd, REPORT_MONTHS, kind);
+  const uses = lotUses(trades, region);
+  return { kind, place, ...region, jibun: jibunOf(place.address), uses, deals: uses.reduce((a, u) => a + u.deals, 0) || trades.filter((t) => inDong(t, region)).length };
+}
+
+/** Links a real estate asset to the building or 동 it is (an ApartmentMeta or a LotMeta). */
+export async function setRealEstateLink(userId: string, assetId: string, raw: string) {
+  const meta = readLinkedMeta(raw);
+  if (!meta) throw new UserError('부동산을 다시 골라 주세요.');
   const asset = await prisma.asset.findFirst({ where: { id: assetId, userId } });
   if (!asset) throw new UserError('자산을 찾지 못했습니다.');
-  if (asset.type !== 'REAL_ESTATE') throw new UserError('부동산 자산에만 아파트를 연결할 수 있습니다.');
+  if (asset.type !== 'REAL_ESTATE') throw new UserError('부동산 자산에만 실거래가를 연결할 수 있습니다.');
   const updated = await prisma.asset.update({ where: { id: assetId }, data: { meta: { ...meta } } });
   await audit(prisma, userId, 'asset', assetId, 'update', asset, updated);
 }
@@ -203,10 +260,25 @@ export interface ApartmentView {
 export async function apartmentView(userId: string, assetId: string): Promise<ApartmentView> {
   const asset = await prisma.asset.findFirst({ where: { id: assetId, userId }, select: { meta: true } });
   const meta = readApartmentMeta(asset?.meta);
-  if (!meta) throw new UserError('이 자산에 연결된 아파트가 없습니다.');
+  if (!meta) throw new UserError('이 자산에 연결된 건물이 없습니다.');
   const today = kstDate();
-  const trades = await districtTrades(userId, meta.lawdCd, REPORT_MONTHS);
+  const trades = await districtTrades(userId, meta.lawdCd, REPORT_MONTHS, meta.kind);
   return { meta, report: apartmentReport(trades, meta, today), asOf: today };
+}
+
+export interface LotView {
+  meta: LotMeta;
+  report: LotReport;
+  asOf: string;
+}
+
+export async function lotView(userId: string, assetId: string): Promise<LotView> {
+  const asset = await prisma.asset.findFirst({ where: { id: assetId, userId }, select: { meta: true } });
+  const meta = readLotMeta(asset?.meta);
+  if (!meta) throw new UserError('이 자산에 연결된 동네 거래가 없습니다.');
+  const today = kstDate();
+  const trades = await districtTrades(userId, meta.lawdCd, REPORT_MONTHS, meta.kind);
+  return { meta, report: lotReport(trades, meta, today), asOf: today };
 }
 
 export async function saveRealEstateKey(userId: string, input: { key?: string; clear?: boolean }) {
@@ -235,28 +307,35 @@ export interface ApartmentSummary {
   /** 동 price per 3.3㎡, last three months against a year earlier */
   dongChange: number | null;
   umdNm: string;
+  /** Houses, land and shops: the estimate is the 동's price per ㎡ times the area, for reference */
+  reference: boolean;
   error: string | null;
 }
 
-/** Every apartment the user holds, for the market board. Assets without a linked apartment are left out. */
+/** Every linked property the user holds, for the market board. Assets not linked to 실거래가 are left out. */
 export async function myApartments(userId: string): Promise<{ rows: ApartmentSummary[]; unlinked: number }> {
   const holdings = await prisma.holding.findMany({
     where: { portfolio: { userId }, asset: { type: 'REAL_ESTATE' }, lots: { some: { qtyRemaining: { gt: 0 } } } },
     select: { id: true, asset: { select: { id: true, name: true, meta: true } }, lots: { select: { qtyRemaining: true } } },
   });
-  const linked = holdings.filter((h) => readApartmentMeta(h.asset.meta));
+  const linked = holdings.filter((h) => readLinkedMeta(h.asset.meta));
   const rows = await Promise.all(
     linked.map(async (h): Promise<ApartmentSummary> => {
-      const meta = readApartmentMeta(h.asset.meta)!;
+      const meta = readLinkedMeta(h.asset.meta)!;
       const qty = h.lots.reduce((a, l) => a + Number(l.qtyRemaining), 0).toString();
-      const base = { holdingId: h.id, name: h.asset.name, qty, umdNm: meta.umdNm };
+      const base = { holdingId: h.id, name: h.asset.name, qty, umdNm: meta.umdNm, reference: isLotKind(meta.kind) };
+      const change = (d: { recent: number | null; yearAgo: number | null }) => (d.recent && d.yearAgo ? d.recent / d.yearAgo - 1 : null);
       try {
+        if (isLotKind(meta.kind)) {
+          const { report } = await lotView(userId, h.asset.id);
+          const latest = report.deals.find((t) => !t.cancelled) ?? null;
+          return { ...base, estimate: report.reference?.price ?? null, basis: report.reference?.basis ?? null, latest: latest && { date: latest.date, price: latest.price }, dongChange: change(report.dong), error: null };
+        }
         const { report } = await apartmentView(userId, h.asset.id);
         const latest = report.sameAreaDeals.find((t) => !t.cancelled) ?? null;
-        const { recent, yearAgo } = report.dong;
-        return { ...base, estimate: report.estimate?.price ?? null, basis: report.estimate?.basis ?? null, latest: latest && { date: latest.date, price: latest.price }, dongChange: recent && yearAgo ? recent / yearAgo - 1 : null, error: null };
+        return { ...base, estimate: report.estimate?.price ?? null, basis: report.estimate?.basis ?? null, latest: latest && { date: latest.date, price: latest.price }, dongChange: change(report.dong), error: null };
       } catch (e) {
-        return { ...base, estimate: null, basis: null, latest: null, dongChange: null, error: e instanceof UserError ? e.message : '실거래가를 가져오지 못했습니다.' };
+        return { ...base, estimate: null, basis: null, latest: null, dongChange: null, error: e instanceof UserError ? e.message : `${propertyKindShort(meta.kind)} 실거래가를 가져오지 못했습니다.` };
       }
     }),
   );

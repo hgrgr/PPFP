@@ -42,7 +42,7 @@ export function ReAlertForm({ assets, initialAsset }: { assets: { id: string; na
   const [assetId, setAssetId] = useState(initialAsset && assets.some((a) => a.id === initialAsset) ? initialAsset : assets[0]?.id ?? '');
   const [events, setEvents] = useState<ReEvent[]>(['TRADE', 'REGISTERED', 'CANCELLED']);
   if (!assets.length) {
-    return <p className="empty">아파트를 연결한 부동산 자산이 없습니다. 부동산 자산 화면의 <em>실거래가 · 인근 시세</em>에서 아파트를 먼저 고르세요.</p>;
+    return <p className="empty">아파트·빌라·오피스텔을 연결한 부동산 자산이 없습니다. 부동산 자산 화면의 <em>실거래가 · 인근 시세</em>에서 건물을 먼저 고르세요.</p>;
   }
   return (
     <form
@@ -56,7 +56,7 @@ export function ReAlertForm({ assets, initialAsset }: { assets: { id: string; na
       }}
     >
       <label className="field">
-        아파트
+        부동산
         <select value={assetId} onChange={(e) => setAssetId(e.target.value)} required>
           {assets.map((a) => (
             <option key={a.id} value={a.id}>{a.name}</option>
@@ -107,7 +107,7 @@ export function ReAlertForm({ assets, initialAsset }: { assets: { id: string; na
           </select>
         </label>
         <label className="check full">
-          <input type="checkbox" name="newHighOnly" /> 신고가만 (같은 단지·같은 면적의 지난 2년 거래보다 비쌀 때)
+          <input type="checkbox" name="newHighOnly" /> 신고가만 (같은 건물·같은 면적의 지난 2년 거래보다 비쌀 때)
         </label>
       </fieldset>
       <label className="field full">
@@ -148,7 +148,7 @@ export function ReAlertList({ alerts }: { alerts: ReAlertView[] }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col" className="l">아파트</th><th scope="col" className="l">알릴 일</th><th scope="col" className="l">조건</th><th scope="col" className="l">상태</th><th scope="col"><span className="sr-only">작업</span></th></tr>
+              <tr><th scope="col" className="l">부동산</th><th scope="col" className="l">알릴 일</th><th scope="col" className="l">조건</th><th scope="col" className="l">상태</th><th scope="col"><span className="sr-only">작업</span></th></tr>
             </thead>
             <tbody>
               {alerts.map((a) => (
