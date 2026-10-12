@@ -7,7 +7,7 @@ import { LOT_METHODS } from '@/domain/lots';
 import { cleanHidden, NAV_ITEMS } from '@/domain/nav';
 import { kstDate, parseKstLocal, prisma } from '@/server/db';
 import { money } from '@/lib/format';
-import { readApartmentMeta } from '@/domain/real-estate';
+import { readApartmentMeta, readPropertyMeta } from '@/domain/real-estate';
 import { fxRate as currentFx } from '@/server/market';
 import { completePendingSession, createSession, destroySession, pendingSession, requestMeta, requireUser } from '@/server/auth';
 import { checkPassword, signedIn, signUp, verifySecondFactor } from '@/server/services/security';
@@ -257,9 +257,16 @@ export async function cashAction(_: ActionState, f: FormData) {
   });
 }
 
-/** A real estate asset's apartment, picked on the map (see ApartmentPicker). */
+/** A real estate asset's apartment, picked on the map (see ApartmentPicker), or another kind of property. */
 function manualMeta(f: FormData) {
-  if (s(f, 'type') !== 'REAL_ESTATE' || !s(f, 'apartment')) return undefined;
+  if (s(f, 'type') !== 'REAL_ESTATE') return undefined;
+  const kind = s(f, 'propertyKind') || 'apartment';
+  if (kind !== 'apartment') {
+    const meta = readPropertyMeta({ kind, address: s(f, 'propertyAddress'), area: s(f, 'propertyArea') });
+    if (!meta) throw new UserError('부동산 종류나 면적을 확인하세요.');
+    return { ...meta };
+  }
+  if (!s(f, 'apartment')) return undefined;
   const meta = readApartmentMeta(s(f, 'apartment'));
   if (!meta) throw new UserError('아파트를 다시 골라 주세요.');
   return { ...meta };
