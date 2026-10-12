@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import type { ActionState } from '@/app/actions';
 import { requireUser } from '@/server/auth';
 import { UserError } from '@/server/services/portfolios';
-import { removeMember, setAllowOverlap, setMember } from '@/server/services/strategy-portfolios';
+import { removeAccount, removeMember, setAccount, setAllowOverlap, setMember } from '@/server/services/strategy-portfolios';
 
 const s = (f: FormData, k: string) => {
   const v = f.get(k);
@@ -46,5 +46,22 @@ export async function setOverlapAction(_: ActionState, f: FormData) {
     const allow = s(f, 'allow') === '1';
     await setAllowOverlap(user.id, s(f, 'strategyId'), allow);
     return allow ? '겹쳐 담기를 허용했습니다.' : '나눠 담기로 바꿨습니다.';
+  });
+}
+
+/** Puts a whole account into the strategy at the given percent, or changes its percent */
+export async function setAccountAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    await setAccount(user.id, s(f, 'strategyId'), s(f, 'accountId'), s(f, 'percent') || '100');
+    return '저장했습니다.';
+  });
+}
+
+export async function removeAccountAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    await removeAccount(user.id, s(f, 'strategyId'), s(f, 'accountId'));
+    return '전략에서 계좌를 뺐습니다. 계좌의 종목은 그대로입니다.';
   });
 }

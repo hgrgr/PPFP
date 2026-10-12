@@ -7,6 +7,7 @@
  */
 import { Dec } from './decimal';
 import type { SeriesPoint } from './performance';
+import { effectiveWeights, type Edge } from './portfolio-graph';
 
 export const PORTFOLIO_KINDS = ['ACCOUNT', 'STRATEGY'] as const;
 export type PortfolioKind = (typeof PORTFOLIO_KINDS)[number];
@@ -117,3 +118,55 @@ export function strategySeries(days: HoldingDay[], trades: MemberTrade[], shares
   }
   return dates.map((date) => ({ date, value: byDate.get(date)!, flow: flows.get(date) ?? Dec.ZERO }));
 }
+
+/**
+ * Portfolio id -> weight a strategy gets through the whole accounts it takes: each account's
+ * share times that account's weights (itself 1, children by their allocation).
+ */
+export function accountWeights(accounts: Map<string, Dec>, edges: Edge[]): Map<string, Dec> {
+  const out = new Map<string, Dec>();
+  for (const [accountId, share] of accounts) {
+    for (const [pid, w] of effectiveWeights(edges, accountId)) out.set(pid, (out.get(pid) ?? Dec.ZERO).add(w.mul(share)));
+  }
+  return out;
+}
+
+/** holdingId -> a strategy's effective share: taken directly plus through its accounts. */
+export function effectiveShares(direct: Map<string, Dec>, viaAccounts: Map<string, Dec>, holdings: { id: string; portfolioId: string }[]): Map<string, Dec> {
+  const out = new Map<string, Dec>();
+  for (const h of holdings) {
+    const s = (direct.get(h.id) ?? Dec.ZERO).add(viaAccounts.get(h.portfolioId) ?? Dec.ZERO);
+    if (s.isPos()) out.set(h.id, s);
+  }
+  return out;
+}
+
+export interface StrategyShares {
+  id: string;
+  name: string;
+  allowOverlap: boolean;
+  /** holdingId -> effective share */
+  shares: Map<string, Dec>;
+}
+
+/**
+ * After a change to `changedId`: a strategy may take at most 100% of a holding, and the
+ * splitting strategies together at most 100% of it. The first breach, as a message; null if none.
+ */
+export function shareBreach(all: StrategyShares[], changedId: string, nameOf: (holdingId: string) => string): string | null {
+  const self = all.find((s) => s.id === changedId);
+  if (!self) return null;
+  for (const [hid, s] of self.shares) {
+    if (s.gt(Dec.ONE.add(EPS))) return `${nameOf(hid)}: 이 전략이 계좌와 종목으로 합쳐 ${pct(s)}를 담게 됩니다. 한 종목은 100%까지만 담을 수 있습니다.`;
+    if (self.allowOverlap) continue;
+    const split = all.filter((x) => !x.allowOverlap && x.shares.has(hid));
+    const total = Dec.sum(split.map((x) => x.shares.get(hid)!));
+    if (total.gt(Dec.ONE.add(EPS))) {
+      const others = split.filter((x) => x.id !== changedId);
+      return `${nameOf(hid)}: ${others.map((x) => `${x.name} ${pct(x.shares.get(hid)!)}`).join(' · ')}와(과) 합쳐 ${pct(total)}가 됩니다. 나눠 담는 전략끼리는 100%까지만 담을 수 있습니다. 겹쳐 담으려면 *겹쳐 담기 허용*을 켜세요.`;
+    }
+  }
+  return null;
+}
+
+const EPS = Dec.of('0.0000001');

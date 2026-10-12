@@ -230,6 +230,10 @@ model Portfolio {
   loansPaid       Loan[]            @relation("loanPayFrom")
   autopilot       AutopilotPolicy?
   members         StrategyMember[]
+  /// STRATEGY: whole accounts it takes a share of (StrategyAccount)
+  accountMembers  StrategyAccount[] @relation("strategyAccounts")
+  /// ACCOUNT: strategies that take a share of this account
+  inStrategies    StrategyAccount[] @relation("inStrategies")
 
   @@index([userId])
   @@index([strategyVersionId])
@@ -249,6 +253,23 @@ model StrategyMember {
 
   @@id([portfolioId, holdingId])
   @@index([holdingId])
+}
+
+/// A strategy takes `share` of a whole account portfolio: its holdings and cash, and those of its
+/// children by their allocation. Combined with StrategyMember, a holding's effective share in a
+/// strategy is its direct share plus what comes through accounts.
+model StrategyAccount {
+  portfolioId String
+  accountId   String
+  /// Fraction of the account, 0 < share <= 1
+  share       Decimal  @db.Decimal(20, 10)
+  createdAt   DateTime @default(now())
+
+  portfolio Portfolio @relation("strategyAccounts", fields: [portfolioId], references: [id], onDelete: Cascade)
+  account   Portfolio @relation("inStrategies", fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([portfolioId, accountId])
+  @@index([accountId])
 }
 
 /// parent contains `allocation` (0 < a <= 1) of child. Cycles and over-allocation are rejected in code.

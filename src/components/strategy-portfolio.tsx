@@ -1,5 +1,5 @@
 import type { Portfolio } from '@prisma/client';
-import { removeMemberAction, setMemberAction, setOverlapAction } from '@/app/strategy-actions';
+import { removeAccountAction, removeMemberAction, setAccountAction, setMemberAction, setOverlapAction } from '@/app/strategy-actions';
 import { deletePortfolioAction, updatePortfolioAction } from '@/app/actions';
 import { ActionForm, Submit } from '@/components/forms';
 import { FxAmount } from '@/components/amount';
@@ -7,7 +7,8 @@ import { Dec } from '@/domain/decimal';
 import type { OverlapInfo } from '@/domain/strategy-portfolios';
 import { krw, pct, qty, tone } from '@/lib/format';
 import type { CurrentState } from '@/server/services/analytics';
-import { memberCandidates } from '@/server/services/strategy-portfolios';
+import { prisma } from '@/server/db';
+import { accountCandidates, memberCandidates, strategyStates } from '@/server/services/strategy-portfolios';
 
 /** Under a holding's name: the strategies that take it, and 중복 when two or more do */
 export function StrategyTag({ info }: { info?: OverlapInfo | null }) {
@@ -24,7 +25,10 @@ const pctInput = (d: Dec) => Number(d.mul(100).toFixed(2)).toString();
 
 /** The page of a strategy portfolio: what it takes from the accounts, and adding more. */
 export async function StrategyPortfolio({ userId, portfolio: p, state, members, local }: { userId: string; portfolio: Portfolio; state: CurrentState; members: Map<string, OverlapInfo>; local: boolean }) {
-  const candidates = await memberCandidates(userId, p.id);
+  const [candidates, accounts, states] = await Promise.all([memberCandidates(userId, p.id), accountCandidates(userId, p.id), strategyStates(userId, prisma, { archived: true })]);
+  const via = states.find((x) => x.id === p.id)?.viaAccounts ?? new Map<string, Dec>();
+  // Cash of the whole accounts taken
+  const cash = Dec.sum([...state.cashByPortfolio].flatMap(([pid, list]) => list.map((c) => c.krw.mul(via.get(pid) ?? Dec.ZERO))));
   const live = new Map(state.holdings.map((h) => [h.holdingId, h]));
   const usdkrw = state.usdkrw.toNumber();
   const rows = candidates
@@ -36,8 +40,9 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
       return { c, h, value, cost, pnl: value.sub(cost) };
     })
     .sort((a, b) => b.value.cmp(a.value));
-  const total = Dec.sum(rows.map((r) => r.value));
+  const total = Dec.sum(rows.map((r) => r.value)).add(cash);
   const cost = Dec.sum(rows.map((r) => r.cost));
+  const pnl = total.sub(cash).sub(cost);
   const addable = candidates.filter((c) => !c.share);
 
   return (
@@ -64,7 +69,9 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
         <div className="card kpi">
           <div className="label">전략 평가액</div>
           <div className="value money">{krw(total.toString())}</div>
-          <div className="note">{rows.length}종목 · 순자산에는 계좌에서 한 번만 들어갑니다</div>
+          <div className="note">
+            {rows.length}종목{cash.isZero() ? '' : ` · 계좌 현금 ${krw(cash.toString())}`} · 순자산에는 계좌에서 한 번만 들어갑니다
+          </div>
         </div>
         <div className="card kpi">
           <div className="label">원가 (담은 비율만큼)</div>
@@ -72,8 +79,8 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
         </div>
         <div className="card kpi">
           <div className="label">평가손익</div>
-          <div className={`value money ${tone(total.sub(cost).toString())}`}>{krw(total.sub(cost).toString())}</div>
-          <div className="note">{cost.isZero() ? '' : pct(total.sub(cost).div(cost.abs()).toString())}</div>
+          <div className={`value money ${tone(pnl.toString())}`}>{krw(pnl.toString())}</div>
+          <div className="note">{cost.isZero() ? '' : pct(pnl.div(cost.abs()).toString())}</div>
         </div>
       </section>
 
@@ -105,12 +112,15 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
                       </td>
                       <td className="sub">{c.account}</td>
                       <td className="num">
-                        <ActionForm action={setMemberAction} className="inline share-form">
-                          <input type="hidden" name="strategyId" value={p.id} />
-                          <input type="hidden" name="holdingId" value={c.holdingId} />
-                          <input name="percent" type="number" min="0.01" max="100" step="0.01" defaultValue={pctInput(c.share!)} aria-label={`${c.name} 담을 비율(%)`} />
-                          <Submit className="btn small" pendingText="…">%</Submit>
-                        </ActionForm>
+                        {c.direct && (
+                          <ActionForm action={setMemberAction} className="inline share-form">
+                            <input type="hidden" name="strategyId" value={p.id} />
+                            <input type="hidden" name="holdingId" value={c.holdingId} />
+                            <input name="percent" type="number" min="0.01" max="100" step="0.01" defaultValue={pctInput(c.direct)} aria-label={`${c.name} 담을 비율(%)`} />
+                            <Submit className="btn small" pendingText="…">%</Submit>
+                          </ActionForm>
+                        )}
+                        {c.viaAccount && <span className="sub">계좌로 {pct(c.viaAccount.toString(), 0, false)}</span>}
                       </td>
                       <td className="num">{h ? qty(h.qty.mul(c.share!).toString()) : '0'}</td>
                       <td className="num money">{h ? <FxAmount value={value.toNumber()} currency={h.currency} usdkrw={usdkrw} local={local} /> : '—'}</td>
@@ -119,11 +129,13 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
                         <span className="sub">{rc.isZero() ? '' : pct(pnl.div(rc.abs()).toString())}</span>
                       </td>
                       <td>
-                        <ActionForm action={removeMemberAction} confirm={`${c.name}을(를) 이 전략에서 뺄까요? 계좌의 종목과 거래는 그대로입니다.`}>
-                          <input type="hidden" name="strategyId" value={p.id} />
-                          <input type="hidden" name="holdingId" value={c.holdingId} />
-                          <Submit className="btn small" pendingText="…">빼기</Submit>
-                        </ActionForm>
+                        {c.direct && (
+                          <ActionForm action={removeMemberAction} confirm={`${c.name}을(를) 이 전략에서 뺄까요? 계좌의 종목과 거래는 그대로입니다.`}>
+                            <input type="hidden" name="strategyId" value={p.id} />
+                            <input type="hidden" name="holdingId" value={c.holdingId} />
+                            <Submit className="btn small" pendingText="…">빼기</Submit>
+                          </ActionForm>
+                        )}
                       </td>
                     </tr>
                   );
@@ -132,13 +144,62 @@ export async function StrategyPortfolio({ userId, portfolio: p, state, members, 
             </table>
           </div>
         ) : (
-          <p className="empty">아직 담은 종목이 없습니다. 아래에서 계좌의 종목을 담으세요.</p>
+          <p className="empty">아직 담은 종목이 없습니다. 아래에서 계좌를 통째로 담거나 계좌의 종목을 담으세요.</p>
         )}
+      </section>
+
+      <section className="card" id="accounts">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>계좌 통째로 담기</h2>
+          <p className="sub">
+            계좌 포트폴리오를 비율만큼 담으면 그 계좌의 종목과 현금, 하위 포트폴리오까지 함께 들어오고, 계좌에서 새로 산 종목도 저절로 담깁니다. 예: *미국 주식*을 성장 전략과
+            올웨더 전략에 각각 100%. 순자산에는 계좌에서 한 번만 들어갑니다.
+          </p>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>계좌</th>
+                <th>다른 전략</th>
+                <th className="num">담은 비율</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.map((a) => (
+                <tr key={a.accountId}>
+                  <td>
+                    <a className="strong" href={`/portfolios/${a.accountId}`}>{a.name}</a>
+                  </td>
+                  <td className="sub">{a.others ?? '—'}</td>
+                  <td className="num">
+                    <ActionForm action={setAccountAction} className="inline share-form">
+                      <input type="hidden" name="strategyId" value={p.id} />
+                      <input type="hidden" name="accountId" value={a.accountId} />
+                      <input name="percent" type="number" min="0.01" max="100" step="0.01" defaultValue={a.share ? pctInput(a.share) : '100'} aria-label={`${a.name} 담을 비율(%)`} />
+                      <Submit className="btn small" pendingText="…">{a.share ? '%' : '담기'}</Submit>
+                    </ActionForm>
+                  </td>
+                  <td>
+                    {a.share && (
+                      <ActionForm action={removeAccountAction} confirm={`${a.name}을(를) 이 전략에서 뺄까요? 계좌의 종목과 거래는 그대로입니다.`}>
+                        <input type="hidden" name="strategyId" value={p.id} />
+                        <input type="hidden" name="accountId" value={a.accountId} />
+                        <Submit className="btn small" pendingText="…">빼기</Submit>
+                      </ActionForm>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="card">
         <div className="stack" style={{ gap: 4 }}>
-          <h2>계좌에서 담기</h2>
+          <h2>계좌의 종목 하나씩 담기</h2>
           <p className="sub">
             {p.allowOverlap
               ? '이 전략은 겹쳐 담기를 허용합니다. 다른 전략이 담은 비율과 상관없이 100%까지 담을 수 있습니다.'
