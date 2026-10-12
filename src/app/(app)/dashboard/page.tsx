@@ -100,6 +100,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
             {kstDateTime(new Date())} 기준 · USD/KRW {d.usdkrw.toFixed(2)} ({fx.label})
             {d.stale && <span className="badge warn" style={{ marginLeft: 8 }}>일부 시세 지연</span>}
           </p>
+          {d.scope.kind === 'STRATEGY' && (
+            <p className="sub">
+              <span className="badge">전략</span> 계좌의 종목을 담은 비율만큼 계산한 값입니다. 순자산에는 계좌에서 한 번만 들어갑니다. 과거 기록은 지금 비율로 계산합니다.
+            </p>
+          )}
         </div>
         <div className="inline">
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
@@ -109,11 +114,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           <a className="btn" href={`/data?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
             내보내기
           </a>
-          {d.scope.id && (
+          {d.scope.id && d.scope.kind === 'STRATEGY' ? (
+            <a className="btn primary" href={`/portfolios/${d.scope.id}`}>
+              담은 종목 편집
+            </a>
+          ) : d.scope.id ? (
             <a className="btn primary" href={`/portfolios/${d.scope.id}#add`}>
               + 거래 추가
             </a>
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -271,7 +280,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
               </table>
             </div>
           ) : (
-            <p className="empty">하위 포트폴리오가 없습니다.</p>
+            <p className="empty">{d.scope.kind === 'STRATEGY' ? '전략은 하위 포트폴리오를 갖지 않습니다.' : '하위 포트폴리오가 없습니다.'}</p>
+          )}
+          {d.strategies.length > 0 && (
+            <>
+              <div className="spread" style={{ marginTop: 12 }}>
+                <h3>전략</h3>
+                <span className="sub">계좌 종목을 나눠 담은 값이라 위 합계와 따로 봅니다</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <tbody>
+                    {d.strategies.map((st) => (
+                      <tr key={st.id}>
+                        <td>
+                          <a href={q({ p: st.id })} className="strong">{st.name}</a>
+                          <span className="sub">{st.members}종목 · {st.allowOverlap ? '겹쳐 담기 허용' : '나눠 담기'}</span>
+                        </td>
+                        <td className="money">{krwShort(st.value.toString())}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
@@ -292,6 +324,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
                       <td>
                         <a href={`/holdings/${h.holdingId}`} className="strong">{h.name}</a>
                         <span className="sub">{[h.symbol, h.portfolioName].filter(Boolean).join(' · ')}</span>
+                        {h.strategies && (
+                          <span className="sub strategy-tag">
+                            {h.overlap && <span className="badge warn">중복</span>} 전략: {h.strategies}
+                          </span>
+                        )}
                       </td>
                       <td className="money">{qty(h.qty.toString())}<span className="sub">Lot {h.lots}</span></td>
                       <td>

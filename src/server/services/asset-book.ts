@@ -8,6 +8,7 @@ import { prisma } from '../db';
 import { currentState } from './analytics';
 import { userGraph } from './portfolios';
 import { assetTraitMap, traitGroups } from './traits';
+import { membershipsByHolding } from './strategy-portfolios';
 
 export interface Position {
   holdingId: string;
@@ -21,6 +22,9 @@ export interface Position {
   txns: number;
   /** Has broker-synced transactions (a later sync looks for them in this portfolio) */
   synced: boolean;
+  /** Strategies that take this holding ("배당 60% · 성장 40%") and whether two or more do */
+  strategies: string | null;
+  overlap: boolean;
 }
 
 export interface BookAsset {
@@ -51,7 +55,7 @@ export interface AssetBook {
 }
 
 export async function assetBook(userId: string): Promise<AssetBook> {
-  const [state, graph, groups, tags] = await Promise.all([currentState(userId), userGraph(userId), traitGroups(userId), assetTraitMap(userId)]);
+  const [state, graph, groups, tags, members] = await Promise.all([currentState(userId), userGraph(userId), traitGroups(userId), assetTraitMap(userId), membershipsByHolding(userId)]);
   const holdingIds = state.holdings.map((h) => h.holdingId);
   const assetIds = [...new Set(state.holdings.map((h) => h.assetId))];
   const [txnCounts, syncedRows, journalCounts] = await Promise.all([
@@ -103,6 +107,8 @@ export async function assetBook(userId: string): Promise<AssetBook> {
       lots: h.lots,
       txns: txns.get(h.holdingId) ?? 0,
       synced: synced.has(h.holdingId),
+      strategies: members.get(h.holdingId)?.label ?? null,
+      overlap: members.get(h.holdingId)?.overlap ?? false,
     });
   }
   const markets = new Map((await prisma.asset.findMany({ where: { id: { in: assetIds } }, select: { id: true, market: true } })).map((m) => [m.id, m.market]));
@@ -119,7 +125,8 @@ export async function assetBook(userId: string): Promise<AssetBook> {
 
   return {
     assets,
-    portfolios: graph.portfolios.map((p) => ({ id: p.id, name: p.name, color: p.color, archived: p.archived })),
+    // Where a holding can move: accounts only (a strategy holds nothing itself)
+    portfolios: graph.portfolios.filter((p) => p.kind !== 'STRATEGY').map((p) => ({ id: p.id, name: p.name, color: p.color, archived: p.archived })),
     groups: groups.map((g) => ({ id: g.id, name: g.name, traits: g.traits.map((t) => ({ id: t.id, name: t.name, color: t.color })) })),
     total,
     usdkrw: state.usdkrw.toFixed(2),

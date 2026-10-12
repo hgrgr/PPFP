@@ -100,7 +100,7 @@ export async function autopilotOverview(userId: string) {
       orderBy: { createdAt: 'asc' },
     }),
     prisma.tradeOrder.findMany({ where: { userId }, include: { policy: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 30 }),
-    prisma.portfolio.findMany({ where: { userId, archived: false, autopilot: null }, select: { id: true, name: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
+    prisma.portfolio.findMany({ where: { userId, archived: false, kind: 'ACCOUNT', autopilot: null }, select: { id: true, name: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
   ]);
   return {
     haltedAt: settings?.tradingHaltedAt ?? null,

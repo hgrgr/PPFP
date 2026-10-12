@@ -17,7 +17,7 @@ import { fxRate } from '../market';
 import { BrokerApiError, type BrokerHolding } from '../brokers';
 import { ensureListedAsset } from './assets';
 import { adapterFor, listConnections, markStatus, marketProviders, sourceKey } from './brokers';
-import { ownedPortfolio, UserError } from './portfolios';
+import { ownedAccount, UserError } from './portfolios';
 import { recordBuy } from './trading';
 
 export interface ImportRow {
@@ -242,7 +242,7 @@ export async function importHoldings(
     portfolios.add(r.portfolioId);
     return { ...r, symbol, qty, price, currency: currency as 'KRW' | 'USD', name: (r.name || symbol).trim().slice(0, 80) };
   });
-  for (const id of portfolios) await ownedPortfolio(userId, id);
+  for (const id of portfolios) await ownedAccount(userId, id);
 
   const usd = clean.some((r) => r.currency === 'USD') ? await fxRate(userId, 'USD') : Dec.ONE;
   const memo = `${input.sourceLabel.slice(0, 40)}에서 가져온 시작 Lot (증권사 평균단가)`;

@@ -225,7 +225,7 @@ export default async function NetWorthPage() {
                 납입 포트폴리오
                 <select name="payFromId" defaultValue="">
                   <option value="">앱 밖의 돈</option>
-                  {graph.portfolios.map((p) => (
+                  {graph.portfolios.filter((p) => p.kind === 'ACCOUNT').map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>

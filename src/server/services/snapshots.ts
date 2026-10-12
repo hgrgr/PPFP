@@ -40,7 +40,7 @@ export function toLedgerTxn(t: Transaction): LedgerTxn {
 export async function rebuildSnapshots(userId: string, fromDate?: string): Promise<{ portfolios: number; days: number }> {
   const today = kstDate();
   const portfolios = await prisma.portfolio.findMany({
-    where: { userId },
+    where: { userId, kind: 'ACCOUNT' },
     include: { holdings: { include: { asset: true } }, transactions: true },
   });
   const allTxns = portfolios.flatMap((p) => p.transactions);

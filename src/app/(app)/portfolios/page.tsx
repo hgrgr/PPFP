@@ -3,10 +3,12 @@ import { ActionForm, Submit } from '@/components/forms';
 import { Dec } from '@/domain/decimal';
 import { LOT_METHOD_LABEL, LOT_METHODS } from '@/domain/lots';
 import { allocatedShare, buildForest, effectiveWeights, type TreeNode } from '@/domain/portfolio-graph';
+import { PORTFOLIO_KIND_LABEL, PORTFOLIO_KINDS } from '@/domain/strategy-portfolios';
 import { krwShort, pct } from '@/lib/format';
 import { requireUser } from '@/server/auth';
 import { currentState } from '@/server/services/analytics';
 import { userGraph } from '@/server/services/portfolios';
+import { membershipsByHolding } from '@/server/services/strategy-portfolios';
 
 export const metadata = { title: '포트폴리오' };
 export const dynamic = 'force-dynamic';
@@ -14,9 +16,26 @@ export const dynamic = 'force-dynamic';
 export default async function PortfoliosPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const user = await requireUser();
   const { welcome } = await searchParams;
-  const [{ portfolios, edges }, state] = await Promise.all([userGraph(user.id), currentState(user.id)]);
+  const [{ portfolios: all, edges }, state, members] = await Promise.all([userGraph(user.id), currentState(user.id), membershipsByHolding(user.id)]);
+  // Accounts form the tree; strategies only weigh account holdings and are listed apart
+  const portfolios = all.filter((p) => p.kind !== 'STRATEGY');
+  const strategies = all.filter((p) => p.kind === 'STRATEGY');
   const byId = new Map(portfolios.map((p) => [p.id, p]));
   const forest = buildForest(portfolios.map((p) => p.id), edges);
+  const strategyValue = (id: string) => {
+    let v = Dec.ZERO;
+    let n = 0;
+    let shared = 0;
+    for (const h of state.holdings) {
+      const info = members.get(h.holdingId);
+      const m = info?.strategies.find((x) => x.strategyId === id);
+      if (!m) continue;
+      v = v.add(h.valueFull.mul(m.share));
+      n++;
+      if (info!.overlap) shared++;
+    }
+    return { value: v, count: n, shared };
+  };
   const rolled = new Map<string, Dec>();
   for (const p of portfolios) {
     let v = Dec.ZERO;
@@ -85,6 +104,54 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
         <p className="sub">하위 포트폴리오의 금액은 할당 비율만큼 상위에 합산됩니다. 같은 포트폴리오가 여러 상위 아래에 보일 수 있습니다.</p>
       </section>
 
+      <section className="card" id="strategies">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>전략</h2>
+          <p className="sub">
+            전략 포트폴리오는 종목을 직접 갖지 않고, 계좌 포트폴리오의 보유 종목을 비율만큼 담습니다. 같은 종목을 여러 전략에 담을 수 있고, 순자산은 계좌 기준으로만 계산해 두 번 세지 않습니다.
+          </p>
+        </div>
+        {strategies.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>전략</th>
+                  <th>담는 방식</th>
+                  <th className="num">종목</th>
+                  <th className="num">평가액</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {strategies.map((p) => {
+                  const v = strategyValue(p.id);
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <span className="dot" style={{ background: p.color }} /> <a className="strong" href={`/portfolios/${p.id}`}>{p.name}</a>
+                        {p.archived && <span className="badge">보관됨</span>}
+                      </td>
+                      <td className="sub">{p.allowOverlap ? '겹쳐 담기 허용' : '나눠 담기'}</td>
+                      <td className="num">
+                        {v.count}
+                        {v.shared > 0 && <span className="badge warn" title="다른 전략에도 담긴 종목 수">중복 {v.shared}</span>}
+                      </td>
+                      <td className="num money">{krwShort(v.value.toString())}</td>
+                      <td>
+                        <a className="btn small" href={`/dashboard?p=${p.id}`}>분석</a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty">아직 전략이 없습니다. 아래 새 포트폴리오에서 종류를 *전략*으로 고르세요.</p>
+        )}
+      </section>
+
       <section className="row">
         <div className="card">
           <h2>새 포트폴리오</h2>
@@ -92,6 +159,17 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
             <label className="field full">
               이름
               <input name="name" required maxLength={60} placeholder="예: 해외 성장주" />
+            </label>
+            <label className="field">
+              종류
+              <select name="kind" defaultValue="ACCOUNT">
+                {PORTFOLIO_KINDS.map((k) => (
+                  <option key={k} value={k}>{PORTFOLIO_KIND_LABEL[k]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="check">
+              <input type="checkbox" name="allowOverlap" /> 전략: 다른 전략이 담은 종목도 겹쳐 담기 허용
             </label>
             <label className="field">
               상위 포트폴리오 (선택)
@@ -122,6 +200,7 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
               설명 (선택)
               <input name="description" maxLength={200} />
             </label>
+            <p className="sub full">전략은 상위 포트폴리오에 넣지 않고 Lot 방식도 쓰지 않습니다(매매는 계좌에서 기록). 나눠 담기 전략끼리는 한 종목의 비율 합계가 100%를 넘지 않고, 겹쳐 담기를 허용한 전략은 그와 상관없이 100%까지 담습니다.</p>
             <div className="full">
               <Submit>만들기</Submit>
             </div>

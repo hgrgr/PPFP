@@ -29,6 +29,13 @@ export async function ownedPortfolio(userId: string, portfolioId: string) {
   return p;
 }
 
+/** A portfolio that holds shares and cash itself (not a strategy, which only weighs them) */
+export async function ownedAccount(userId: string, portfolioId: string) {
+  const p = await ownedPortfolio(userId, portfolioId);
+  if (p.kind === 'STRATEGY') throw new UserError(`'${p.name}'은(는) 전략 포트폴리오라 거래를 직접 넣지 않습니다. 계좌 포트폴리오에 기록한 뒤 전략에 담으세요.`);
+  return p;
+}
+
 export async function userGraph(userId: string) {
   const portfolios = await prisma.portfolio.findMany({
     where: { userId },
@@ -41,13 +48,15 @@ export async function userGraph(userId: string) {
 
 export async function createPortfolio(
   userId: string,
-  input: { name: string; description?: string; color?: string; lotMethod?: LotMethod; parentId?: string; allocation?: string },
+  input: { name: string; description?: string; color?: string; lotMethod?: LotMethod; parentId?: string; allocation?: string; kind?: string; allowOverlap?: boolean },
 ) {
   const name = input.name.trim();
   if (!name || name.length > 60) throw new UserError('이름은 1~60자로 입력하세요.');
+  const strategy = input.kind === 'STRATEGY';
+  if (strategy && input.parentId) throw new UserError('전략 포트폴리오는 상위 포트폴리오에 넣지 않습니다. 순자산은 계좌 포트폴리오로만 계산합니다.');
   return prisma.$transaction(async (tx) => {
     const p = await tx.portfolio.create({
-      data: { userId, name, description: input.description?.trim() || null, color: input.color || undefined, lotMethod: input.lotMethod },
+      data: { userId, name, description: input.description?.trim() || null, color: input.color || undefined, lotMethod: input.lotMethod, kind: strategy ? 'STRATEGY' : 'ACCOUNT', allowOverlap: strategy && !!input.allowOverlap },
     });
     if (input.parentId) {
       await linkWith(tx, userId, input.parentId, p.id, input.allocation ?? '1');
@@ -58,8 +67,10 @@ export async function createPortfolio(
 }
 
 async function linkWith(tx: Prisma.TransactionClient, userId: string, parentId: string, childId: string, allocation: string, update = false) {
-  const owned = await tx.portfolio.count({ where: { userId, id: { in: [parentId, childId] } } });
-  if (owned !== 2) throw new UserError('포트폴리오를 찾을 수 없습니다.');
+  const owned = await tx.portfolio.findMany({ where: { userId, id: { in: [parentId, childId] } }, select: { kind: true } });
+  if (owned.length !== 2) throw new UserError('포트폴리오를 찾을 수 없습니다.');
+  // Strategies stay out of the tree, so a total never counts a holding through both its account and a strategy
+  if (owned.some((p) => p.kind === 'STRATEGY')) throw new UserError('전략 포트폴리오는 상위·하위로 연결하지 않습니다.');
   // Lock the user's edges for this check so two concurrent links can't both pass.
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))::text`;
   const rows = await tx.portfolioEdge.findMany({ where: { parent: { userId } } });

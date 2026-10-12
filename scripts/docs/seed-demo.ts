@@ -26,6 +26,7 @@ import { addLink, addPresetSage, createBook, createNote, saveBook } from '@/serv
 import { checkDrift, checkPriceAlerts, createAlert, savePortfolioTargets } from '@/server/services/alerts';
 import { applyExampleTargets, createGroupFromPreset, saveGroup, setAssetTraits, trackWatchItem } from '@/server/services/traits';
 import { createPortfolio } from '@/server/services/portfolios';
+import { setMember } from '@/server/services/strategy-portfolios';
 import { checkRealEstateAlerts, createReAlert } from '@/server/services/real-estate-alerts';
 import { SKILL_STARTERS } from '@/domain/ai-skills';
 import { BUILTIN_FORMATS } from '@/domain/journal';
@@ -158,6 +159,7 @@ async function main() {
   });
 
   await runDailyForUser(uid, { fullRebuild: true });
+  await seedStrategies(uid);
   await seedJournals(uid);
   await seedTraits(uid);
   await seedAlerts(uid, { root: root.id, us: us.id });
@@ -170,6 +172,29 @@ async function main() {
   const cashLeft = await prisma.cashBalance.findMany({ where: { portfolio: { userId: uid } }, include: { portfolio: { select: { name: true } } } });
   console.error('[seed] cash', cashLeft.map((c) => `${c.portfolio.name} ${c.currency} ${c.amount}`).join(' | '));
   console.log(token);
+}
+
+// ---------------------------------------------------------------- strategies
+
+/** Three strategies over the account holdings: two split them, one takes them again in full. */
+async function seedStrategies(uid: string) {
+  const h = (symbol: string) => prisma.holding.findFirstOrThrow({ where: { asset: { userId: uid, symbol } } }).then((x) => x.id);
+  const income = await createPortfolio(uid, { name: '배당 · 안정', color: '#0F766E', kind: 'STRATEGY', description: '배당과 지수로 버티는 몫' });
+  const growth = await createPortfolio(uid, { name: '성장', color: '#DB2777', kind: 'STRATEGY', description: '이익이 빨리 크는 회사' });
+  const ai = await createPortfolio(uid, { name: 'AI 테마', color: '#9333EA', kind: 'STRATEGY', allowOverlap: true, description: '다른 전략과 겹쳐도 AI 관련은 모두 본다' });
+  for (const [s, symbol, pct] of [
+    [income.id, '005930', '50'],
+    [income.id, '069500', '100'],
+    [income.id, 'VOO', '60'],
+    [growth.id, '005930', '50'],
+    [growth.id, 'NVDA', '100'],
+    [growth.id, 'AAPL', '100'],
+    [growth.id, 'VOO', '40'],
+    [ai.id, 'NVDA', '100'],
+    [ai.id, '005930', '100'],
+  ] as const) {
+    await setMember(uid, s, await h(symbol), pct);
+  }
 }
 
 // ---------------------------------------------------------------- account security

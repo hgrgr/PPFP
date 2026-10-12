@@ -14,7 +14,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const user = await requireUser();
   const { p } = await searchParams;
   const portfolios = await prisma.portfolio.findMany({
-    where: { userId: user.id, archived: false },
+    where: { userId: user.id, archived: false, kind: 'ACCOUNT' },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     select: { id: true, name: true },
   });

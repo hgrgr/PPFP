@@ -11,6 +11,8 @@ import { dbDate, dec, kstDate, prisma } from '../db';
 import { fxRate, getQuotes } from '../market';
 import { ASSET_TYPE_LABEL } from './assets';
 import { userGraph } from './portfolios';
+import { membershipsByHolding, strategyDailySeries, strategyShares, strategyTodaysFlow } from './strategy-portfolios';
+import type { OverlapInfo } from '@/domain/strategy-portfolios';
 
 export const TYPE_COLOR: Record<AssetType | 'CASH_BAL', string> = {
   KR_STOCK: '#2F4FC9',
@@ -44,12 +46,15 @@ export interface HoldingRow {
   unrealized: Dec;
   lots: number;
   weight: number;
+  /** Strategies that take this holding: "배당 60% · 성장 40%", and whether there are two or more */
+  strategies: string | null;
+  overlap: boolean;
 }
 
 export interface CurrentState {
   /** Direct value (holdings + cash) per portfolio, KRW. */
   direct: Map<string, Dec>;
-  holdings: (Omit<HoldingRow, 'portfolioName' | 'weight' | 'value' | 'costBase' | 'unrealized'> & {
+  holdings: (Omit<HoldingRow, 'portfolioName' | 'weight' | 'value' | 'costBase' | 'unrealized' | 'strategies' | 'overlap'> & {
     valueFull: Dec;
     costFull: Dec;
   })[];
@@ -118,6 +123,27 @@ export function scopeWeights(portfolioIds: string[], edges: Edge[], scopeId: str
   return effectiveWeights(edges, scopeId);
 }
 
+/** A strategy's series and snapshot rows, shaped like scopedSeries' (rows carry account holdings). */
+async function strategyRows(shares: Map<string, Dec>, from: string, to: string) {
+  const { series, days } = await strategyDailySeries(shares, to);
+  return { series, rows: days.filter((d) => d.date >= from).map((d) => ({ portfolioId: '', date: d.date, holdings: d.holdings, cash: Dec.ZERO })) };
+}
+
+/** Each strategy's value now: its shares of the account holdings */
+function strategyValues(list: { id: string; name: string; allowOverlap: boolean }[], state: CurrentState, members: Map<string, OverlapInfo>) {
+  return list.map((p) => {
+    let value = Dec.ZERO;
+    let count = 0;
+    for (const h of state.holdings) {
+      const m = members.get(h.holdingId)?.strategies.find((x) => x.strategyId === p.id);
+      if (!m) continue;
+      value = value.add(h.valueFull.mul(m.share));
+      count++;
+    }
+    return { id: p.id, name: p.name, value, members: count, allowOverlap: p.allowOverlap };
+  });
+}
+
 async function scopedSeries(weights: Map<string, Dec>, from: string, to: string): Promise<{
   series: SeriesPoint[];
   rows: { portfolioId: string; date: string; holdings: Record<string, string>; cash: Dec }[];
@@ -161,7 +187,9 @@ export interface ChildRow {
 }
 
 export interface Dashboard {
-  scope: { id: string | null; name: string; path: { id: string; name: string }[] };
+  scope: { id: string | null; name: string; path: { id: string; name: string }[]; kind: 'ACCOUNT' | 'STRATEGY' };
+  /** Strategy portfolios with their value now (net-worth and account views); never part of the totals */
+  strategies: { id: string; name: string; value: Dec; members: number; allowOverlap: boolean }[];
   range: ResolvedRange;
   today: string;
   total: Dec;
@@ -205,9 +233,13 @@ export async function dashboard(
   const byId = new Map(portfolios.map((p) => [p.id, p]));
   if (scopeId && !byId.has(scopeId)) scopeId = null;
   const weights = scopeWeights(portfolios.map((p) => p.id), edges, scopeId);
+  const isStrategy = (id: string) => byId.get(id)?.kind === 'STRATEGY';
+  // A strategy owns nothing: it weighs account holdings by its shares instead of portfolios
+  const shares = scopeId && isStrategy(scopeId) ? await strategyShares(scopeId) : null;
+  const members = await membershipsByHolding(userId);
 
   const first = await prisma.transaction.findFirst({
-    where: { portfolioId: { in: [...weights.keys()] } },
+    where: shares ? { holdingId: { in: [...shares.keys()] } } : { portfolioId: { in: [...weights.keys()] } },
     orderBy: { tradeAt: 'asc' },
     select: { tradeAt: true },
   });
@@ -215,15 +247,18 @@ export async function dashboard(
   const range = resolveRange(params, today, firstDate);
 
   const state = await currentState(userId);
-  const w = (pid: string) => weights.get(pid) ?? Dec.ZERO;
+  const w = (pid: string) => (shares ? Dec.ZERO : (weights.get(pid) ?? Dec.ZERO));
+  const hw = (holdingId: string, pid: string) => (shares ? (shares.get(holdingId) ?? Dec.ZERO) : w(pid));
 
   // Current totals
   let total = Dec.ZERO;
-  for (const [pid, v] of state.direct) total = total.add(v.mul(w(pid)));
+  if (shares) for (const h of state.holdings) total = total.add(h.valueFull.mul(hw(h.holdingId, h.portfolioId)));
+  else for (const [pid, v] of state.direct) total = total.add(v.mul(w(pid)));
   const holdings: HoldingRow[] = state.holdings
-    .filter((h) => w(h.portfolioId).isPos())
+    .filter((h) => hw(h.holdingId, h.portfolioId).isPos())
     .map((h) => {
-      const k = w(h.portfolioId);
+      const k = hw(h.holdingId, h.portfolioId);
+      const m = members.get(h.holdingId);
       const value = h.valueFull.mul(k);
       const costBase = h.costFull.mul(k);
       return {
@@ -233,6 +268,8 @@ export async function dashboard(
         costBase,
         unrealized: value.sub(costBase),
         weight: total.isZero() ? 0 : value.div(total).toNumber(),
+        strategies: m?.label ?? null,
+        overlap: m?.overlap ?? false,
       };
     })
     .sort((a, b) => b.value.cmp(a.value));
@@ -289,10 +326,10 @@ export async function dashboard(
   };
 
   // History
-  const { series: hist, rows } = await scopedSeries(weights, range.start, range.end);
+  const { series: hist, rows } = shares ? await strategyRows(shares, range.start, range.end) : await scopedSeries(weights, range.start, range.end);
   const series = [...hist];
   if (range.end === today) {
-    const flowToday = await todaysFlow(weights, today, state.usdkrw);
+    const flowToday = shares ? await strategyTodaysFlow(shares, today) : await todaysFlow(weights, today, state.usdkrw);
     const last = series.at(-1);
     if (last?.date === today) series[series.length - 1] = { ...last, value: total };
     else series.push({ date: today, value: total, flow: flowToday });
@@ -315,7 +352,7 @@ export async function dashboard(
 
   // Weight change by asset type (from snapshots) — first and last available days plus samples
   const holdingType = new Map(state.holdings.map((h) => [h.holdingId, h.type as string]));
-  const allHoldings = await prisma.holding.findMany({ where: { portfolioId: { in: [...weights.keys()] } }, select: { id: true, asset: { select: { type: true } } } });
+  const allHoldings = await prisma.holding.findMany({ where: shares ? { id: { in: [...shares.keys()] } } : { portfolioId: { in: [...weights.keys()] } }, select: { id: true, asset: { select: { type: true } } } });
   for (const h of allHoldings) holdingType.set(h.id, h.asset.type);
   const perDate = new Map<string, Map<string, number>>();
   for (const r of rows) {
@@ -325,7 +362,8 @@ export async function dashboard(
     for (const [hid, v] of Object.entries(r.holdings)) {
       const t = holdingType.get(hid) ?? 'ALTERNATIVE';
       if (t === 'LIABILITY') continue;
-      m.set(t, (m.get(t) ?? 0) + Number(v) * k);
+      const hk = shares ? (shares.get(hid)?.toNumber() ?? 0) : k;
+      if (hk) m.set(t, (m.get(t) ?? 0) + Number(v) * hk);
     }
     const cashV = r.cash.toNumber() * k;
     if (cashV > 0) m.set('CASH_BAL', (m.get('CASH_BAL') ?? 0) + cashV);
@@ -349,20 +387,21 @@ export async function dashboard(
 
   // Realized P&L and income inside the range (weighted)
   const rangeWhere = {
-    portfolioId: { in: [...weights.keys()] },
+    ...(shares ? { holdingId: { in: [...shares.keys()] } } : { portfolioId: { in: [...weights.keys()] } }),
     tradeAt: { gt: new Date(Date.parse(range.start + 'T23:59:59.999+09:00')), lte: new Date(Date.parse(range.end + 'T23:59:59.999+09:00')) },
   };
   const [sells, incomeTx] = await Promise.all([
-    prisma.transaction.findMany({ where: { ...rangeWhere, type: 'SELL' }, select: { portfolioId: true, consumptions: { select: { pnlBase: true } } } }),
-    prisma.transaction.findMany({ where: { ...rangeWhere, type: { in: ['DIVIDEND', 'INTEREST'] } }, select: { portfolioId: true, cashDelta: true, fxRate: true } }),
+    prisma.transaction.findMany({ where: { ...rangeWhere, type: 'SELL' }, select: { portfolioId: true, holdingId: true, consumptions: { select: { pnlBase: true } } } }),
+    prisma.transaction.findMany({ where: { ...rangeWhere, type: { in: ['DIVIDEND', 'INTEREST'] } }, select: { portfolioId: true, holdingId: true, cashDelta: true, fxRate: true } }),
   ]);
-  const realized = Dec.sum(sells.flatMap((s) => s.consumptions.map((c) => dec(c.pnlBase).mul(w(s.portfolioId)))));
-  const income = Dec.sum(incomeTx.map((t) => dec(t.cashDelta).mul(dec(t.fxRate, Dec.ONE)).mul(w(t.portfolioId))));
+  const tw = (t: { portfolioId: string; holdingId: string | null }) => (shares ? (t.holdingId ? (shares.get(t.holdingId) ?? Dec.ZERO) : Dec.ZERO) : w(t.portfolioId));
+  const realized = Dec.sum(sells.flatMap((s) => s.consumptions.map((c) => dec(c.pnlBase).mul(tw(s)))));
+  const income = Dec.sum(incomeTx.map((t) => dec(t.cashDelta).mul(dec(t.fxRate, Dec.ONE)).mul(tw(t))));
 
   // Children (or root portfolios for the net-worth view)
   const childEdges = scopeId
     ? edges.filter((e) => e.parentId === scopeId)
-    : portfolios.filter((p) => !edges.some((e) => e.childId === p.id)).map((p) => ({ parentId: '', childId: p.id, allocation: Dec.ONE }));
+    : portfolios.filter((p) => !isStrategy(p.id) && !edges.some((e) => e.childId === p.id)).map((p) => ({ parentId: '', childId: p.id, allocation: Dec.ONE }));
   const children: ChildRow[] = [];
   for (const e of childEdges) {
     const p = byId.get(e.childId);
@@ -394,7 +433,7 @@ export async function dashboard(
   // What the scope itself owns: each child portfolio as one slice (its whole content), plus the
   // stocks and cash held directly in the scope. Net worth: the top-level portfolios.
   // A net-worth view with a single top portfolio shows that portfolio's own make-up
-  const roots = portfolios.filter((p) => !edges.some((e) => e.childId === p.id));
+  const roots = portfolios.filter((p) => !isStrategy(p.id) && !edges.some((e) => e.childId === p.id));
   const ownScope = scopeId ?? (roots.length === 1 ? roots[0].id : null);
   const ownChildren =
     ownScope === scopeId
@@ -410,7 +449,7 @@ export async function dashboard(
   if (ownScope) {
     const direct = new Map<string, { label: string; sub: string; value: Dec }>();
     for (const h of holdings) {
-      if (h.portfolioId !== ownScope || !h.value.isPos()) continue;
+      if ((!shares && h.portfolioId !== ownScope) || !h.value.isPos()) continue;
       const cur = direct.get(h.assetId);
       if (cur) cur.value = cur.value.add(h.value);
       else direct.set(h.assetId, { label: h.name, sub: h.symbol ?? ASSET_TYPE_LABEL[h.type], value: h.value });
@@ -443,7 +482,8 @@ export async function dashboard(
   }
 
   return {
-    scope: { id: scopeId, name: scopeId ? byId.get(scopeId)!.name : '순자산 전체', path },
+    scope: { id: scopeId, name: scopeId ? byId.get(scopeId)!.name : '순자산 전체', path, kind: shares ? 'STRATEGY' : 'ACCOUNT' },
+    strategies: shares ? [] : strategyValues(portfolios.filter((p) => isStrategy(p.id) && !p.archived), state, members),
     range,
     today,
     total,

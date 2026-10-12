@@ -6,7 +6,7 @@ import type { AssetType, LotMethod, Prisma, TxnType } from '@prisma/client';
 import { Dec } from '@/domain/decimal';
 import { applySplit, lotUnitCost, planSale, QTY_DP, realize, type Lot } from '@/domain/lots';
 import { dec, kstIso, out, prisma } from '../db';
-import { audit, ownedPortfolio, UserError } from './portfolios';
+import { audit, ownedAccount, UserError } from './portfolios';
 
 type Tx = Prisma.TransactionClient;
 
@@ -54,7 +54,7 @@ export interface BuyInput {
 }
 
 export async function recordBuy(userId: string, input: BuyInput) {
-  await ownedPortfolio(userId, input.portfolioId);
+  await ownedAccount(userId, input.portfolioId);
   const asset = await prisma.asset.findFirst({ where: { id: input.assetId, userId } });
   if (!asset) throw new UserError('자산을 찾을 수 없습니다.');
   const qty = positive(input.qty, '수량').round(QTY_DP);
@@ -245,7 +245,7 @@ export async function recordCash(
     importSource?: string;
   },
 ) {
-  await ownedPortfolio(userId, input.portfolioId);
+  await ownedAccount(userId, input.portfolioId);
   const sign = CASH_SIGN[input.type];
   if (!sign) throw new UserError('지원하지 않는 거래 유형입니다.');
   if (!['KRW', 'USD'].includes(input.currency)) throw new UserError('통화는 KRW 또는 USD만 지원합니다.');
@@ -421,7 +421,7 @@ export async function removeHolding(userId: string, holdingId: string) {
 export async function moveHolding(userId: string, holdingId: string, toPortfolioId: string, opts: { settle?: boolean; usdkrw?: string; at?: Date } = {}) {
   const holding = await prisma.holding.findFirst({ where: { id: holdingId, portfolio: { userId } }, include: { asset: true, portfolio: true } });
   if (!holding) throw new UserError('보유 종목을 찾을 수 없습니다.');
-  const to = await ownedPortfolio(userId, toPortfolioId);
+  const to = await ownedAccount(userId, toPortfolioId);
   if (to.id === holding.portfolioId) throw new UserError('이미 이 포트폴리오에 있습니다.');
   return prisma.$transaction(async (tx) => {
     await lockHolding(tx, holding.id);
