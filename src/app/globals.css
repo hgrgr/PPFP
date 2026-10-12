@@ -646,3 +646,8 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .share-form { gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
 .share-form input[type='number'] { width: 84px; text-align: right; }
 .strategy-chip { color: var(--muted); font-weight: 500; }
+.bench-remove { display: inline; }
+.bench-remove .linkish { font-weight: 400; padding: 0 2px; }
+.bench-group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.bench-group legend { margin-bottom: 4px; }
+.bench-form { gap: 12px; margin-top: 12px; }

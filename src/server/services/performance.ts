@@ -1,39 +1,44 @@
 /** The portfolio against benchmarks over a period, and each position's contribution. */
 import type { AssetType } from '@prisma/client';
-import { benchmarkReturns, contributions, type Close, type ContributionInput } from '@/domain/benchmark';
+import { benchmarkReturns, contributions, pickedBenchmarks, type Close, type ContributionInput } from '@/domain/benchmark';
 import { downsample } from '@/domain/performance';
 import { dbDate, dec, kstDate, prisma } from '../db';
 import { backfillCloses } from '../market';
 import { currentState, dashboard, scopeWeights } from './analytics';
 import { ASSET_TYPE_LABEL } from './assets';
+import { ensureBenchmarkSeries } from './benchmark-data';
 import { userGraph } from './portfolios';
-
-/** ETFs standing in for the indexes (their prices include no dividends). */
-export const BENCHMARKS = [
-  { symbol: '069500', label: '코스피 200', sub: 'KODEX 200', currency: 'KRW' },
-  { symbol: 'VOO', label: 'S&P 500', sub: 'Vanguard S&P 500 ETF', currency: 'USD' },
-  { symbol: 'QQQ', label: '나스닥 100', sub: 'Invesco QQQ', currency: 'USD' },
-] as const;
 
 export async function performanceReport(userId: string, scopeId: string | null, params: { period?: string; from?: string; to?: string }, krw = true) {
   const d = await dashboard(userId, scopeId, params);
   const dates = d.twrDaily.map((p) => p.date);
   const start = d.range.start;
 
-  // Benchmarks: make sure their closes are stored, then read them back with the FX history
-  const known = await prisma.asset.findMany({ where: { userId, symbol: { in: BENCHMARKS.map((b) => b.symbol) } }, select: { symbol: true, market: true } });
-  await backfillCloses(userId, BENCHMARKS.map((b) => ({ symbol: b.symbol, market: known.find((k) => k.symbol === b.symbol)?.market ?? null, currency: b.currency })), start).catch(() => 0);
-  const lookback = dbDate(kstDate(new Date(Date.parse(`${start}T00:00:00+09:00`) - 14 * 86_400_000)));
+  // Benchmarks the user picked: ETFs through the broker, indexes and macro series from outside;
+  // make sure their closes are stored, then read them back with the FX history
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { benchmarks: true } });
+  const picked = pickedBenchmarks(user?.benchmarks ?? []);
+  const broker = picked.filter((b) => b.source === 'BROKER');
+  const known = await prisma.asset.findMany({ where: { userId, symbol: { in: broker.map((b) => b.code) } }, select: { symbol: true, market: true } });
+  const [, problems] = await Promise.all([
+    backfillCloses(userId, broker.map((b) => ({ symbol: b.code, market: known.find((k) => k.symbol === b.code)?.market ?? null, currency: b.currency as 'KRW' | 'USD' })), start).catch(() => 0),
+    ensureBenchmarkSeries(userId, picked, start),
+  ]);
+  const symbolOf = (b: (typeof picked)[number]) => (b.source === 'BROKER' ? b.code : b.key);
+  // Monthly series need the month before the start as their base
+  const lookback = dbDate(kstDate(new Date(Date.parse(`${start}T00:00:00+09:00`) - (picked.some((b) => b.monthly) ? 400 : 14) * 86_400_000)));
   const [closes, fxRows] = await Promise.all([
-    prisma.priceDaily.findMany({ where: { symbol: { in: BENCHMARKS.map((b) => b.symbol) }, date: { gte: lookback } }, orderBy: { date: 'asc' } }),
+    prisma.priceDaily.findMany({ where: { symbol: { in: picked.map(symbolOf) }, date: { gte: lookback } }, orderBy: { date: 'asc' } }),
     prisma.fxDaily.findMany({ where: { pair: 'USDKRW', date: { gte: lookback } }, orderBy: { date: 'asc' } }),
   ]);
   const fx: Close[] = fxRows.map((r) => ({ date: kstDate(r.date), close: Number(r.rate) }));
   if (!fx.length) fx.push({ date: start, close: d.usdkrw.toNumber() });
-  const benches = BENCHMARKS.map((b) => {
-    const list: Close[] = closes.filter((c) => c.symbol === b.symbol).map((c) => ({ date: kstDate(c.date), close: Number(c.close) }));
-    const ret = benchmarkReturns(dates, list, b.currency !== 'KRW' && krw ? fx : undefined);
-    return { ...b, returns: ret, total: ret.at(-1) ?? null, available: list.length > 0 };
+  const benches = picked.map((b, i) => {
+    const list: Close[] = closes.filter((c) => c.symbol === symbolOf(b)).map((c) => ({ date: kstDate(c.date), close: Number(c.close) }));
+    const ret = benchmarkReturns(dates, list, b.currency === 'USD' && krw ? fx : undefined);
+    const total = [...ret].reverse().find((v) => v !== null) ?? null;
+    // Chart key by position: catalog keys carry characters the chart reads as paths
+    return { ...b, symbol: `b${i}`, returns: ret, total, available: list.length > 0, problem: problems.get(b.key) ?? null };
   });
   const mine = d.twrDaily.at(-1)?.twr ?? null;
   const chart = downsample(

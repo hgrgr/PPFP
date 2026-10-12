@@ -92,6 +92,8 @@ model User {
   hiddenNav            String[]  @default([])
   /// Portfolio the dashboard opens on without ?p= (null: 순자산 전체); ?p=all shows everything
   dashboardPortfolioId String?
+  /// Benchmark keys picked on 성과 분석 (domain/benchmark BENCHMARK_CATALOG); empty: the defaults
+  benchmarks           String[]  @default([])
 
   sessions         Session[]
   brokers          BrokerConnection[]

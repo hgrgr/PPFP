@@ -62,3 +62,29 @@ describe('contributions', () => {
     assert.equal(c.totalPnlKrw, 260_000);
   });
 });
+
+describe('benchmark sources', () => {
+  it('reads FRED csv, skipping missing values', async () => {
+    const { parseFredCsv } = await import('../benchmark');
+    assert.deepEqual(parseFredCsv('observation_date,CPIAUCSL\n2025-01-01,318.961\n2025-02-01,.\n2025-03-01,320.1\n'), [
+      { date: '2025-01-01', close: 318.961 },
+      { date: '2025-03-01', close: 320.1 },
+    ]);
+  });
+  it('reads ECOS months and its error message', async () => {
+    const { parseEcos } = await import('../benchmark');
+    const ok = parseEcos({ StatisticSearch: { row: [{ TIME: '202502', DATA_VALUE: '116.1' }, { TIME: '202501', DATA_VALUE: '115.71' }] } });
+    assert.deepEqual(ok, { closes: [{ date: '2025-01-01', close: 115.71 }, { date: '2025-02-01', close: 116.1 }], error: null });
+    assert.deepEqual(parseEcos({ RESULT: { CODE: 'INFO-100', MESSAGE: '인증키가 유효하지 않습니다.' } }), { closes: [], error: '인증키가 유효하지 않습니다.' });
+  });
+  it('reads Yahoo daily closes on the exchange date', async () => {
+    const { parseYahooHistory } = await import('../benchmark');
+    const t = Date.parse('2026-10-09T20:00:00Z') / 1000; // 16:00 New York
+    assert.deepEqual(parseYahooHistory({ chart: { result: [{ meta: { gmtoffset: -14400 }, timestamp: [t, t + 86400 * 3], indicators: { quote: [{ close: [6700.5, null] }] } }] } }), [{ date: '2026-10-09', close: 6700.5 }]);
+  });
+  it('keeps the picks in catalog order and falls back to the defaults', async () => {
+    const { pickedBenchmarks } = await import('../benchmark');
+    assert.deepEqual(pickedBenchmarks([]).map((b) => b.key), ['069500', 'VOO', 'QQQ']);
+    assert.deepEqual(pickedBenchmarks(['FRED:CPIAUCSL', 'nope', 'YH:^KS11']).map((b) => b.key), ['YH:^KS11', 'FRED:CPIAUCSL']);
+  });
+});
