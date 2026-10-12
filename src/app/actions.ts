@@ -477,6 +477,18 @@ export async function saveMenuAction(_: ActionState, f: FormData) {
   }, ['/']);
 }
 
+/** The scope the dashboard opens on; empty is 순자산 전체. */
+export async function setDashboardHomeAction(_: ActionState, f: FormData) {
+  const user = await requireUser();
+  return run(async () => {
+    const id = s(f, 'portfolioId');
+    const p = id ? await prisma.portfolio.findFirst({ where: { id, userId: user.id }, select: { name: true } }) : null;
+    if (id && !p) throw new UserError('포트폴리오를 찾을 수 없습니다.');
+    await prisma.user.update({ where: { id: user.id }, data: { dashboardPortfolioId: id || null } });
+    return `대시보드를 열면 ${p ? p.name : '순자산 전체'}이(가) 먼저 나옵니다.`;
+  }, ['/dashboard']);
+}
+
 export async function updatePrefsAction(_: ActionState, f: FormData) {
   const user = await requireUser();
   return run(async () => {

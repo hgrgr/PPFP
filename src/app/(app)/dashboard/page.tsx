@@ -1,4 +1,4 @@
-import { refreshDataAction } from '@/app/actions';
+import { refreshDataAction, setDashboardHomeAction } from '@/app/actions';
 import { AutoRefresh, CurrencyToggle, PrivacyToggle, ScopeSelect } from '@/components/client-bits';
 import { FxAmount } from '@/components/amount';
 import { fxQuote } from '@/server/market';
@@ -8,6 +8,7 @@ import { ActionForm, Submit } from '@/components/forms';
 import { PeriodBar } from '@/components/period-bar';
 import { kstDateTime, krw, krwShort, money, pct, qty, signedKrwShort, tone } from '@/lib/format';
 import { requireUser } from '@/server/auth';
+import { prisma } from '@/server/db';
 import { dashboard } from '@/server/services/analytics';
 import { journalCounts } from '@/server/services/journal';
 import { assetTraitMap, traitGroups } from '@/server/services/traits';
@@ -24,8 +25,15 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const params = { p: one(sp.p), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
-  const [d, graph, counts, groups, fx] = await Promise.all([dashboard(user.id, params.p ?? null, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id), fxQuote(user.id, 'USD')]);
+  const raw = one(sp.p);
+  // Without ?p= the dashboard opens on the user's chosen portfolio; ?p=all is 순자산 전체 even then
+  const home = user.dashboardPortfolioId
+    ? await prisma.portfolio.findFirst({ where: { id: user.dashboardPortfolioId, userId: user.id, archived: false }, select: { id: true } })
+    : null;
+  const scopeId = raw === 'all' ? null : (raw ?? home?.id ?? null);
+  const params = { p: scopeId ?? (home ? 'all' : undefined), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
+  const [d, graph, counts, groups, fx] = await Promise.all([dashboard(user.id, scopeId, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id), fxQuote(user.id, 'USD')]);
+  const isHome = (home?.id ?? null) === scopeId;
   const local = user.localCurrency;
   const usdkrw = d.usdkrw.toNumber();
   const usdHeld = d.allocation.byCurrency.find((x) => x.key === 'USD')?.value ?? 0;
@@ -88,7 +96,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
       <header className="page-head">
         <div className="stack" style={{ gap: 6 }}>
           <nav className="crumbs" aria-label="경로">
-            <a href={q({ p: undefined })}>순자산 전체</a>
+            <a href={q({ p: 'all' })}>순자산 전체</a>
             {d.scope.path.map((c) => (
               <span key={c.id}>
                 › <a href={q({ p: c.id })}>{c.name}</a>
@@ -107,11 +115,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           )}
         </div>
         <div className="inline">
-          <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
+          <ScopeSelect value={scopeId ?? ''} allValue={home ? 'all' : undefined} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
+          {isHome ? (
+            <span className="badge" title="대시보드를 열면 이 범위가 먼저 나옵니다">첫 화면</span>
+          ) : (
+            <ActionForm action={setDashboardHomeAction} className="inline">
+              <input type="hidden" name="portfolioId" value={scopeId ?? ''} />
+              <Submit className="btn small" pendingText="…">첫 화면으로</Submit>
+            </ActionForm>
+          )}
           <CurrencyToggle on={local} />
           <PrivacyToggle />
           <AskAiButton label="AI 점검" prompt={`${d.scope.name} 범위의 포트폴리오를 점검해 줘. 지금 가장 신경 써야 할 점 3가지와 그 근거를 알려 줘.`} />
-          <a className="btn" href={`/data?${new URLSearchParams(Object.entries({ p: params.p, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
+          <a className="btn" href={`/data?${new URLSearchParams(Object.entries({ p: scopeId ?? undefined, from: d.range.start, to: d.range.end }).filter(([, v]) => v) as [string, string][]).toString()}`}>
             내보내기
           </a>
           {d.scope.id && d.scope.kind === 'STRATEGY' ? (

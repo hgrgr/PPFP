@@ -72,7 +72,8 @@ export function NavLink({ href, children }: { href: string; children: React.Reac
 }
 
 /** Portfolio scope selector that keeps the other query params. */
-export function ScopeSelect({ options, value }: { options: { id: string; label: string }[]; value: string }) {
+/** `allValue`: what ?p= carries for 순자산 전체 when the bare page opens on another scope (dashboard home). */
+export function ScopeSelect({ options, value, allValue }: { options: { id: string; label: string }[]; value: string; allValue?: string }) {
   const router = useRouter();
   const path = usePathname();
   const params = useSearchParams();
@@ -84,6 +85,7 @@ export function ScopeSelect({ options, value }: { options: { id: string; label: 
         onChange={(e) => {
           const q = new URLSearchParams(params.toString());
           if (e.target.value) q.set('p', e.target.value);
+          else if (allValue) q.set('p', allValue);
           else q.delete('p');
           router.push(`${path}?${q.toString()}`);
         }}
