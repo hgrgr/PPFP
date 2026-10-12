@@ -211,13 +211,16 @@ export interface Dashboard {
   twrDaily: { date: string; twr: number }[];
   /** byStructure: child portfolios as whole slices plus what the scope holds directly */
   allocation: { byHolding: Slice[]; byType: Slice[]; byCurrency: Slice[]; byStructure: Slice[] };
-  weightChange: { keys: { key: string; label: string; color: string }[]; points: Record<string, number | string>[]; start: Record<string, number>; end: Record<string, number> };
+  weightChange: { basis: WeightBasis; keys: { key: string; label: string; color: string }[]; points: Record<string, number | string>[]; start: Record<string, number>; end: Record<string, number> };
   children: ChildRow[];
   holdings: HoldingRow[];
   stale: boolean;
   usdkrw: Dec;
   hasSnapshots: boolean;
 }
+
+/** What 비중 변화 splits by: the ring's 구성, 종목, or asset type */
+export type WeightBasis = 'own' | 'holding' | 'type';
 
 export interface Slice {
   key: string;
@@ -235,7 +238,7 @@ const SERIES_SLOTS = 8;
 export async function dashboard(
   userId: string,
   scopeId: string | null,
-  params: { period?: string; from?: string; to?: string },
+  params: { period?: string; from?: string; to?: string; alloc?: string },
 ): Promise<Dashboard> {
   const today = kstDate();
   const { portfolios, edges } = await userGraph(userId);
@@ -365,45 +368,6 @@ export async function dashboard(
   const idx = twrIndex(inRange);
   const twrDaily = inRange.map((p, i) => ({ date: p.date, twr: idx[i].toNumber() - 1 }));
 
-  // Weight change by asset type (from snapshots) — first and last available days plus samples
-  const holdingType = new Map(state.holdings.map((h) => [h.holdingId, h.type as string]));
-  const allHoldings = await prisma.holding.findMany({
-    where: scope ? { OR: [{ id: { in: [...scope.direct.keys()] } }, { portfolioId: { in: [...via.keys()] } }] } : { portfolioId: { in: [...weights.keys()] } },
-    select: { id: true, asset: { select: { type: true } } },
-  });
-  for (const h of allHoldings) holdingType.set(h.id, h.asset.type);
-  const perDate = new Map<string, Map<string, number>>();
-  for (const r of rows) {
-    if (r.date > range.end) continue;
-    const k = w(r.portfolioId).toNumber();
-    const m = perDate.get(r.date) ?? new Map<string, number>();
-    for (const [hid, v] of Object.entries(r.holdings)) {
-      const t = holdingType.get(hid) ?? 'ALTERNATIVE';
-      if (t === 'LIABILITY') continue;
-      // Account rows carry their portfolio's weight; a strategy's direct rows (no portfolio) their shares
-      const hk = r.portfolioId ? k : (shares?.get(hid)?.toNumber() ?? 0);
-      if (hk) m.set(t, (m.get(t) ?? 0) + Number(v) * hk);
-    }
-    const cashV = r.cash.toNumber() * k;
-    if (cashV > 0) m.set('CASH_BAL', (m.get('CASH_BAL') ?? 0) + cashV);
-    perDate.set(r.date, m);
-  }
-  const keys = new Set<string>();
-  for (const m of perDate.values()) for (const [k, v] of m) if (v > 0) keys.add(k);
-  const keyList = [...keys].map((k) => ({ key: k, label: typeLabel(k), color: TYPE_COLOR[k as AssetType] ?? '#999' }));
-  const points = downsample(
-    [...perDate.keys()].sort().map((date) => {
-      const m = perDate.get(date)!;
-      const sum = [...m.values()].filter((v) => v > 0).reduce((a, b) => a + b, 0);
-      const row: Record<string, number | string> = { date };
-      for (const k of keys) row[k] = sum > 0 ? Math.max(0, m.get(k) ?? 0) / sum : 0;
-      return row;
-    }),
-    120,
-  );
-  const pick = (row?: Record<string, number | string>) =>
-    Object.fromEntries([...keys].map((k) => [k, Number(row?.[k] ?? 0)]));
-
   // Realized P&L and income inside the range (weighted)
   const rangeWhere = {
     ...inScope,
@@ -454,11 +418,11 @@ export async function dashboard(
   // A net-worth view with a single top portfolio shows that portfolio's own make-up
   const roots = portfolios.filter((p) => !isStrategy(p.id) && !edges.some((e) => e.childId === p.id));
   const ownScope = scopeId ?? (roots.length === 1 ? roots[0].id : null);
+  const ownEdges = ownScope === scopeId ? childEdges : edges.filter((e) => e.parentId === ownScope);
   const ownChildren =
     ownScope === scopeId
       ? children
-      : edges
-          .filter((e) => e.parentId === ownScope)
+      : ownEdges
           .map((e) => {
             let value = Dec.ZERO;
             for (const [pid, k] of effectiveWeights(edges, e.childId)) value = value.add((state.direct.get(pid) ?? Dec.ZERO).mul(k));
@@ -490,6 +454,68 @@ export async function dashboard(
     share: ownGross.isZero() ? 0 : o.value.div(ownGross).toNumber(),
   }));
 
+  // Weight change (from snapshots), on the ring's basis: 구성 (child portfolios as one slice each,
+  // the scope's own stocks and cash), 종목 (stocks across the scope), or 유형. 통화 and 성질 use 유형.
+  const basis: WeightBasis = params.alloc === 'holding' ? 'holding' : !params.alloc || params.alloc === 'own' ? 'own' : 'type';
+  const ring = basis === 'own' ? allocation.byStructure : basis === 'holding' ? allocation.byHolding : allocation.byType;
+  const holdingInfo = new Map(state.holdings.map((h) => [h.holdingId, { type: h.type as string, assetId: h.assetId }]));
+  const allHoldings = await prisma.holding.findMany({
+    where: scope ? { OR: [{ id: { in: [...scope.direct.keys()] } }, { portfolioId: { in: [...via.keys()] } }] } : { portfolioId: { in: [...weights.keys()] } },
+    select: { id: true, assetId: true, asset: { select: { type: true } } },
+  });
+  for (const h of allHoldings) holdingInfo.set(h.id, { type: h.asset.type, assetId: h.assetId });
+  // 구성: how much of a portfolio's rows each child slice of the scope carries
+  const ownWeights = basis === 'own' && !scope ? ownEdges.map((e) => ({ key: `P:${e.childId}`, k: effectiveWeights(edges, e.childId), allocation: e.allocation.toNumber() })) : [];
+  const ringKeys = new Set(ring.map((x) => x.key));
+  const fold = (key: string) => (basis === 'type' || ringKeys.has(key) ? key : 'OTHER');
+  const perDate = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (r.date > range.end) continue;
+    const k = w(r.portfolioId).toNumber();
+    const m = perDate.get(r.date) ?? new Map<string, number>();
+    const add = (key: string, v: number) => v && m.set(fold(key), (m.get(fold(key)) ?? 0) + v);
+    // Account rows carry their portfolio's weight; a strategy's direct rows (no portfolio) their shares
+    const parts = (hid: string | null): [string | null, number][] => {
+      if (basis !== 'own' || scope) return [[null, r.portfolioId ? k : hid ? (shares?.get(hid)?.toNumber() ?? 0) : 0]];
+      const out: [string | null, number][] = ownWeights.flatMap((c) => {
+        const ck = c.k.get(r.portfolioId)?.toNumber() ?? 0;
+        return ck ? [[c.key, ck * c.allocation] as [string, number]] : [];
+      });
+      if (r.portfolioId === ownScope) out.push([null, 1]);
+      return out;
+    };
+    for (const [hid, v] of Object.entries(r.holdings)) {
+      const info = holdingInfo.get(hid);
+      const type = info?.type ?? 'ALTERNATIVE';
+      if (type === 'LIABILITY') continue;
+      for (const [child, hk] of parts(hid)) add(child ?? (basis === 'type' ? type : (info?.assetId ?? 'OTHER')), Number(v) * hk);
+    }
+    const cash = r.cash.toNumber();
+    if (cash > 0) for (const [child, hk] of parts(null)) add(child ?? 'CASH_BAL', cash * hk);
+    perDate.set(r.date, m);
+  }
+  const keys = new Set<string>();
+  for (const m of perDate.values()) for (const [k, v] of m) if (v > 0) keys.add(k);
+  const known = new Map(ring.map((x) => [x.key, x]));
+  const order = [...ring.map((x) => x.key).filter((k) => keys.has(k) && k !== 'OTHER' && k !== 'CASH_BAL'), ...[...keys].filter((k) => !known.has(k) && k !== 'OTHER' && k !== 'CASH_BAL'), 'OTHER', 'CASH_BAL'].filter((k) => keys.has(k));
+  const keyList = order.map((k) =>
+    basis === 'type'
+      ? { key: k, label: typeLabel(k), color: TYPE_COLOR[k as AssetType] ?? '#999' }
+      : { key: k, label: k === 'OTHER' ? (known.get(k)?.label ?? '기타') : (known.get(k)?.label ?? k), color: known.get(k)?.color ?? (k === 'CASH_BAL' ? 'var(--series-cash)' : 'var(--series-other)') },
+  );
+  const points = downsample(
+    [...perDate.keys()].sort().map((date) => {
+      const m = perDate.get(date)!;
+      const sum = [...m.values()].filter((v) => v > 0).reduce((a, b) => a + b, 0);
+      const row: Record<string, number | string> = { date };
+      for (const k of keys) row[k] = sum > 0 ? Math.max(0, m.get(k) ?? 0) / sum : 0;
+      return row;
+    }),
+    120,
+  );
+  const pick = (row?: Record<string, number | string>) =>
+    Object.fromEntries([...keys].map((k) => [k, Number(row?.[k] ?? 0)]));
+
   // Breadcrumb: first parent chain
   const path: { id: string; name: string }[] = [];
   let cur = scopeId;
@@ -516,7 +542,7 @@ export async function dashboard(
     chart,
     twrDaily,
     allocation,
-    weightChange: { keys: keyList, points, start: pick(points[0]), end: pick(points.at(-1)) },
+    weightChange: { basis, keys: keyList, points, start: pick(points[0]), end: pick(points.at(-1)) },
     children: children.sort((a, b) => b.value.cmp(a.value)),
     holdings,
     stale: state.anyStale,
