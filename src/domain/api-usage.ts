@@ -50,6 +50,14 @@ export function serviceInfo(service: string): ServiceInfo {
       return { name: '브이월드 토지이용계획', group: 'data', billing: '무료 (공간정보 오픈플랫폼)', limit: '인증키마다 하루 호출 한도가 있습니다. 부동산 알림이 몇 시간에 한 번 아파트마다 한 번 부릅니다.', console: 'https://www.vworld.kr/dev/v4dv_2ddataguide_s001.do' };
     case 'molit':
       return { name: '국토교통부 실거래가', group: 'data', billing: '무료 (공공데이터포털)', limit: '활용신청한 서비스(아파트·연립다세대·오피스텔·단독/다가구·토지·상업업무용)마다 개발계정은 하루 10,000회입니다. 앱은 넉 달이 지난 자료를 7일, 최근 넉 달은 6시간 저장해 두고 씁니다.', console: 'https://www.data.go.kr/data/15126468/openapi.do' };
+    case 'ecos':
+      return { name: '한국은행 ECOS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 통계를 12시간 저장해 두고 씁니다.', console: 'https://ecos.bok.or.kr/api/#/' };
+    case 'kosis':
+      return { name: '통계청 KOSIS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 인구 통계를 12시간 저장해 두고 씁니다.', console: 'https://kosis.kr/openapi/' };
+    case 'fred':
+      return { name: 'FRED (세인트루이스 연준)', group: 'data', billing: '무료, 키 없음', limit: '공개 다운로드라 키가 필요 없습니다. 앱은 받은 시리즈를 12시간 저장해 두고 씁니다.', console: 'https://fred.stlouisfed.org' };
+    case 'nyfed':
+      return { name: '뉴욕연준 ACM 기간 프리미엄', group: 'data', billing: '무료, 키 없음', limit: '매주 갱신되는 파일 하나(약 10MB)를 하루에 한 번까지 받습니다.', console: 'https://www.newyorkfed.org/research/data_indicators/term-premia-tabs' };
     case 'openlibrary':
       return { name: 'Open Library', group: 'data', billing: '무료, 키 없음', limit: '정해진 한도는 없고 과도한 호출을 삼가 달라고 안내합니다.', console: 'https://openlibrary.org/developers/api' };
     case 'github':
