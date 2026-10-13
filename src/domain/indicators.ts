@@ -104,6 +104,8 @@ export type IncomeBase = (typeof INCOME_BASES)[number]['key'];
 
 /** KOSIS 5세 연령 codes summed into decades */
 export const AGE_BANDS = [
+  { key: '0', label: '0~9세', codes: ['5', '10'] },
+  { key: '10', label: '10대', codes: ['15', '20'] },
   { key: '20', label: '20대', codes: ['25', '30'] },
   { key: '30', label: '30대', codes: ['35', '40'] },
   { key: '40', label: '40대', codes: ['45', '50'] },
@@ -164,7 +166,7 @@ export interface Indicator {
   build: (get: (id: string) => Point[], p: AnalysisParams) => ChartData;
 }
 
-const C = { a: 'var(--series-1)', b: 'var(--series-2)', c: 'var(--series-3)', d: 'var(--series-4)', e: 'var(--series-5)', f: 'var(--series-6)', ink: 'var(--ink)', muted: 'var(--muted)' };
+const C = { a: 'var(--series-1)', b: 'var(--series-2)', c: 'var(--series-3)', d: 'var(--series-4)', e: 'var(--series-5)', f: 'var(--series-6)', g: 'var(--series-7)', ink: 'var(--ink)', muted: 'var(--muted)' };
 
 /** Rows keyed by date with one column per named series; dates sorted, missing values null. */
 export function joinSeries(cols: Record<string, Point[]>): Record<string, number | string | null>[] {
@@ -442,9 +444,9 @@ export const INDICATORS: Indicator[] = [
   {
     id: 'population',
     group: 'realestate',
-    title: '수요: 지역 인구와 20~50대',
+    title: '수요: 지역 인구와 연령대',
     about:
-      '집을 사는 주된 연령인 20~50대 인구와 지역 전체 인구입니다. 인구보다 가구 수가 주택 수요에 더 가깝지만, 주민등록 연령별 인구는 시군구까지 매달 나와 지역의 수요 흐름을 보기에 좋습니다. 30~40대가 줄어드는 지역은 매수 수요가 약해질 수 있습니다.',
+      '지역 전체 인구와 0~50대를 10년 단위로 나눈 인구입니다. 집을 사는 주된 연령은 20~50대이고, 0~19세는 학군 수요와 10~20년 뒤의 수요를 보여 줍니다. 인구보다 가구 수가 주택 수요에 더 가깝지만, 주민등록 연령별 인구는 시군구까지 매달 나와 지역의 수요 흐름을 보기에 좋습니다. 30~40대가 줄어드는 지역은 매수 수요가 약해질 수 있고, 어린 연령대가 줄면 학군 수요와 장래 수요가 함께 줄어듭니다.',
     source: '통계청 KOSIS 주민등록인구 (DT_1B04005N, 행정안전부)',
     defaultOn: true,
     usesRegion: 'any',
@@ -454,7 +456,8 @@ export const INDICATORS: Indicator[] = [
       const bands = AGE_BANDS.map((b) => ({ ...b, pts: sumAll(b.codes.map((c) => popSeries(get, p.region, c))) }));
       const cols: Record<string, Point[]> = { total: total.map((x) => ({ ...x, value: x.value / 10_000 })) };
       for (const b of bands) cols[`a${b.key}`] = b.pts.map((x) => ({ ...x, value: x.value / 10_000 }));
-      const colors = [C.a, C.b, C.c, C.d];
+      // 20~50대 keep their colors; the younger bands take pink and violet, apart from the greens
+      const colors = [C.e, C.g, C.a, C.b, C.c, C.d];
       const growth = yoy(total);
       return {
         lines: [...bands.map((b, i) => ({ key: `a${b.key}`, label: b.label, color: colors[i], kind: 'area' as const, stack: 's' })), { key: 'total', label: '총인구', color: C.ink, axis: 'right' as const }],

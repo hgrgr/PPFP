@@ -128,6 +128,10 @@ describe('indicators', () => {
     const c = ind.build((id) => data[id] ?? [], { region: '42', incomeBase: 'region' });
     assert.equal(c.rows[0].total, 152);
     assert.equal(c.rows[0].a20, 15);
+    assert.deepEqual(c.lines.map((l) => l.label), ['0~9세', '10대', '20대', '30대', '40대', '50대', '총인구']);
+    // Young bands are requested too: 0–4 … 15–19
+    const ids = ind.needs({ region: '11', incomeBase: 'region' }).map((r) => r.id);
+    for (const age of ['5', '10', '15', '20']) assert.ok(ids.includes(`IND:KOSIS:pop:11:${age}`), age);
   });
 
   it('every indicator builds from no data without throwing', () => {
