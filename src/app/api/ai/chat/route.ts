@@ -7,8 +7,9 @@ export const maxDuration = 300;
 
 const Body = z.object({
   conversationId: z.string().optional(),
-  agent: z.enum(['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN', 'SAGE']).optional(),
+  agent: z.enum(['MANAGER', 'RESEARCH', 'EARNINGS', 'COACH', 'LIBRARIAN', 'SAGE']).optional(),
   sageId: z.string().nullable().optional(),
+  lens: z.string().max(4000).nullable().optional(),
   text: z.string(),
   path: z.string().max(500).nullable().optional(),
 });

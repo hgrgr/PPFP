@@ -871,6 +871,8 @@ model AiSettings {
   /// Monthly cap in USD, estimated from token usage; null = no cap
   monthlyLimit      Decimal?  @db.Decimal(10, 2)
   webSearch         Boolean   @default(true)
+  /// 실적·공시 분석가: the guideline last used, offered for the next conversation
+  earningsLens      String?
   /// Morning briefing: on/off, hour (KST), weekdays only, and the KST date of the last one sent
   briefing          Boolean   @default(false)
   briefingHour      Int       @default(8)
@@ -926,6 +928,8 @@ model AiConversation {
   userId    String
   agent     String
   sageId    String?
+  /// 실적·공시 분석가: the user's guideline to judge results by
+  lens      String?
   /// The AI company and model the conversation runs on, fixed when it starts (null = Claude, the default model)
   provider  String?
   model     String?

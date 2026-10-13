@@ -131,6 +131,7 @@ export function AiChat({
   initial,
   agent,
   sageId,
+  lens,
   path,
   prefill,
   autoSend,
@@ -142,6 +143,8 @@ export function AiChat({
   initial: ConversationView | null;
   agent: AgentKind;
   sageId?: string | null;
+  /** 실적·공시 분석가: the guideline for a new conversation (left out: the one kept last time) */
+  lens?: string | null;
   path?: string | null;
   prefill?: string;
   autoSend?: boolean;
@@ -183,7 +186,7 @@ export function AiChat({
         const res = await fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ conversationId: id ?? undefined, agent, sageId: sageId ?? null, text: question, path: path ?? null }),
+          body: JSON.stringify({ conversationId: id ?? undefined, agent, sageId: sageId ?? null, lens: id ? undefined : lens, text: question, path: path ?? null }),
         });
         if (!res.ok || !res.body) throw new Error(res.status === 401 ? '다시 로그인하세요.' : '요청을 보내지 못했습니다.');
         const reader = res.body.getReader();
@@ -219,7 +222,7 @@ export function AiChat({
       setLive(null);
       area.current?.focus();
     },
-    [agent, sageId, path, conv, busy, reload, onConversation, urlOnStart, router],
+    [agent, sageId, lens, path, conv, busy, reload, onConversation, urlOnStart, router],
   );
 
   useEffect(() => {

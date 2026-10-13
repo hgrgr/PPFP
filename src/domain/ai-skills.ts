@@ -80,6 +80,7 @@ export function toSkillMd(s: { name: string; description: string; instructions: 
 // ---------------------------------------------------------------- which agents
 
 const AGENT_HINTS: [AgentKind, RegExp][] = [
+  ['EARNINGS', /earning|10-?k|10-?q|20-?f|8-?k|filing|sec\b|edgar|annual report|quarterly/i],
   ['RESEARCH', /stock|equity|earning|valuation|dcf|fundamental|financial|screener|sector|research|filing|10-?k|macro|econom|technical|chart|analy/i],
   ['MANAGER', /portfolio|allocation|rebalanc|risk|position|dividend|etf|wealth|tax|income|bond|regime|asset/i],
   ['COACH', /journal|review|psycholog|discipline|backtest|strategy|trad(e|ing|er)|edge|mistake|habit|memory/i],

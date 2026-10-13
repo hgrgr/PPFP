@@ -95,6 +95,16 @@ interface Ids {
 
 const card = (heading: string, sel = 'h2'): Find => ({ sel, text: heading, closest: '.card' });
 
+/** The 실적·공시 분석가 set to the Buffett guideline and the Buffett sage from the demo 투자 노트 */
+const EARNINGS_LENS: Step[] = [
+  { click: { sel: 'button', text: '워런 버핏', within: { sel: '.earnings-lens' } } },
+  {
+    until:
+      "(() => { const s = document.querySelector('select[aria-label=\"투자 거장 관점\"]'); const o = [...s.options].find((x) => x.text.startsWith('워런 버핏')); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()",
+  },
+  { wait: 300 },
+];
+
 const SHOTS: Shot[] = [
   { file: 'login', path: () => '/login', anonymous: true, width: 1100, height: 760, scale: 2, clip: [{ sel: '.auth .card' }], pad: 28 },
   {
@@ -120,7 +130,7 @@ const SHOTS: Shot[] = [
     height: 14000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
     clip: [{ sel: '.page-head' }, { sel: '#ind-us-10y-fisher' }],
-    marks: [{ sel: '[aria-label="기간"]' }, { sel: 'select', closest: 'label' }, { sel: 'summary', text: '지표 고르기' }, { sel: '.indicator .ind-latest' }, { sel: '[aria-label="선 켜고 끄기"]' }],
+    marks: [{ sel: '[aria-label="기간"]' }, { sel: 'select', closest: 'label' }, { sel: 'summary', text: '지표 고르기' }, { sel: '.ind-toc-groups' }, { sel: '.ind-jump' }, { sel: '.indicator .ind-latest' }, { sel: '[aria-label="선 켜고 끄기"]' }],
   },
   {
     file: 'analysis-realestate',
@@ -731,6 +741,30 @@ const SHOTS: Shot[] = [
     height: 1180,
     steps: [{ until: "(document.querySelector('.ai-log').scrollTop = 0, true)" }, { wait: 300 }],
     marks: [{ sel: '[aria-label="새 대화"]' }, { sel: '[aria-label="지난 대화"]' }, { sel: '.ai-steps' }, { sel: '.ai-md table' }, { sel: '.ai-action' }, { sel: '.ai-input textarea' }],
+  },
+  {
+    file: 'ai-earnings',
+    path: () => '/ai?agent=EARNINGS',
+    wait: 2000,
+    steps: EARNINGS_LENS,
+    clip: [{ sel: '.ai-main' }],
+    marks: [{ sel: '[aria-label="가이드라인 예시"]' }, { sel: 'textarea[aria-label="분석 가이드라인"]' }, { sel: 'select[aria-label="투자 거장 관점"]' }, { sel: '.ai-starter' }],
+  },
+  {
+    file: 'ai-earnings-answer',
+    path: () => '/ai?agent=EARNINGS',
+    wait: 2000,
+    height: 2400,
+    steps: [
+      ...EARNINGS_LENS,
+      { click: { sel: '.ai-starter' } },
+      { until: "!!document.querySelector('.ai-main .ai-action') && !document.querySelector('.ai-steps.live')", timeout: 40_000 },
+      // The whole answer, not the chat's scrolling window
+      { until: "(document.querySelector('.ai-main .ai-chat').style.height = 'auto', document.querySelector('.ai-main .ai-log').style.overflow = 'visible', true)" },
+      { wait: 600 },
+    ],
+    clip: [{ sel: '.ai-main' }],
+    marks: [{ sel: '.ai-main .earnings-lens' }, { sel: '.ai-main .ai-steps' }, { sel: '.ai-main .ai-md table' }, { sel: '.ai-main .ai-md h2', text: '내 가이드라인으로 본 평가' }, { sel: '.ai-main .ai-action' }],
   },
   {
     file: 'ai-drawer',

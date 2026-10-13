@@ -22,6 +22,7 @@ import { backtestReport, goalViews } from '../goals';
 import { performanceReport } from '../performance';
 import { taxReport } from '../tax';
 import { assetTraitMap, traitOverview } from '../traits';
+import { companyFilings, companyFinancials, readFiling } from '../sec';
 
 export interface ToolContext {
   userId: string;
@@ -549,6 +550,41 @@ const rebalanceTest = tool(
   },
 );
 
+// ---------------------------------------------------------------- SEC filings
+
+const secFilings = tool(
+  'sec_company_filings',
+  "미국 SEC에 공시하는 회사(ADR 포함)의 최근 공시 목록: 양식(10-K 연간, 10-Q 분기, 20-F 외국 회사 연간, 8-K 수시·실적 발표, 6-K 외국 회사 수시), 제출일, 대상 기간, 공시 번호(accession), 본문 파일. 8-K는 무엇을 알렸는지(2.02 실적 발표 등)가 나옵니다. 한국 회사는 없습니다.",
+  z.object({
+    ticker: z.string().describe('미국 티커, 예: NVDA, TSM, BRK.B'),
+    forms: z.array(z.string()).max(6).optional().describe('볼 양식, 예: ["10-Q"]. 비우면 10-K·10-Q·20-F·40-F·8-K·6-K'),
+    earnings_only: z.boolean().optional().describe('8-K 중 실적 발표(2.02)만'),
+    limit: z.number().int().min(1).max(40).optional(),
+  }),
+  async (input, { userId }) => companyFilings(userId, input.ticker, { forms: input.forms, earningsOnly: input.earnings_only, limit: input.limit }),
+);
+
+const secRead = tool(
+  'sec_read_filing',
+  "SEC 공시 한 건의 본문(텍스트, 표는 탭으로 구분). accession이 없으면 form의 가장 최근 공시(form도 없으면 가장 최근 10-K·10-Q·20-F). section으로 사업 개요(business)·위험 요인(risk)·경영진의 분석 MD&A(mda)·재무제표(financials)만 읽을 수 있습니다. 길면 약 2만 4천 자씩 나눠 주며, nextOffset을 offset에 넣어 이어 읽습니다. 8-K 실적 발표는 보도자료가 첨부 파일(otherDocuments의 ex99, pr 등)에 있으니 document로 그 파일을 읽으세요.",
+  z.object({
+    ticker: z.string(),
+    accession: z.string().optional().describe('sec_company_filings의 accession'),
+    form: z.string().optional().describe('accession 대신 가장 최근 공시를 고를 양식, 예: 10-K'),
+    document: z.string().optional().describe('공시 안의 다른 파일 이름(보도자료 등)'),
+    section: z.enum(['business', 'risk', 'mda', 'financials', 'full']).optional(),
+    offset: z.number().int().min(0).optional(),
+  }),
+  async (input, { userId }) => readFiling(userId, input),
+);
+
+const secFinancials = tool(
+  'sec_financials',
+  'SEC XBRL 재무 수치를 분기(달력 기준 3개월) 또는 연도별로: 매출, 매출총이익, 영업이익, 순이익, 희석 EPS, 영업현금흐름, 설비투자, 연구개발비, 현금성자산, 희석 주식 수와 전년 같은 기간 대비 증감률(%), 매출총이익률·영업이익률·순이익률. 회사가 공시한 숫자 그대로라 조정(Non-GAAP) 수치는 없습니다. 금액 단위는 unit(USD 등) 그대로입니다.',
+  z.object({ ticker: z.string(), period: z.enum(['quarterly', 'annual']).optional().describe('기본 quarterly') }),
+  async ({ ticker, period }, { userId }) => companyFinancials(userId, ticker, period ?? 'quarterly'),
+);
+
 export async function sageSummary(userId: string, sageId: string) {
   const s = await prisma.sage.findFirstOrThrow({ where: { id: sageId, userId } });
   const r = await relatedView(userId, { type: 'sage', id: s.id });
@@ -680,7 +716,7 @@ const proposeDraft = tool(
   },
 );
 
-const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, readingHistory, findBooks, sageProfile, proposeNote, proposeBook, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
+const TOOLS = [listPortfolios, overview, drift, traits, tax, dividends, performance, goals, rebalanceTest, secFilings, secRead, secFinancials, holding, transactions, quote, priceHistory, journals, journal, tradeReview, notes, readingHistory, findBooks, sageProfile, proposeNote, proposeBook, proposeAlert, proposeTargets, proposeReview, proposeDraft] as Tool<z.ZodType>[];
 
 export const toolDefs: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => t.def);
 

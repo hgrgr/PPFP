@@ -62,6 +62,8 @@ export function serviceInfo(service: string): ServiceInfo {
       return { name: 'FRED (세인트루이스 연준)', group: 'data', billing: '무료, 키 없음', limit: '공개 다운로드라 키가 필요 없습니다. 앱은 받은 시리즈를 12시간 저장해 두고 씁니다.', console: 'https://fred.stlouisfed.org' };
     case 'nyfed':
       return { name: '뉴욕연준 ACM 기간 프리미엄', group: 'data', billing: '무료, 키 없음', limit: '매주 갱신되는 ACM 파일(약 10MB)과 분기마다 갱신되는 r* 파일을 12시간에 한 번까지 받습니다.', console: 'https://www.newyorkfed.org/research/data_indicators/term-premia-tabs' };
+    case 'sec':
+      return { name: 'SEC EDGAR (미국 공시)', group: 'data', billing: '무료, 키 없음', limit: '초당 10회까지 허용하고 연락처가 든 User-Agent를 요구합니다. 앱은 회사 목록을 하루, 공시 목록을 1시간, 재무 수치를 6시간 저장해 두고 씁니다.', console: 'https://www.sec.gov/search-filings/edgar-application-programming-interfaces' };
     case 'openlibrary':
       return { name: 'Open Library', group: 'data', billing: '무료, 키 없음', limit: '정해진 한도는 없고 과도한 호출을 삼가 달라고 안내합니다.', console: 'https://openlibrary.org/developers/api' };
     case 'github':
