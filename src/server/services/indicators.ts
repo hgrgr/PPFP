@@ -4,8 +4,9 @@
  * PriceDaily under their series id. A series is fetched again after FRESH_MS; when a source
  * fails, the stored copy is used.
  */
-import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, popCodes, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
+import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
 import { parseFredCsv } from '@/domain/benchmark';
+import ExcelJS from 'exceljs';
 import { excelDate, readXls } from '@/domain/xls';
 import { dbDate, kstDate, prisma } from '../db';
 import { clearServiceKey, serviceKey, setServiceKey } from './api-keys';
@@ -14,10 +15,12 @@ import { UserError } from './portfolios';
 
 const FRESH_MS = 12 * 3_600_000;
 const ACM_URL = 'https://www.newyorkfed.org/medialibrary/media/research/data_indicators/ACMTermPremium.xls';
+const LW_URL = 'https://www.newyorkfed.org/medialibrary/media/research/economists/williams/data/Laubach_Williams_current_estimates.xlsx';
+const RONE_URL = 'https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do';
 const UA = { 'user-agent': 'Mozilla/5.0 (PPFP)' };
 
 /** Why a series has no data: a key the user has not added, or a source error */
-export type Missing = 'ECOS' | 'KOSIS';
+export type Missing = 'ECOS' | 'KOSIS' | 'RONE';
 
 const inflight = new Map<string, Promise<void>>();
 
@@ -130,6 +133,43 @@ async function loadAcm(userId: string) {
   await markFetched(['IND:ACM:ACMY10', 'IND:ACM:ACMTP10', 'IND:ACM:ACMRNY10']);
 }
 
+/** One R-ONE table, region and item, every month since 2003, a thousand rows a page. */
+async function loadRone(userId: string, r: SeriesReq, key: string) {
+  const [table, cls, item] = r.code.split('/');
+  const points: Point[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301' });
+    const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
+    if (res.error) throw new Error(`R-ONE: ${res.error}`);
+    points.push(...res.points);
+    if (page * 1000 >= res.total) break;
+  }
+  await store(r.id, 'RONE', points.sort((a, b) => a.date.localeCompare(b.date)));
+}
+
+/** The New York Fed's Laubach-Williams estimates (.xlsx): one-sided r* and output gap, quarterly. */
+async function loadLw(userId: string) {
+  let res: Response;
+  try {
+    res = await fetch(LW_URL, { headers: UA, cache: 'no-store', signal: AbortSignal.timeout(60_000) });
+  } catch (e) {
+    noteCall(userId, 'nyfed', 'error');
+    throw e;
+  }
+  noteCall(userId, 'nyfed', outcomeOf(res.status));
+  if (!res.ok) throw new Error(`nyfed HTTP ${res.status}`);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ArrayBuffer);
+  const ws = wb.getWorksheet('data') ?? wb.worksheets.find((w) => /data/i.test(w.name) && !/input/i.test(w.name));
+  const rows: unknown[][] = [];
+  ws?.eachRow({ includeEmpty: false }, (row) => rows.push((row.values as unknown[]).map((v) => (v && typeof v === 'object' && 'result' in v ? (v as { result: unknown }).result : v))));
+  const { rstar, gap } = parseLw(rows);
+  if (!rstar.length) throw new Error('Laubach-Williams 파일에서 rstar를 찾지 못했습니다');
+  await store('IND:LW:rstar', 'LW', rstar);
+  await store('IND:LW:gap', 'LW', gap);
+  await markFetched(['IND:LW:rstar', 'IND:LW:gap']);
+}
+
 /**
  * Brings `reqs` up to date (those older than FRESH_MS). Returns the sources that could not be
  * read: a missing key ('ECOS', 'KOSIS') or an error message.
@@ -142,6 +182,7 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
   if (!stale.length) return { missing: [], errors: [] };
   const ecosKey = stale.some((r) => r.source === 'ECOS') ? await serviceKey(userId, 'ecos', 'ECOS_API_KEY') : null;
   const kosisKey = stale.some((r) => r.source === 'KOSIS') ? await serviceKey(userId, 'kosis', 'KOSIS_API_KEY') : null;
+  const roneKey = stale.some((r) => r.source === 'RONE') ? await serviceKey(userId, 'rone', 'RONE_API_KEY') : null;
   const once = (id: string, job: () => Promise<void>) => {
     const running = inflight.get(id);
     if (running) return running;
@@ -163,6 +204,11 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
     }
   }
   if (stale.some((r) => r.source === 'ACM')) tasks.push(guard('뉴욕연준 ACM', () => once('ACM', () => loadAcm(userId))));
+  if (stale.some((r) => r.source === 'LW')) tasks.push(guard('뉴욕연준 r*', () => once('LW', () => loadLw(userId))));
+  for (const r of stale.filter((x) => x.source === 'RONE')) {
+    if (!roneKey) missing.add('RONE');
+    else tasks.push(guard(`R-ONE ${r.code}`, () => once(r.id, async () => { await loadRone(userId, r, roneKey.key); await markFetched([r.id]); })));
+  }
   const kosis = stale.filter((r) => r.source === 'KOSIS');
   if (kosis.length) {
     if (!kosisKey) missing.add('KOSIS');
@@ -231,4 +277,23 @@ export async function saveKosisKey(userId: string, input: { key?: string; clear?
     await setServiceKey(userId, 'kosis', key);
     await prisma.appSetting.deleteMany({ where: { key: { startsWith: 'ind:IND:KOSIS:' } } });
   } else if (input.clear) await clearServiceKey(userId, 'kosis');
+}
+
+/** The user's 한국부동산원 R-ONE 인증키, checked against R-ONE before it is stored. */
+export async function saveRoneKey(userId: string, input: { key?: string; clear?: boolean }) {
+  const key = input.key?.trim();
+  if (key) {
+    if (key.length < 10 || key.length > 120 || /\s/.test(key)) throw new UserError('R-ONE 인증키를 그대로 붙여 넣으세요.');
+    let res: ReturnType<typeof parseRone>;
+    try {
+      const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: '1', pSize: '12', STATBL_ID: 'A_2024_00076', DTACYCLE_CD: 'MM', CLS_ID: '500001', ITM_ID: '100001', START_WRTTIME: '202401', END_WRTTIME: '202412' });
+      const r = await fetch(`${RONE_URL}?${q}`, { headers: UA, cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+      res = parseRone(JSON.parse(await r.text()));
+    } catch {
+      throw new UserError('한국부동산원 R-ONE에 연결하지 못했습니다. 잠시 뒤 다시 저장하세요.');
+    }
+    if (res.error || res.points.length < 6) throw new UserError(`R-ONE이 이 인증키를 받지 않았습니다${res.error ? `: ${res.error}` : ''}. 키를 다시 확인하세요.`);
+    await setServiceKey(userId, 'rone', key);
+    await prisma.appSetting.deleteMany({ where: { key: { startsWith: 'ind:IND:RONE:' } } });
+  } else if (input.clear) await clearServiceKey(userId, 'rone');
 }

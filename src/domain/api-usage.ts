@@ -54,10 +54,12 @@ export function serviceInfo(service: string): ServiceInfo {
       return { name: '한국은행 ECOS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 통계를 12시간 저장해 두고 씁니다.', console: 'https://ecos.bok.or.kr/api/#/' };
     case 'kosis':
       return { name: '통계청 KOSIS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 인구 통계를 12시간 저장해 두고 씁니다.', console: 'https://kosis.kr/openapi/' };
+    case 'rone':
+      return { name: '한국부동산원 R-ONE', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 통계를 12시간 저장해 두고 씁니다.', console: 'https://www.reb.or.kr/r-one/portal/openapi/openApiIntroPage.do' };
     case 'fred':
       return { name: 'FRED (세인트루이스 연준)', group: 'data', billing: '무료, 키 없음', limit: '공개 다운로드라 키가 필요 없습니다. 앱은 받은 시리즈를 12시간 저장해 두고 씁니다.', console: 'https://fred.stlouisfed.org' };
     case 'nyfed':
-      return { name: '뉴욕연준 ACM 기간 프리미엄', group: 'data', billing: '무료, 키 없음', limit: '매주 갱신되는 파일 하나(약 10MB)를 하루에 한 번까지 받습니다.', console: 'https://www.newyorkfed.org/research/data_indicators/term-premia-tabs' };
+      return { name: '뉴욕연준 ACM 기간 프리미엄', group: 'data', billing: '무료, 키 없음', limit: '매주 갱신되는 ACM 파일(약 10MB)과 분기마다 갱신되는 r* 파일을 12시간에 한 번까지 받습니다.', console: 'https://www.newyorkfed.org/research/data_indicators/term-premia-tabs' };
     case 'openlibrary':
       return { name: 'Open Library', group: 'data', billing: '무료, 키 없음', limit: '정해진 한도는 없고 과도한 호출을 삼가 달라고 안내합니다.', console: 'https://openlibrary.org/developers/api' };
     case 'github':

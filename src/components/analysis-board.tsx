@@ -19,7 +19,7 @@ export interface IndicatorMeta {
 interface View {
   id: string;
   data: ChartData | null;
-  missing: ('ECOS' | 'KOSIS')[];
+  missing: ('ECOS' | 'KOSIS' | 'RONE')[];
   errors: string[];
 }
 
@@ -27,6 +27,7 @@ const axis = { fontSize: 11.5, fill: 'var(--muted)' };
 const KEY_HELP = {
   ECOS: { label: '한국은행 ECOS 인증키', href: '/settings#ecos' },
   KOSIS: { label: '통계청 KOSIS 인증키', href: '/settings#kosis' },
+  RONE: { label: '한국부동산원 R-ONE 인증키', href: '/settings#rone' },
 } as const;
 
 function num(v: number, unit: string) {
