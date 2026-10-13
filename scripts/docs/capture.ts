@@ -475,6 +475,16 @@ const SHOTS: Shot[] = [
   },
   { file: 'journal-body', path: (ids) => `/journal/${ids.nvdaJournal}`, wait: 4000, width: 1280, clip: [{ sel: '.doc-body' }], pad: 16 },
   {
+    file: 'journal-indicators',
+    path: (ids) => `/journal/${ids.nvdaJournal}`,
+    wait: 3000,
+    width: 1600,
+    height: 1100,
+    steps: [{ click: { sel: 'button', text: '분석 지표' } }, { until: "!!document.querySelector('.indicator-panel svg.recharts-surface .recharts-line-curve')", timeout: 60_000 }, { wait: 1200 }],
+    clip: [{ sel: '.doc-bar' }, { sel: '.indicator-panel' }],
+    marks: [{ sel: 'button', text: '분석 지표' }, { sel: '.indicator-panel select' }, { sel: '.indicator-panel .ind-latest' }, { sel: 'button', text: '일지에 넣기' }],
+  },
+  {
     file: 'journal-stock-chart',
     path: (ids) => `/journal/${ids.aaplJournal}`,
     wait: 5000,
