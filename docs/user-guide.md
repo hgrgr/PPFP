@@ -1694,9 +1694,9 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-13 | [`49dcb11`](https://github.com/hgrgr/PPFP/commit/49dcb11759f4aebc2b877967115d895224a9ea95) | [#39](https://github.com/hgrgr/PPFP/pull/39) | — | 분석 지표 금리 분해 ①의 기대 단기금리를 지금의 단기금리(3개월 국채)와 앞으로의 변화 기대로 나누고, 최근 값을 한 줄 덧셈으로 |
 | 2026-10-13 | [`2713358`](https://github.com/hgrgr/PPFP/commit/2713358ce68c5d29b5916b53e186175acc630c2c) | [#40](https://github.com/hgrgr/PPFP/pull/40) | 분석 지표 *경기 사이클*(경기선행·동행 순환변동치와 국면, 샴 룰·실업수당 청구, 한국 수출, 은행 대출태도)과 *유동성 · 수급*(미국 순유동성 연준 자산−TGA−역레포, MMF, 한국 대기자금·예탁금·신용융자, 투자자별 순매수, 미국 신용) 그룹. 금리: 시장 기대 금리 방향, 한미 금리차·원/달러, 중립금리 r\*, 테일러 준칙, 한국 신용 스프레드. 부동산: 전세가격 상승률, 전세가율, 매매·전세 수급동향, 거래량과 벌집순환 국면, 착공→입주 파이프라인, 주택구입부담(K-HAI 방식). 연동 · 설정의 한국부동산원 R-ONE 키 | 키 백업에 R-ONE 키 포함 |
 | 2026-10-13 | [`079471d`](https://github.com/hgrgr/PPFP/commit/079471d173602134a67374caa66633cf2b424bf2) | [#41](https://github.com/hgrgr/PPFP/pull/41) | 분석 지표 카드마다 *주목할 점*(신호 설명, 지금 해당 여부, 판단에 쓴 숫자)과 그래프 음영(장단기 금리 역전, 샴 룰 발동, 선행지수 100 아래, 강달러 구간). 달러 인덱스 카드(DXY, 무역가중 달러지수, 원/달러) | — |
-| 2026-10-13 | [`f97b69c`](https://github.com/hgrgr/PPFP/commit/f97b69c16f7b025a2c9c57ad826e7ffab702d5aa) | — | — | 보유 자산에서 지운 종목이 매매일지 종목 목록·가격 알림·부동산 알림·자산 성질·투자 노트 연결·분석 지표 시군구 목록에 남던 문제 수정. 지운 종목으로 새 일지를 저장하면 거절 |
-| 2026-10-13 | [`0df0038`](https://github.com/hgrgr/PPFP/commit/0df0038bb388afbcc73576eb2ae651dd70b50d5a) | — | 분석 지표 인구 카드에 주민등록 세대수와 세대당 인구, 세대수 관련 주목할 점 | — |
-| 2026-10-13 | [`c349e6c`](https://github.com/hgrgr/PPFP/commit/c349e6c23c584a0ace2e1ac7b4ced01602ffd309) | — | 매매일지 *📈 분석 지표* 패널: 일지 옆에서 지표를 보고 그래프 그림·최근 값·주목할 점을 본문에 넣기 | — |
+| 2026-10-13 | [`f97b69c`](https://github.com/hgrgr/PPFP/commit/f97b69c16f7b025a2c9c57ad826e7ffab702d5aa) | [#42](https://github.com/hgrgr/PPFP/pull/42) | — | 보유 자산에서 지운 종목이 매매일지 종목 목록·가격 알림·부동산 알림·자산 성질·투자 노트 연결·분석 지표 시군구 목록에 남던 문제 수정. 지운 종목으로 새 일지를 저장하면 거절 |
+| 2026-10-13 | [`0df0038`](https://github.com/hgrgr/PPFP/commit/0df0038bb388afbcc73576eb2ae651dd70b50d5a) | [#42](https://github.com/hgrgr/PPFP/pull/42) | 분석 지표 인구 카드에 주민등록 세대수와 세대당 인구, 세대수 관련 주목할 점 | — |
+| 2026-10-13 | [`c349e6c`](https://github.com/hgrgr/PPFP/commit/c349e6c23c584a0ace2e1ac7b4ced01602ffd309) | [#42](https://github.com/hgrgr/PPFP/pull/42) | 매매일지 *📈 분석 지표* 패널: 일지 옆에서 지표를 보고 그래프 그림·최근 값·주목할 점을 본문에 넣기 | — |
 
 ## 사라진 기능
 
