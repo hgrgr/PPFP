@@ -1,3 +1,4 @@
+import { readPrefs } from '@/domain/indicators';
 import { notFound } from 'next/navigation';
 import { JournalEntryForm } from '@/components/journal/entry-form';
 import { requireUser } from '@/server/auth';
@@ -13,5 +14,6 @@ export default async function JournalPage({ params }: { params: Promise<{ id: st
   if (!entry) notFound();
   // The entry's own asset stays pickable even if it was taken out of every portfolio
   const assets = await journalAssets(user.id, { include: [entry.assetId] });
-  return <JournalEntryForm entry={entry} assets={assets} formats={formats} />;
+  const ap = readPrefs(user.analysisPrefs);
+  return <JournalEntryForm entry={entry} assets={assets} formats={formats} indicatorPrefs={{ region: ap.region, incomeBase: ap.incomeBase, years: ap.years }} />;
 }
