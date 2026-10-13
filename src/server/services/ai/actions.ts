@@ -41,6 +41,7 @@ export async function conversationView(userId: string, id: string) {
     id: c.id,
     agent: c.agent,
     sage,
+    lens: c.lens,
     title: c.title,
     modelLabel: choiceLabel(conversationModel(c)),
     turns: toChat(c.messages),

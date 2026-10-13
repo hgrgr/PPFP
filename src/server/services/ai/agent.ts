@@ -85,6 +85,20 @@ ${COMMON}`,
 
 리포트는 다음 순서를 기본으로 하되 질문에 맞게 줄이거나 늘립니다: 한 줄 결론 → 사업과 경쟁력 → 최근 실적과 가이던스 → 밸류에이션(가능하면 PER·PBR 등 수치와 기준 날짜) → 주가 흐름 → 리스크 → 앞으로 볼 촉매와 일정 → 내 포트폴리오에서의 의미. 끝에 요약을 투자 노트 메모로 남기자고 propose_note로 제안하고, 사용자가 매수를 검토하면 propose_journal_draft로 근거·시나리오·손절 조건이 담긴 일지 초안을 제안합니다.
 ${COMMON}`,
+  EARNINGS: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 실적·공시 분석가입니다. 미국 SEC에 공시하는 회사의 10-K(연간 보고서), 10-Q(분기 보고서), 20-F(외국 회사 연간 보고서), 8-K(실적 발표 등 수시 공시)를 sec_company_filings·sec_read_filing·sec_financials로 직접 읽고 요약합니다. 숫자는 sec_financials와 공시 본문에서 가져오고, 기억이나 기사로 숫자를 지어내지 않습니다. 시장 기대치(컨센서스)와 실적 발표 뒤 주가 반응은 공시에 없으니 web_search로 찾고 출처를 밝히며, 찾지 못하면 없다고 씁니다. 한국 회사는 SEC에 공시하지 않으므로(ADR 제외) 그렇다고 알리고 웹의 DART 자료로 대신합니다.
+
+읽는 순서: sec_company_filings로 최신 공시를 확인 → sec_financials로 최근 분기·연간 숫자와 전년 대비 → 실적 발표 8-K가 있으면 첨부 보도자료(ex99 등)로 회사가 강조한 점과 가이던스 → 10-Q/10-K/20-F의 MD&A(section: mda)로 경영진의 설명 → 위험 요인(section: risk)은 질문이 있거나 연간 보고서일 때. 긴 본문은 필요한 부분만 이어 읽습니다.
+
+요약은 다음 순서를 기본으로 하되 질문에 맞게 줄입니다:
+1. 한 줄 결론 (좋아졌는지, 나빠졌는지, 무엇 때문인지)
+2. 핵심 숫자 표: 매출·영업이익·순이익·희석 EPS·이익률, 전년 같은 기간 대비. 회사 회계연도 분기 이름과 달력 분기가 다르면 함께 적음
+3. 가이던스와 시장 기대치 대비 (웹 출처)
+4. 사업부·지역별 흐름, 마진과 비용, 현금흐름·설비투자·자사주
+5. 경영진이 강조한 점과 피한 점, 지난 보고서보다 새로 생기거나 커진 위험
+6. 관점 평가: <page-context>의 '분석 관점'(사용자 가이드라인이나 투자 거장)이 있으면 그 기준을 하나씩 체크리스트로 놓고 이번 실적이 충족·미흡·판단 불가 중 어디인지 근거와 함께 평가. 거장 관점은 그 인물인 척하지 않고 "버핏의 관점에서 보면"처럼 말하며, 사용자의 투자 노트 정리를 기준으로 함. 관점이 없으면 이 항목은 빼고 끝에 관점을 정할 수 있다고 한 줄 알림
+7. 내 포트폴리오에서의 의미: get_holding으로 보유 여부·비중·매매일지를 확인해 일지의 근거가 여전히 유효한지
+끝에 요약을 투자 노트 메모로 남기자고 propose_note로 제안합니다(보유 종목이면 assets에 연결). 공시 링크(url)를 출처로 붙입니다.
+${COMMON}`,
   COACH: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 매매일지 코치입니다. 사용자가 쓴 매매일지(get_journals, get_journal)와 실제 거래·실현 손익(get_transactions, get_trade_review)을 함께 보고 복기를 돕습니다. 일지에 적은 근거·목표가·손절가와 실제 행동이 맞았는지, 이익은 일찍 팔고 손실은 오래 들고 있는지, 물타기·추격 매수·확증 편향 같은 반복 패턴이 있는지, 일지 없이 한 매매가 얼마나 되는지를 숫자로 짚습니다. 비난하지 않고 다음에 바꿀 한두 가지를 구체적으로 제안합니다. 일지 한 편을 복기하면 propose_journal_review로 그 일지에 복기 내용을 덧붙이자고 제안하고, 새 계획이 나오면 propose_journal_draft로 초안을 제안합니다.
 ${COMMON}`,
   LIBRARIAN: `당신은 개인 투자 관리 앱 PPFP 안에서 일하는 독서 큐레이터입니다. 사용자가 읽었거나 읽고 있거나 읽고 싶은 책(get_reading_history), 정리한 투자 거장·키워드·메모(get_investment_notes), 매매일지와 실제 매매 성적(get_journals, get_trade_review), 포트폴리오의 자산 성질과 구성(get_trait_allocation, get_portfolio_overview)을 보고 다음에 읽을 투자 책을 추천합니다.
@@ -150,12 +164,24 @@ async function pageContext(userId: string, path: string | null): Promise<string 
 
 // ---------------------------------------------------------------- conversations
 
-export async function startConversation(userId: string, agent: AgentKind, sageId: string | null, firstText: string, model: ModelChoice) {
+/**
+ * `lens` is the 실적·공시 분석가's guideline: given (even blank) it is used and kept for next time;
+ * left out (the side window) the one kept last time is used.
+ */
+export async function startConversation(userId: string, agent: AgentKind, sageId: string | null, firstText: string, model: ModelChoice, lens?: string | null) {
   if (!AGENT_ORDER.includes(agent)) throw new UserError('알 수 없는 에이전트입니다.');
-  if (agent === 'SAGE') {
-    if (!sageId || !(await prisma.sage.findFirst({ where: { id: sageId, userId } }))) throw new UserError('관점으로 삼을 투자 거장을 고르세요.');
+  if (agent === 'SAGE' && !sageId) throw new UserError('관점으로 삼을 투자 거장을 고르세요.');
+  // The 실적·공시 분석가 may take a sage as its lens too
+  const withSage = (agent === 'SAGE' || agent === 'EARNINGS') && sageId ? sageId : null;
+  if (withSage && !(await prisma.sage.findFirst({ where: { id: withSage, userId } }))) throw new UserError('관점으로 삼을 투자 거장을 찾지 못했습니다.');
+  let guide: string | null = null;
+  if (agent === 'EARNINGS' && lens === undefined) {
+    guide = (await prisma.aiSettings.findUnique({ where: { userId }, select: { earningsLens: true } }))?.earningsLens ?? null;
+  } else if (agent === 'EARNINGS') {
+    guide = lens?.trim().slice(0, 4000) || null;
+    await prisma.aiSettings.upsert({ where: { userId }, create: { userId, earningsLens: guide }, update: { earningsLens: guide } });
   }
-  return prisma.aiConversation.create({ data: { userId, agent, sageId: agent === 'SAGE' ? sageId : null, provider: model.provider, model: model.model, title: conversationTitle(firstText) } });
+  return prisma.aiConversation.create({ data: { userId, agent, sageId: withSage, lens: guide, provider: model.provider, model: model.model, title: conversationTitle(firstText) } });
 }
 
 
@@ -181,6 +207,8 @@ export interface TurnInput {
   conversationId?: string;
   agent?: AgentKind;
   sageId?: string | null;
+  /** 실적·공시 분석가: the user's guideline */
+  lens?: string | null;
   text: string;
   path?: string | null;
 }
@@ -212,7 +240,7 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
     const agent = input.agent ?? 'MANAGER';
     const choice = status.models[agent];
     if (!choice) throw new UserError('AI 어드바이저를 쓰려면 연동 · 설정에서 AI API 키를 하나 이상 넣으세요.');
-    found = await startConversation(userId, agent, input.sageId ?? null, text, choice);
+    found = await startConversation(userId, agent, input.sageId ?? null, text, choice, input.lens);
   }
   const conv = found;
   const { provider, model } = conversationModel(conv);
@@ -233,11 +261,17 @@ export async function runTurn(userId: string, input: TurnInput, emit: (e: ChatEv
     if (conv.agent === 'SAGE' && conv.sageId && !history.length) {
       ctx.push(`관점으로 삼을 거장 (사용자의 투자 노트 정리):\n${JSON.stringify(await sageSummary(userId, conv.sageId))}`);
     }
+    if (conv.agent === 'EARNINGS' && !history.length) {
+      if (conv.lens) ctx.push(`분석 관점 — 사용자가 정한 가이드라인:\n${conv.lens}`);
+      if (conv.sageId) ctx.push(`분석 관점 — 투자 거장 (사용자의 투자 노트 정리):\n${JSON.stringify(await sageSummary(userId, conv.sageId))}`);
+      if (!conv.lens && !conv.sageId) ctx.push('분석 관점: 정하지 않음');
+    }
     await append(userId, conv.id, 'user', userContent(text, ctx.join('\n')));
     await prisma.aiConversation.update({ where: { id: conv.id }, data: { updatedAt: new Date() } });
 
     const kind = (conv.agent in SYSTEM ? conv.agent : 'MANAGER') as AgentKind;
-    const research = kind === 'RESEARCH';
+    // Research and filings reading go deeper: more searches and more thinking
+    const research = kind === 'RESEARCH' || kind === 'EARNINGS';
     const web = status.webSearch && PROVIDERS[provider].webSearch;
     const skills = await skillsFor(userId, kind);
     const system = (web ? SYSTEM[kind] : SYSTEM[kind] + NO_WEB) + skillsPrompt(skills, web);

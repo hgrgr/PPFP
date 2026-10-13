@@ -8,7 +8,7 @@ import { CATEGORIES, categoriesOf, parseSkillMd, SKILL_STARTERS, suggestAgents, 
 import type { CommunitySkill, SkillView } from '@/server/services/ai/skills';
 import { Md } from './chat';
 
-const SHORT: Record<AgentKind, string> = { MANAGER: '매니저', RESEARCH: '리서치', COACH: '코치', LIBRARIAN: '큐레이터', SAGE: '거장 관점' };
+const SHORT: Record<AgentKind, string> = { MANAGER: '매니저', RESEARCH: '리서치', EARNINGS: '실적·공시', COACH: '코치', LIBRARIAN: '큐레이터', SAGE: '거장 관점' };
 const fmt = (n: number) => n.toLocaleString('ko-KR');
 
 function AgentChecks({ value, onChange, disabled, name }: { value: AgentKind[]; onChange: (v: AgentKind[]) => void; disabled?: boolean; name: string }) {

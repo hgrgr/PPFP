@@ -5,10 +5,10 @@
 
 export const AI_MODEL = 'claude-opus-5-5';
 
-export type AgentKind = 'MANAGER' | 'RESEARCH' | 'COACH' | 'LIBRARIAN' | 'SAGE';
+export type AgentKind = 'MANAGER' | 'RESEARCH' | 'EARNINGS' | 'COACH' | 'LIBRARIAN' | 'SAGE';
 
 /** Order in pickers */
-export const AGENT_ORDER: AgentKind[] = ['MANAGER', 'RESEARCH', 'COACH', 'LIBRARIAN', 'SAGE'];
+export const AGENT_ORDER: AgentKind[] = ['MANAGER', 'RESEARCH', 'EARNINGS', 'COACH', 'LIBRARIAN', 'SAGE'];
 
 export const AGENTS: Record<AgentKind, { name: string; description: string; starters: string[] }> = {
   MANAGER: {
@@ -29,6 +29,16 @@ export const AGENTS: Record<AgentKind, { name: string; description: string; star
       '내 보유 종목 중 비중이 가장 큰 종목을 깊이 리서치해 줘',
       '관심종목 중 지금 살펴볼 만한 종목을 골라 리서치해 줘',
       '반도체 업황을 정리하고 내 포트폴리오에 미치는 영향을 알려 줘',
+    ],
+  },
+  EARNINGS: {
+    name: '실적·공시 분석가',
+    description: '미국 SEC 공시(10-K 연간, 10-Q 분기, 20-F 외국 회사 연간, 8-K 실적 발표)를 직접 읽고 숫자·경영진 설명·위험 요인 변화를 요약합니다. 내가 정한 가이드라인이나 투자 거장의 관점으로 평가합니다.',
+    starters: [
+      '엔비디아(NVDA) 최근 분기 실적을 요약해 줘',
+      '내 보유 미국 종목 중 최근 실적을 발표한 것을 골라 요약해 줘',
+      'TSMC(TSM) 20-F의 위험 요인을 정리해 줘',
+      '애플(AAPL) 최근 10-K에서 작년보다 달라진 점을 찾아 줘',
     ],
   },
   COACH: {
@@ -57,6 +67,37 @@ export const AGENTS: Record<AgentKind, { name: string; description: string; star
 };
 
 /** What the chat shows while a tool runs */
+/**
+ * Ready-made guidelines for the 실적·공시 분석가, to start from and edit. The investors' lines are
+ * the criteria they are widely known for, not quotations.
+ */
+export const EARNINGS_LENS_PRESETS: { label: string; text: string }[] = [
+  {
+    label: '성장주 점검',
+    text: '- 매출 성장률이 유지되거나 빨라지는가(전년 대비, 직전 분기 대비)\n- 성장이 가격·물량·신제품 중 어디서 나오는가\n- 매출총이익률이 지켜지는가\n- 가이던스를 올렸는가, 시장 기대보다 높은가\n- 영업현금흐름이 순이익을 따라오는가\n- 주식 보상과 희석이 과하지 않은가',
+  },
+  {
+    label: '배당·현금흐름',
+    text: '- 잉여현금흐름(영업현금흐름 − 설비투자)이 배당과 자사주를 감당하는가\n- 배당을 늘렸는가, 배당성향이 무리하지 않은가\n- 부채와 이자 부담이 늘었는가\n- 매출과 이익이 경기에 덜 흔들리는가',
+  },
+  {
+    label: '워런 버핏',
+    text: '- 이해하기 쉬운 사업인가\n- 오래 가는 경쟁 우위(해자)가 이번 실적에서도 보이는가: 가격 결정력, 높은 마진\n- 빚을 많이 쓰지 않고도 자기자본이익률(ROE)이 높은가\n- 이익이 현금으로 들어오는가, 설비투자 부담이 크지 않은가\n- 경영진이 정직하고 주주를 위해 자본을 배분하는가(자사주·배당·인수)\n- 지금 가격이 내재가치보다 충분히 싼가(안전마진)',
+  },
+  {
+    label: '피터 린치',
+    text: '- 회사가 어떤 유형인가(고성장, 안정 성장, 경기 순환, 회생, 자산주)와 그 유형에 맞는 실적인가\n- 이익 성장률에 비해 PER이 높지 않은가(PEG)\n- 재고가 매출보다 빨리 늘지 않는가\n- 부채가 적고 현금이 넉넉한가\n- 처음 산 이유(스토리)가 이번 실적에서도 맞는가',
+  },
+  {
+    label: '필립 피셔',
+    text: '- 앞으로 몇 년 매출을 크게 늘릴 제품·시장이 있는가\n- 연구개발이 매출로 이어지는가\n- 이익률이 업계보다 높고 좋아지는가\n- 경영진이 나쁜 소식도 솔직하게 말하는가\n- 성장을 위해 주식을 많이 찍어 내지 않는가',
+  },
+  {
+    label: '벤저민 그레이엄',
+    text: '- 이익이 꾸준한가(적자 연도가 없는가)\n- 유동자산이 유동부채보다 충분히 많은가\n- 배당을 끊지 않고 주는가\n- PER과 PBR이 낮은가(지금 가격이 장부가치와 이익에 비해 싼가)',
+  },
+];
+
 export const TOOL_LABEL: Record<string, string> = {
   list_portfolios: '포트폴리오 목록 확인',
   get_portfolio_overview: '포트폴리오 평가·수익률 확인',
@@ -78,6 +119,9 @@ export const TOOL_LABEL: Record<string, string> = {
   get_trade_review: '실현 매매 통계 확인',
   get_reading_history: '독서 기록 확인',
   search_books: '책 찾기',
+  sec_company_filings: 'SEC 공시 목록 확인',
+  sec_read_filing: 'SEC 공시 읽기',
+  sec_financials: 'SEC 재무 수치 확인',
   propose_book: '읽을 책 제안',
   propose_journal_review: '일지 복기 제안',
   propose_journal_draft: '일지 초안 제안',
