@@ -112,14 +112,14 @@ sudo bash scripts/backup/restore.sh backups/ppfp-20261010-030000.dump
 
 VM의 `backups/`는 VM 디스크에 있어서 VM이 없어지면 같이 사라집니다. `offsite` 서비스가 **암호화된 백업(`.dump.gpg`)만** Google Drive로 6시간마다 복사하고, Drive에서는 30일 지난 사본을 지웁니다. VM을 새로 만들어 `backups/`가 비어도 Drive 사본은 지워지지 않습니다.
 
-1. **내 PC**에 [rclone](https://rclone.org/install/)을 설치하고 Google 로그인 토큰을 받습니다. 브라우저가 열리면 로그인하고 허용합니다.
+1. **내 PC**에 [rclone](https://rclone.org/install/)을 설치하고 Google 로그인 토큰을 받습니다. 브라우저가 열리면 로그인하고 허용합니다. 끝의 인자는 `{"scope":"drive.file"}`(rclone이 만든 파일만)이라는 뜻입니다. 빼면 드라이브 전체 권한 토큰이 나옵니다.
 
    ```bash
-   rclone authorize "drive"
+   rclone authorize "drive" "eyJzY29wZSI6ImRyaXZlLmZpbGUifQ"
    ```
 
-   마지막에 나오는 `{"access_token":…}` 한 줄을 복사해 둡니다.
-2. **VM**에서 rclone 설정을 만듭니다. 이름은 `gdrive`, 종류는 `drive`, scope는 `drive.file`(이 앱이 만든 파일만)을 고르고, *Use web browser to automatically authenticate?*에 `n`을 답한 뒤 1의 토큰을 붙여 넣습니다.
+   `Paste the following…`과 `<---End paste` 사이의 한 줄을 복사해 둡니다.
+2. **VM**에서 rclone 설정을 만듭니다. 이름은 `gdrive`, 종류는 `drive`, scope는 `drive.file`을 고르고, *Use web browser to automatically authenticate?*에는 꼭 `n`을 답한 뒤 1의 한 줄을 `config_token>`에 붙여 넣습니다. VM에는 브라우저가 없어서 `y`를 고르면 토큰 없이 저장됩니다. 그랬다면 `config` 대신 `config reconnect gdrive:`로 다시 넣습니다.
 
    ```bash
    cd ~/ppfp && sudo docker run --rm -it -v ~/ppfp/rclone:/config/rclone rclone/rclone:1.71.1 config
@@ -131,7 +131,7 @@ VM의 `backups/`는 VM 디스크에 있어서 VM이 없어지면 같이 사라�
    sudo docker compose -f docker-compose.yml -f docker-compose.cloud.yml logs offsite   # "copied to gdrive:ppfp-backups"
    ```
 
-복사할 곳과 주기는 `.env`의 `OFFSITE_REMOTE`(기본 `gdrive:ppfp-backups`), `OFFSITE_INTERVAL_HOURS`(6), `OFFSITE_KEEP_DAYS`(30)로 바꿉니다. 되살릴 때는 Drive에서 받은 `.dump.gpg`를 `backups/`에 넣고, `BACKUP_GPG_PASSPHRASE`를 셸에 준 채로 `restore.sh`를 실행합니다.
+복사할 곳과 주기는 `.env`의 `OFFSITE_REMOTE`(기본 `gdrive:ppfp-backups`), `OFFSITE_INTERVAL_HOURS`(6), `OFFSITE_KEEP_DAYS`(30)로 바꿉니다. 되살릴 때는 `bash deploy/recovery/restore-vm.sh`가 Drive의 가장 새 `.dump.gpg`를 받아 `.env`의 `BACKUP_GPG_PASSPHRASE`로 엽니다. VM과 개발 Mac을 한꺼번에 잃었을 때 `.env`와 rclone 설정까지 되찾는 방법은 [recovery.md](recovery.md)에 있습니다.
 
 ## 9. 업데이트
 
