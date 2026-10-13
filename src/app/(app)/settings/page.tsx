@@ -3,7 +3,7 @@ import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
 import { propertyKindShort, rtmsPortalUrl, TRADE_KINDS } from '@/domain/real-estate';
-import { saveKosisKeyAction } from '@/app/analysis-actions';
+import { saveKosisKeyAction, saveRoneKeyAction } from '@/app/analysis-actions';
 import { saveEcosKeyAction } from '@/app/benchmark-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { NAV_ITEMS } from '@/domain/nav';
@@ -52,6 +52,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const ecosServer = !ecosHint && !!process.env.ECOS_API_KEY;
   const kosisHint = hints.get('kosis');
   const kosisServer = !kosisHint && !!process.env.KOSIS_API_KEY;
+  const roneHint = hints.get('rone');
+  const roneServer = !roneHint && !!process.env.RONE_API_KEY;
 
   return (
     <>
@@ -325,6 +327,27 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {kosisHint && (
             <label className="check">
               <input type="checkbox" name="clearKosis" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+        <ActionForm action={saveRoneKeyAction} className="grid" aria-label="한국부동산원 R-ONE 인증키">
+          <label className="field" id="rone">
+            한국부동산원 R-ONE 인증키 (분석 지표의 수급동향·전세가율·거래량)
+            <input name="roneKey" type="password" autoComplete="off" placeholder={roneHint ? `저장됨 ${roneHint}` : roneServer ? '서버 기본 키 사용 중' : '인증키'} />
+            <span className="sub">
+              {roneHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://www.reb.or.kr/r-one/portal/openapi/openApiIntroPage.do" target="_blank" rel="noreferrer">한국부동산원 부동산통계정보시스템(R-ONE) Open API</a>에서 인증키를 신청해 넣으세요(무료). <a href="/analysis">분석 지표</a>의 매매·전세 수급동향, 전세가율, 아파트 거래량에 씁니다.
+                </>
+              )}
+            </span>
+          </label>
+          {roneHint && (
+            <label className="check">
+              <input type="checkbox" name="clearRone" /> 저장한 키 지우기
             </label>
           )}
           <div className="full">

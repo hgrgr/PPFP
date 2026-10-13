@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { clip, combine, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, popCodes, readPrefs, regionOf, shiftYears, splice, toggled, yoy, type Point } from '../indicators';
+import { addMonths, affordability, changeOver, clip, combine, cyclePhase, honeycombPhase, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, readPrefs, regionOf, rollingSum, shiftMonths, shiftYears, splice, toggled, yearlyMean, yoy, type Point } from '../indicators';
 import { excelDate } from '../xls';
 
 const pts = (...v: [string, number][]): Point[] => v.map(([date, value]) => ({ date, value }));
@@ -157,5 +157,106 @@ describe('preferences', () => {
     assert.equal(isOn(acm, q), false);
     assert.equal(isOn(nfci, q), true);
     assert.deepEqual(readPrefs({ ...q, region: '41135' }).region, '41135');
+  });
+});
+
+describe('cycle and liquidity helpers', () => {
+  it('rolls, shifts and compares months', () => {
+    const s = pts(['2026-01-01', 1], ['2026-02-01', 2], ['2026-03-01', 3], ['2026-05-01', 5]);
+    assert.deepEqual(rollingSum(s, 2), pts(['2026-02-01', 3], ['2026-03-01', 5]));
+    assert.deepEqual(shiftMonths(pts(['2025-11-01', 1]), 30), pts(['2028-05-01', 1]));
+    assert.equal(addMonths('2026-01-01', -1), '2025-12-01');
+    assert.deepEqual(changeOver(pts(['2026-01-01', 100], ['2026-07-01', 103]), 6).map((p) => Number(p.value.toFixed(6))), [3]);
+    const months = Array.from({ length: 12 }, (_, i) => ({ date: `2025-${String(i + 1).padStart(2, '0')}-01`, value: i < 6 ? 4 : 5 }));
+    assert.deepEqual(yearlyMean([...months, { date: '2026-01-01', value: 9 }]), pts(['2025-01-01', 4.5]));
+  });
+
+  it('names the business cycle phase from the leading index', () => {
+    assert.equal(cyclePhase(104.2, 0.3), '확장');
+    assert.equal(cyclePhase(101, -0.4), '둔화');
+    assert.equal(cyclePhase(98, -0.2), '수축');
+    assert.equal(cyclePhase(98, 0.5), '회복');
+  });
+
+  it('walks the honeycomb cycle', () => {
+    assert.equal(honeycombPhase(2, 10).n, 1);
+    assert.equal(honeycombPhase(2, -10).n, 2);
+    assert.equal(honeycombPhase(0.2, -10).n, 3);
+    assert.equal(honeycombPhase(-2, -10).n, 4);
+    assert.equal(honeycombPhase(-2, 10).n, 5);
+    assert.equal(honeycombPhase(-0.3, 10).n, 6);
+  });
+
+  it('computes a K-HAI style affordability index', () => {
+    // 5억 house, 47.9% loan over 20 years at 4%: about 145만원 a month; 연소득 6,960만원 → 580만원 a month; 25% of it is 145만원
+    const v = affordability(50_000, 6_960, 4);
+    assert.ok(Math.abs(v - 100) < 1, String(v));
+    assert.ok(affordability(50_000, 6_960, 6) > v);
+  });
+});
+
+describe('R-ONE and Laubach-Williams parsers', () => {
+  it('reads R-ONE rows, skipping empty values, and its errors', () => {
+    const ok = parseRone({ SttsApiTblData: [{ head: [{ list_total_count: 3 }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상' } }] }, { row: [{ WRTTIME_IDTFR_ID: '202607', DTA_VAL: 114.18 }, { WRTTIME_IDTFR_ID: '202606', DTA_VAL: null }, { WRTTIME_IDTFR_ID: '202605', DTA_VAL: '110.5' }] }] });
+    assert.deepEqual(ok.points, pts(['2026-05-01', 110.5], ['2026-07-01', 114.18]));
+    assert.equal(ok.total, 3);
+    const bad = parseRone({ RESULT: { CODE: 'ERROR-290', MESSAGE: '인증키가 유효하지 않습니다.' } });
+    assert.equal(bad.code, 'ERROR-290');
+    assert.match(bad.error ?? '', /인증키/);
+  });
+
+  it('reads the one-sided r* and output gap from the LW sheet', () => {
+    const rows: unknown[][] = [
+      [undefined, 'This spreadsheet contains updated estimates'],
+      [undefined, undefined, undefined, 'One-Sided Estimates', undefined, undefined, undefined, undefined, 'Two-Sided Estimates'],
+      [undefined, 'Date', undefined, 'rstar', 'g', 'z', 'Output gap', undefined, 'rstar', 'g', 'z', 'Output gap'],
+      [undefined, new Date('2026-04-01T00:00:00Z'), undefined, 1.65, 2.49, -1.01, 1.2, undefined, 1.7, 2.5, -1, 1.1],
+    ];
+    assert.deepEqual(parseLw(rows), { rstar: pts(['2026-04-01', 1.65]), gap: pts(['2026-04-01', 1.2]) });
+  });
+});
+
+describe('new indicators', () => {
+  const P = { region: '11', incomeBase: 'region' as const };
+  it('reads the market policy path as 2-year minus policy rate', () => {
+    const data: Record<string, Point[]> = { 'IND:FRED:DGS2': pts(['2026-09-01', 4.75]), 'IND:FRED:DFF': pts(['2026-09-01', 3.88]) };
+    const c = indicatorById('policy-path')!.build((id) => data[id] ?? [], P);
+    assert.equal(c.latest[0].value, '0.87%p');
+  });
+
+  it('computes the Taylor rule rate', () => {
+    const data: Record<string, Point[]> = {
+      'IND:LW:rstar': pts(['2026-04-01', 1]),
+      'IND:LW:gap': pts(['2026-04-01', 2]),
+      'IND:FRED:PCEPILFE': pts(['2025-04-01', 100], ['2026-04-01', 103]),
+      'IND:FRED:DFF': pts(['2026-04-01', 4]),
+    };
+    const c = indicatorById('taylor')!.build((id) => data[id] ?? [], P);
+    // 1 + 3 + 0.5 × 1 + 0.5 × 2 = 5.5
+    assert.equal(c.latest[0].value, '5.5%');
+  });
+
+  it('names the cycle phase on the leading index card', () => {
+    const data: Record<string, Point[]> = { 'IND:ECOS:901Y067/M/I16E': pts(['2026-05-01', 103.8], ['2026-08-01', 104.2]), 'IND:ECOS:901Y067/M/I16D': pts(['2026-08-01', 99.6]) };
+    const c = indicatorById('kr-leading')!.build((id) => data[id] ?? [], P);
+    assert.deepEqual(c.latest[0], { label: '경기 국면 (선행 기준)', value: '확장', date: '2026-08' });
+  });
+
+  it('uses each R-ONE table’s own region codes', () => {
+    const ids = indicatorById('trade-cycle')!.needs(P).map((r) => r.id);
+    assert.deepEqual(ids, ['IND:RONE:A_2024_00045/500008/100001', 'IND:RONE:A_2024_00549/500002/100001']);
+    // 광주 has no current trade rows
+    assert.equal(indicatorById('trade-cycle')!.needs({ ...P, region: '29' }).length, 1);
+  });
+
+  it('nets the Fed balance sheet of TGA and reverse repos', () => {
+    const data: Record<string, Point[]> = {
+      'IND:FRED:WALCL': pts(['2026-09-01', 6_747_560]),
+      'IND:FRED:WTREGEN': pts(['2026-09-01', 880_253]),
+      'IND:FRED:RRPONTSYD': pts(['2026-09-01', 0.3]),
+      'IND:FRED:WRESBAL': pts(['2026-09-01', 3_029_659]),
+    };
+    const c = indicatorById('us-net-liquidity')!.build((id) => data[id] ?? [], P);
+    assert.equal(c.latest[0].value, '5.87조 달러');
   });
 });

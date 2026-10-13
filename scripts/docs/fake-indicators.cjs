@@ -34,12 +34,15 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     DGS10: [3.4, 1.1, 0.004], DFII10: [0.9, 0.9, 0.004], T10YIE: [2.2, 0.35, 0], T5YIFR: [2.25, 0.2, 0],
     DGS3MO: [2.4, 2.0, 0.003], T10Y3M: [1.0, 1.3, -0.002], T10Y2Y: [0.8, 1.0, -0.002], DFF: [2.2, 2.0, 0.003], MORTGAGE30US: [5.6, 1.2, 0.002],
     BAMLH0A0HYM2: [4.6, 1.6, -0.004], VIXCLS: [19, 6, -0.005], NFCI: [-0.35, 0.3, 0],
+    DGS2: [3.0, 1.2, 0.004], DEXKOUS: [1250, 80, 0.4], PCEPILFE: [100, 1.5, 0.22], SAHMREALTIME: [0.15, 0.25, 0], IC4WSA: [230000, 30000, -40],
+    DRTSCILM: [5, 15, 0], WALCL: [6500000, 1200000, 6000], WTREGEN: [600000, 250000, 1000], RRPONTSYD: [500, 700, -1], WRESBAL: [2800000, 600000, 4000],
+    MMMFFAQ027S: [5000000, 600000, 18000], WRMFNS: [1600, 300, 7], BOGZ1FL663067003Q: [450000, 90000, 1200],
     QKRHAM770A: [75, 6, 0.08], QUSHAM770A: [84, 8, -0.07], QKRPAM770A: [180, 12, 0.12], NCBEILQ027S: [25000000, 4000000, 230000], GDP: [14000, 300, 70],
   };
   const fredCsv = (url) => {
     const id = url.searchParams.get('id') ?? 'X';
     const [level, amp, trend] = FRED[id] ?? [100, 10, 0.1];
-    const quarterly = /^Q|^NCBEI|^GDP$/.test(id);
+    const quarterly = /^Q|^NCBEI|^GDP$|^MMMFFAQ|^BOGZ|^DRTSC/.test(id);
     const lines = [`observation_date,${id}`];
     for (const [y, m, t] of monthsFrom(1995, 1)) {
       if (quarterly && (m - 1) % 3) continue;
@@ -52,6 +55,10 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   const ECOS = {
     '722Y001/0101000': [2.2, 1.0, 0.0], '721Y001/5020000': [2.6, 1.0, 0], '721Y001/5050000': [3.0, 1.0, 0], '511Y003/FMB': [2.8, 0.6, 0],
     '121Y006/BECBLA0302': [3.9, 1.0, 0], '161Y005/BBHS00': [1000000, 40000, 13000], '901Y062/P63AC': [60, 4, 0.22], '901Y062/P63ACA': [55, 5, 0.27],
+    '901Y067/I16E': [100.5, 2.5, 0], '901Y067/I16D': [99.8, 2, 0], '901Y118/T002': [50000000, 6000000, 90000], '514Y001/AA': [0, 12, 0], '514Y001/AA04': [-2, 15, 0],
+    '901Y063/P64AC': [60, 4, 0.2], '901Y063/P64ACA': [55, 5, 0.25], '721Y001/7020000': [3.4, 1.0, 0], '721Y001/7030000': [9.5, 1.2, 0], '721Y001/4020000': [2.9, 1.0, 0], '721Y001/2010000': [2.6, 1.0, 0],
+    '901Y103/1': [4000000, 1200000, 0], '161Y008/BBGA04': [110000, 40000, 450], '161Y008/BBGA02': [250000, 30000, 1200], '161Y008/BBGA03': [600000, 60000, 2500], '104Y015/BDAA31': [700000, 80000, 2800],
+    '901Y056/S23A': [55e12, 15e12, 2.5e11], '901Y056/S23E': [18e12, 5e12, 6e10], '901Y056/S23D': [3e11, 1.5e11, 0], '901Y055/S22CB': [500000, 3000000, 0], '901Y055/S22CC': [-300000, 2500000, 0], '901Y055/S22CA': [-200000, 1500000, 0],
     '511Y002/FMFB': [108, 14, 0], '901Y014/1110000': [13, 3, 0], '151Y001/1000000': [500000, 20000, 6500],
   };
   const ecosRows = (url) => {
@@ -181,6 +188,38 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     return Buffer.concat([header, fat, dir, data]);
   }
 
+  // ------------------------------------------------------------ 한국부동산원 R-ONE
+  const roneRows = (url) => {
+    const table = url.searchParams.get('STATBL_ID') ?? '';
+    const cls = url.searchParams.get('CLS_ID') ?? '500001';
+    const seoul = cls === '500008' || (table === 'A_2024_00549' && cls === '500002');
+    const [level, amp, trend] = {
+      A_2024_00076: seoul ? [102, 22, 0] : [96, 18, 0],
+      A_2024_00077: seoul ? [112, 14, 0] : [103, 12, 0],
+      A_2024_00073: seoul ? [52, 4, -0.02] : [68, 3, -0.01],
+      A_2024_00045: seoul ? [80, 4, 0.18] : [88, 3, 0.1],
+      A_2024_00549: seoul ? [5500, 2500, 0] : [45000, 15000, 0],
+    }[table] ?? [100, 5, 0];
+    const row = [];
+    for (const [y, m, t] of monthsFrom(2012, 1)) row.push({ STATBL_ID: table, WRTTIME_IDTFR_ID: `${y}${pad(m)}`, CLS_ID: Number(cls), ITM_ID: 100001, DTA_VAL: Number(wave(`${table}${cls}`, t, level, amp, trend).toFixed(2)) });
+    return { SttsApiTblData: [{ head: [{ list_total_count: row.length }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상 처리되었습니다.' } }] }, { row }] };
+  };
+
+  // ------------------------------------------------------------ New York Fed Laubach-Williams (.xlsx)
+  async function lwXlsx() {
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('data');
+    ws.addRow([]);
+    ws.addRow([null, null, 'One-Sided Estimates']);
+    ws.addRow(['Date', null, 'rstar', 'g', 'z', 'Output gap']);
+    for (const [y, m, t] of monthsFrom(1995, 1)) {
+      if ((m - 1) % 3) continue;
+      ws.addRow([new Date(Date.UTC(y, m - 1, 1)), null, Number(wave('rstar', t, 1.2, 0.5, -0.002).toFixed(3)), 2, 0, Number(wave('gap', t, 0, 2, 0).toFixed(3))]);
+    }
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async function indicatorsDemoFetch(input, init) {
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -193,6 +232,8 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     if (url.hostname === 'fred.stlouisfed.org' && url.pathname === '/graph/fredgraph.csv') return new Response(fredCsv(url), { status: 200, headers: { 'content-type': 'text/csv' } });
     if (url.hostname === 'ecos.bok.or.kr' && url.pathname.startsWith('/api/StatisticSearch/')) return new Response(JSON.stringify(ecosRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
     if (url.hostname === 'kosis.kr' && url.pathname.includes('statisticsParameterData')) return new Response(JSON.stringify(kosisRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.hostname === 'www.reb.or.kr' && url.pathname.endsWith('SttsApiTblData.do')) return new Response(JSON.stringify(roneRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.hostname === 'www.newyorkfed.org' && url.pathname.endsWith('Laubach_Williams_current_estimates.xlsx')) return new Response(await lwXlsx(), { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
     if (url.hostname === 'www.newyorkfed.org' && url.pathname.endsWith('ACMTermPremium.xls')) return new Response(acmXls(), { status: 200, headers: { 'content-type': 'application/vnd.ms-excel' } });
     return prevFetch(input, init);
   };

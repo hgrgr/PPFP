@@ -15,7 +15,7 @@
  * forward inflation expectation staying near 2% (anchored expectations).
  */
 
-export type IndicatorSource = 'FRED' | 'ECOS' | 'KOSIS' | 'ACM';
+export type IndicatorSource = 'FRED' | 'ECOS' | 'KOSIS' | 'ACM' | 'RONE' | 'LW';
 export type Freq = 'M' | 'Q' | 'A';
 
 export interface Point {
@@ -27,7 +27,7 @@ export interface Point {
 export interface SeriesReq {
   id: string;
   source: IndicatorSource;
-  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) */
+  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID" · LW: column (rstar, gap) */
   code: string;
   freq: Freq;
 }
@@ -38,6 +38,10 @@ const ecos = (code: string): SeriesReq => {
   return { id: `IND:ECOS:${code}`, source: 'ECOS', code, freq: cycle };
 };
 const acm = (col: string): SeriesReq => ({ id: `IND:ACM:${col}`, source: 'ACM', code: col, freq: 'M' });
+/** 한국부동산원 R-ONE 통계표 (monthly), one region and item */
+const rone = (table: string, cls: string, item = '100001'): SeriesReq => ({ id: `IND:RONE:${table}/${cls}/${item}`, source: 'RONE', code: `${table}/${cls}/${item}`, freq: 'M' });
+/** New York Fed Laubach-Williams estimates (quarterly): one-sided r* or the output gap */
+const lw = (col: 'rstar' | 'gap'): SeriesReq => ({ id: `IND:LW:${col}`, source: 'LW', code: col, freq: 'Q' });
 const kosisPop = (region: string, age: string): SeriesReq => ({ id: `IND:KOSIS:pop:${region}:${age}`, source: 'KOSIS', code: `101/DT_1B04005N/T2/${region}/${age}`, freq: 'M' });
 
 // ---------------------------------------------------------------- regions
@@ -58,29 +62,34 @@ export interface Region {
   permit: string;
   /** KOSIS 행정구역 codes, tried in order (강원·전북 changed codes when they became 특별자치도) */
   kosis: string[];
+  /** R-ONE region (CLS_ID) in the 주택가격동향 tables (가격지수, 수급동향, 전세가율) */
+  rone: string;
+  /** R-ONE region in the 아파트거래현황 table, which numbers regions its own way; null when it has none now */
+  roneTrade: string | null;
 }
 
 export const REGIONS: Region[] = [
-  { code: '00', name: '전국', value: 'REG00', stock: 'HALL', income: 'B0500', unsold: 'I410A', permit: 'ALL', kosis: ['00'] },
-  { code: '11', name: '서울', value: 'REG11', stock: 'HSEO', income: 'B0511', unsold: 'I410B', permit: 'SEO', kosis: ['11'] },
-  { code: '41', name: '경기', value: 'REG41', stock: 'HGYE', income: 'B0531', unsold: 'I410I', permit: 'GYE', kosis: ['41'] },
-  { code: '28', name: '인천', value: 'REG28', stock: 'HINC', income: 'B0523', unsold: 'I410E', permit: 'INC', kosis: ['28'] },
-  { code: '26', name: '부산', value: 'REG26', stock: 'HBUS', income: 'B0521', unsold: 'I410C', permit: 'BUS', kosis: ['26'] },
-  { code: '27', name: '대구', value: 'REG27', stock: 'HDEG', income: 'B0522', unsold: 'I410D', permit: 'DEG', kosis: ['27'] },
-  { code: '29', name: '광주', value: 'REG29', stock: 'HGWA', income: 'B0524', unsold: 'I410F', permit: 'GWA', kosis: ['29'] },
-  { code: '30', name: '대전', value: 'REG30', stock: 'HDEJ', income: 'B0525', unsold: 'I410G', permit: 'DEJ', kosis: ['30'] },
-  { code: '31', name: '울산', value: 'REG31', stock: 'HULS', income: 'B0526', unsold: 'I410H', permit: 'ULS', kosis: ['31'] },
-  { code: '36', name: '세종', value: 'REG36', stock: 'HGAN', income: 'B0529', unsold: 'I410L', permit: 'SEJ', kosis: ['36'] },
-  { code: '42', name: '강원', value: 'REG42', stock: 'HSEJ', income: 'B0532', unsold: 'I410J', permit: 'GAN', kosis: ['51', '42'] },
-  { code: '43', name: '충북', value: 'REG43', stock: 'HCHB', income: 'B0533', unsold: 'I410K', permit: 'CHB', kosis: ['43'] },
-  { code: '44', name: '충남', value: 'REG44', stock: 'HCHN', income: 'B0534', unsold: 'I410S', permit: 'CHN', kosis: ['44'] },
-  { code: '45', name: '전북', value: 'REG45', stock: 'HJNB', income: 'B0535', unsold: 'I410M', permit: 'JNB', kosis: ['52', '45'] },
-  { code: '46', name: '전남', value: 'REG46', stock: 'HJNN', income: 'B0536', unsold: 'I410N', permit: 'JNN', kosis: ['46'] },
-  { code: '47', name: '경북', value: 'REG47', stock: 'HKYB', income: 'B0537', unsold: 'I410O', permit: 'KYB', kosis: ['47'] },
-  { code: '48', name: '경남', value: 'REG48', stock: 'HKYN', income: 'B0538', unsold: 'I410P', permit: 'KYN', kosis: ['48'] },
-  { code: '50', name: '제주', value: 'REG51', stock: 'HJEJ', income: 'B0539', unsold: 'I410Q', permit: 'JEJ', kosis: ['50'] },
+  { code: '00', name: '전국', value: 'REG00', stock: 'HALL', income: 'B0500', unsold: 'I410A', permit: 'ALL', kosis: ['00'], rone: '500001', roneTrade: '500001' },
+  { code: '11', name: '서울', value: 'REG11', stock: 'HSEO', income: 'B0511', unsold: 'I410B', permit: 'SEO', kosis: ['11'], rone: '500008', roneTrade: '500002' },
+  { code: '41', name: '경기', value: 'REG41', stock: 'HGYE', income: 'B0531', unsold: 'I410I', permit: 'GYE', kosis: ['41'], rone: '500009', roneTrade: '500010' },
+  { code: '28', name: '인천', value: 'REG28', stock: 'HINC', income: 'B0523', unsold: 'I410E', permit: 'INC', kosis: ['28'], rone: '500010', roneTrade: '500005' },
+  { code: '26', name: '부산', value: 'REG26', stock: 'HBUS', income: 'B0521', unsold: 'I410C', permit: 'BUS', kosis: ['26'], rone: '500011', roneTrade: '500003' },
+  { code: '27', name: '대구', value: 'REG27', stock: 'HDEG', income: 'B0522', unsold: 'I410D', permit: 'DEG', kosis: ['27'], rone: '500012', roneTrade: '500004' },
+  { code: '29', name: '광주', value: 'REG29', stock: 'HGWA', income: 'B0524', unsold: 'I410F', permit: 'GWA', kosis: ['29'], rone: '500013', roneTrade: null },
+  { code: '30', name: '대전', value: 'REG30', stock: 'HDEJ', income: 'B0525', unsold: 'I410G', permit: 'DEJ', kosis: ['30'], rone: '500014', roneTrade: '500007' },
+  { code: '31', name: '울산', value: 'REG31', stock: 'HULS', income: 'B0526', unsold: 'I410H', permit: 'ULS', kosis: ['31'], rone: '500015', roneTrade: '500008' },
+  { code: '36', name: '세종', value: 'REG36', stock: 'HGAN', income: 'B0529', unsold: 'I410L', permit: 'SEJ', kosis: ['36'], rone: '500016', roneTrade: '500009' },
+  { code: '42', name: '강원', value: 'REG42', stock: 'HSEJ', income: 'B0532', unsold: 'I410J', permit: 'GAN', kosis: ['51', '42'], rone: '500017', roneTrade: '500011' },
+  { code: '43', name: '충북', value: 'REG43', stock: 'HCHB', income: 'B0533', unsold: 'I410K', permit: 'CHB', kosis: ['43'], rone: '500018', roneTrade: '500012' },
+  { code: '44', name: '충남', value: 'REG44', stock: 'HCHN', income: 'B0534', unsold: 'I410S', permit: 'CHN', kosis: ['44'], rone: '500019', roneTrade: '500013' },
+  { code: '45', name: '전북', value: 'REG45', stock: 'HJNB', income: 'B0535', unsold: 'I410M', permit: 'JNB', kosis: ['52', '45'], rone: '500020', roneTrade: '500014' },
+  { code: '46', name: '전남', value: 'REG46', stock: 'HJNN', income: 'B0536', unsold: 'I410N', permit: 'JNN', kosis: ['46'], rone: '500021', roneTrade: null },
+  { code: '47', name: '경북', value: 'REG47', stock: 'HKYB', income: 'B0537', unsold: 'I410O', permit: 'KYB', kosis: ['47'], rone: '500022', roneTrade: '500016' },
+  { code: '48', name: '경남', value: 'REG48', stock: 'HKYN', income: 'B0538', unsold: 'I410P', permit: 'KYN', kosis: ['48'], rone: '500023', roneTrade: '500017' },
+  { code: '50', name: '제주', value: 'REG51', stock: 'HJEJ', income: 'B0539', unsold: 'I410Q', permit: 'JEJ', kosis: ['50'], rone: '500024', roneTrade: '500019' },
 ];
 // ECOS 901Y106 names 강원 "HSEJ" and 세종 "HGAN" (as its item list reads); kept as published.
+// R-ONE's 아파트거래현황 has no current 광주·전남 rows (their old codes are empty since the 2026 전남광주 merger).
 
 /** The 시도 of a code: a 시도 itself, or the 시도 a 5-digit 시군구 (법정동 LAWD_CD) belongs to. */
 export function regionOf(code: string | undefined): Region {
@@ -143,10 +152,12 @@ export interface ChartData {
   note?: string;
 }
 
-export type Group = 'rates' | 'realestate' | 'stocks';
+export type Group = 'rates' | 'cycle' | 'realestate' | 'liquidity' | 'stocks';
 export const GROUPS: { key: Group; label: string }[] = [
   { key: 'rates', label: '금리' },
+  { key: 'cycle', label: '경기 사이클' },
   { key: 'realestate', label: '부동산' },
+  { key: 'liquidity', label: '유동성 · 수급' },
   { key: 'stocks', label: '주식 · 위험' },
 ];
 
@@ -216,6 +227,83 @@ export const splice = (older: Point[], newer: Point[]): Point[] => {
   const first = newer[0]?.date ?? '9999';
   return [...older.filter((p) => p.date < first), ...newer];
 };
+
+/** "2026-09-01" moved by `months` (whole months, first of the month) */
+export function addMonths(date: string, months: number): string {
+  const [y, m] = date.split('-').map(Number);
+  const k = y * 12 + (m - 1) + months;
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}-01`;
+}
+
+/** Every point moved `months` later (a pipeline drawn where it lands) */
+export const shiftMonths = (pts: Point[], months: number): Point[] => pts.map((p) => ({ date: addMonths(p.date, months), value: p.value }));
+
+/** Sum of each month and the `n` − 1 before it; months with a gap in that window are left out */
+export function rollingSum(pts: Point[], n: number): Point[] {
+  const m = new Map(pts.map((p) => [p.date, p.value]));
+  return pts.flatMap((p) => {
+    let sum = 0;
+    for (let k = 0; k < n; k++) {
+      const v = m.get(addMonths(p.date, -k));
+      if (v === undefined) return [];
+      sum += v;
+    }
+    return [{ date: p.date, value: sum }];
+  });
+}
+
+/** Change from `months` earlier, in % */
+export function changeOver(pts: Point[], months: number): Point[] {
+  const m = new Map(pts.map((p) => [p.date, p.value]));
+  return pts.flatMap((p) => {
+    const prev = m.get(addMonths(p.date, -months));
+    return prev ? [{ date: p.date, value: (p.value / prev - 1) * 100 }] : [];
+  });
+}
+
+/** Mean of each calendar year that has all 12 months, dated on 1 January */
+export function yearlyMean(pts: Point[]): Point[] {
+  const by = new Map<string, number[]>();
+  for (const p of pts) by.set(p.date.slice(0, 4), [...(by.get(p.date.slice(0, 4)) ?? []), p.value]);
+  return [...by].filter(([, v]) => v.length === 12).map(([y, v]) => ({ date: `${y}-01-01`, value: v.reduce((a, b) => a + b, 0) / 12 }));
+}
+
+export type CyclePhase = '확장' | '둔화' | '수축' | '회복';
+/**
+ * The business cycle phase from a cycle component around 100 (통계청 선행지수 순환변동치): above
+ * 100 and rising is expansion, above and falling a slowdown, below and falling contraction, below
+ * and rising recovery. `change` is over the last three months.
+ */
+export function cyclePhase(level: number, change: number): CyclePhase {
+  if (level >= 100) return change >= 0 ? '확장' : '둔화';
+  return change < 0 ? '수축' : '회복';
+}
+
+/**
+ * The housing market's phase on the honeycomb cycle (Janssen et al. 1994, 벌집순환모형): prices and
+ * trading volume turn around each other through six phases. `price` and `volume` are % changes
+ * (price over six months; volume of the last six months against the six before); a price within
+ * ±`flat`% counts as flat.
+ */
+export function honeycombPhase(price: number, volume: number, flat = 0.5): { n: number; name: string } {
+  const up = volume >= 0;
+  if (price > flat) return up ? { n: 1, name: '1국면 회복기 (가격↑ 거래↑)' } : { n: 2, name: '2국면 활황기 (가격↑ 거래↓)' };
+  if (price < -flat) return up ? { n: 5, name: '5국면 불황기 (가격↓ 거래↑)' } : { n: 4, name: '4국면 침체기 (가격↓ 거래↓)' };
+  return up ? { n: 6, name: '6국면 회복 진입기 (가격→ 거래↑)' } : { n: 3, name: '3국면 침체 진입기 (가격→ 거래↓)' };
+}
+
+/**
+ * A housing affordability index in the way of 주택금융공사's K-HAI: the monthly repayment on a
+ * loan of `ltv` of the house, over `years` at `rate` %, as a share of monthly income, against 25%
+ * (100 = repayments take a quarter of income). Inputs are averages here, not HF's medians.
+ */
+export function affordability(price: number, income: number, rate: number, ltv = 0.479, years = 20): number {
+  const r = rate / 100 / 12;
+  const n = years * 12;
+  const loan = price * ltv;
+  const payment = r === 0 ? loan / n : (loan * r) / (1 - (1 + r) ** -n);
+  return (payment / (income / 12) / 0.25) * 100;
+}
 
 const fmt = (v: number, digits = 2) => v.toLocaleString('ko-KR', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
 const period = (date: string, freq: Freq) => (freq === 'A' ? date.slice(0, 4) : freq === 'Q' ? `${date.slice(0, 4)} ${Math.floor((Number(date.slice(5, 7)) - 1) / 3) + 1}분기` : date.slice(0, 7));
@@ -713,6 +801,677 @@ export const INDICATORS: Indicator[] = [
       return { lines: [{ key: 'n', label: 'NFCI', color: C.c, kind: 'area' }], rows: joinSeries({ n }), unit: '', refs: [{ y: 0, label: '평균' }], latest: latestOf([{ label: 'NFCI', pts: n, unit: '', digits: 2 }]) };
     },
   },
+
+  // ------------------------------------------------------------ rates (added)
+  {
+    id: 'policy-path',
+    group: 'rates',
+    title: '시장이 예상하는 기준금리 방향',
+    about:
+      '2년 국채(한국은 3년) 금리는 앞으로 2~3년 기준금리가 평균 얼마일지에 대한 기대를 거의 그대로 담습니다. 그래서 이 금리에서 지금 기준금리를 빼면, 0보다 크면 시장이 인상을, 작으면 인하를 예상한다는 뜻입니다. 월가는 금리선물(CME FedWatch)로 같은 것을 보지만 선물 자료가 유료라, 무료로 받을 수 있는 이 차이로 대신합니다. 작은 기간 프리미엄이 섞여 있어 0 근처는 "동결"로 읽습니다.',
+    source: 'FRED: DGS2, DFF (월말), 한국은행 ECOS: 721Y001, 722Y001',
+    defaultOn: true,
+    needs: () => [fred('DGS2'), fred('DFF'), ecos('721Y001/M/5020000'), ecos('722Y001/M/0101000')],
+    build: (get) => {
+      const us = combine(get('IND:FRED:DGS2'), get('IND:FRED:DFF'), (a, b) => a - b);
+      const kr = combine(get('IND:ECOS:721Y001/M/5020000'), get('IND:ECOS:722Y001/M/0101000'), (a, b) => a - b);
+      return {
+        lines: [
+          { key: 'us', label: '미국: 2년 국채 − 연방기금금리', color: C.a },
+          { key: 'kr', label: '한국: 국고채 3년 − 기준금리', color: C.b },
+        ],
+        rows: joinSeries({ us, kr }),
+        unit: '%p',
+        refs: [{ y: 0, label: '0보다 크면 인상, 작으면 인하 기대' }],
+        latest: latestOf([
+          { label: '미국', pts: us, unit: '%p' },
+          { label: '한국', pts: kr, unit: '%p' },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-us-gap',
+    group: 'rates',
+    title: '한미 금리차와 원/달러',
+    about:
+      '한국 금리에서 미국 금리를 뺀 값입니다. 미국 금리가 더 높으면(음수) 달러 자산의 이자가 더 많아 외국인 자금이 빠져나가기 쉽고 원화가 약해지는 압력이 생깁니다. 그래서 한국은행이 기준금리를 정할 때 늘 함께 보는 지표입니다. 원/달러 환율(오른쪽 축)을 같이 봅니다.',
+    source: '한국은행 ECOS: 722Y001, 721Y001, FRED: DFF, DGS10, DEXKOUS (월말)',
+    defaultOn: true,
+    needs: () => [ecos('722Y001/M/0101000'), fred('DFF'), ecos('721Y001/M/5050000'), fred('DGS10'), fred('DEXKOUS')],
+    build: (get) => {
+      const policy = combine(get('IND:ECOS:722Y001/M/0101000'), get('IND:FRED:DFF'), (a, b) => a - b);
+      const long = combine(get('IND:ECOS:721Y001/M/5050000'), get('IND:FRED:DGS10'), (a, b) => a - b);
+      const fx = get('IND:FRED:DEXKOUS');
+      return {
+        lines: [
+          { key: 'policy', label: '기준금리 차 (한국 − 미국)', color: C.a, kind: 'area' },
+          { key: 'long', label: '10년 국채 금리차', color: C.b },
+          { key: 'fx', label: '원/달러', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ policy, long, fx }),
+        unit: '%p',
+        rightUnit: '원',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '기준금리 차', pts: policy, unit: '%p' },
+          { label: '10년물 차', pts: long, unit: '%p' },
+          { label: '원/달러', pts: fx, unit: '원', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'neutral-rate',
+    group: 'rates',
+    title: '미국 실질 기준금리와 중립금리(r*)',
+    about:
+      '중립금리(r*)는 경기를 부양하지도 누르지도 않는 실질금리 수준입니다. 실질 기준금리(연방기금금리 − 근원 PCE 물가상승률)가 r*보다 높으면 통화정책이 긴축적이라 경기와 물가를 누르고, 낮으면 완화적입니다. 막대는 그 차이입니다(+ = 긴축). r*는 뉴욕연준이 분기마다 내는 Laubach-Williams 모형 추정치로, 추정 오차가 커서 1%p 안팎의 차이는 크게 읽지 않습니다.',
+    source: '뉴욕연준 Laubach-Williams r* (분기, 단측 추정), FRED: DFF, PCEPILFE',
+    defaultOn: true,
+    needs: () => [lw('rstar'), fred('DFF'), fred('PCEPILFE')],
+    build: (get) => {
+      const rstar = get('IND:LW:rstar');
+      const core = yoy(get('IND:FRED:PCEPILFE'));
+      const real = combine(get('IND:FRED:DFF'), core, (a, b) => a - b);
+      const stance = combine(real, rstar, (a, b) => a - b);
+      return {
+        lines: [
+          { key: 'stance', label: '실질 기준금리 − r* (+ 긴축)', color: C.b, kind: 'bar' },
+          { key: 'real', label: '실질 기준금리', color: C.a },
+          { key: 'rstar', label: '중립금리 r*', color: C.ink, dash: true },
+        ],
+        rows: joinSeries({ stance, real, rstar }),
+        unit: '%',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '실질 기준금리', pts: real, unit: '%' },
+          { label: 'r*', pts: rstar, unit: '%', freq: 'Q' },
+          { label: '차이', pts: stance, unit: '%p', freq: 'Q' },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'taylor',
+    group: 'rates',
+    title: '테일러 준칙 금리와 실제 기준금리',
+    about:
+      '테일러 준칙은 물가와 경기로 "적정 기준금리"를 계산하는 공식입니다: 중립금리 + 물가상승률 + 0.5 × (물가 − 2%) + 0.5 × 산출갭. 실제 기준금리가 이보다 낮으면 연준이 경기·물가에 비해 느슨하게, 높으면 빡빡하게 운용하는 것입니다. 물가는 근원 PCE, 중립금리와 산출갭은 뉴욕연준 Laubach-Williams 추정치를 씁니다(분기).',
+    source: '뉴욕연준 Laubach-Williams (r*, 산출갭), FRED: PCEPILFE, DFF',
+    defaultOn: true,
+    needs: () => [lw('rstar'), lw('gap'), fred('PCEPILFE'), fred('DFF')],
+    build: (get) => {
+      const core = yoy(get('IND:FRED:PCEPILFE'));
+      const base = combine(get('IND:LW:rstar'), core, (r, pi) => r + pi + 0.5 * (pi - 2));
+      const taylor = combine(base, get('IND:LW:gap'), (b, g) => b + 0.5 * g);
+      const ff = get('IND:FRED:DFF');
+      const diff = combine(ff, taylor, (a, b) => a - b);
+      return {
+        lines: [
+          { key: 'taylor', label: '테일러 준칙 금리', color: C.b },
+          { key: 'ff', label: '실제 연방기금금리', color: C.ink },
+        ],
+        rows: joinSeries({ taylor, ff }),
+        unit: '%',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '테일러 금리', pts: taylor, unit: '%', freq: 'Q' },
+          { label: '실제 기준금리', pts: ff, unit: '%' },
+          { label: '실제 − 준칙', pts: diff, unit: '%p', freq: 'Q' },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-credit',
+    group: 'rates',
+    title: '한국 신용 스프레드',
+    about:
+      '회사채가 국채보다 얼마나 더 받는지(AA− 3년 − 국고채 3년), 비우량(BBB−)이 우량(AA−)보다 얼마나 더 받는지, 기업어음(CP)이 은행 양도성예금증서(CD)보다 얼마나 더 받는지입니다. 이 차이가 갑자기 벌어지면 돈을 빌려주는 쪽이 위험을 피한다는 뜻으로, 2022년 레고랜드 사태 때 CP−CD가 크게 뛰었습니다.',
+    source: '한국은행 ECOS: 721Y001 (회사채 AA−·BBB−, 국고채 3년, CP·CD 91일)',
+    defaultOn: true,
+    needs: () => [ecos('721Y001/M/7020000'), ecos('721Y001/M/7030000'), ecos('721Y001/M/5020000'), ecos('721Y001/M/4020000'), ecos('721Y001/M/2010000')],
+    build: (get) => {
+      const aa = get('IND:ECOS:721Y001/M/7020000'), bbb = get('IND:ECOS:721Y001/M/7030000');
+      const credit = combine(aa, get('IND:ECOS:721Y001/M/5020000'), (a, b) => a - b);
+      const quality = combine(bbb, aa, (a, b) => a - b);
+      const cp = combine(get('IND:ECOS:721Y001/M/4020000'), get('IND:ECOS:721Y001/M/2010000'), (a, b) => a - b);
+      return {
+        lines: [
+          { key: 'credit', label: '회사채 AA− − 국고채 3년', color: C.a },
+          { key: 'cp', label: 'CP − CD (91일)', color: C.d },
+          { key: 'quality', label: 'BBB− − AA− (오른쪽 축)', color: C.b, axis: 'right' },
+        ],
+        rows: joinSeries({ credit, cp, quality }),
+        unit: '%p',
+        rightUnit: '%p',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: 'AA− − 국고', pts: credit, unit: '%p', digits: 3 },
+          { label: 'CP − CD', pts: cp, unit: '%p' },
+          { label: 'BBB− − AA−', pts: quality, unit: '%p', digits: 2 },
+        ]),
+      };
+    },
+  },
+
+  // ------------------------------------------------------------ business cycle
+  {
+    id: 'kr-leading',
+    group: 'cycle',
+    title: '한국 경기선행·동행지수 순환변동치와 경기 국면',
+    about:
+      '통계청 경기종합지수에서 장기 추세를 뺀 순환변동치입니다. 100보다 크면 경기가 추세보다 좋은 것이고, 선행지수는 보통 6~9개월 앞서 움직입니다. 선행지수가 100 위에서 오르면 확장, 100 위에서 내리면 둔화, 100 아래에서 내리면 수축, 100 아래에서 오르면 회복으로 국면을 나눕니다(최근 3개월 변화 기준). 한국 경기 판단에 가장 널리 쓰는 공식 지표입니다.',
+    source: '한국은행 ECOS: 901Y067 (통계청 경기종합지수)',
+    defaultOn: true,
+    needs: () => [ecos('901Y067/M/I16E'), ecos('901Y067/M/I16D')],
+    build: (get) => {
+      const lead = get('IND:ECOS:901Y067/M/I16E'), coin = get('IND:ECOS:901Y067/M/I16D');
+      const last = lead.at(-1);
+      const before = last ? lead.find((p) => p.date === addMonths(last.date, -3)) : undefined;
+      const phase = last && before ? cyclePhase(last.value, last.value - before.value) : null;
+      return {
+        lines: [
+          { key: 'lead', label: '선행지수 순환변동치', color: C.a },
+          { key: 'coin', label: '동행지수 순환변동치', color: C.ink },
+        ],
+        rows: joinSeries({ lead, coin }),
+        unit: '',
+        refs: [{ y: 100, label: '추세 100' }],
+        latest: [
+          ...(phase && last ? [{ label: '경기 국면 (선행 기준)', value: phase, date: last.date.slice(0, 7) }] : []),
+          ...latestOf([
+            { label: '선행', pts: lead, unit: '', digits: 1 },
+            { label: '동행', pts: coin, unit: '', digits: 1 },
+          ]),
+        ],
+      };
+    },
+  },
+  {
+    id: 'us-recession',
+    group: 'cycle',
+    title: '미국 침체 신호: 샴 룰과 실업수당 청구',
+    about:
+      '샴 룰은 실업률의 3개월 평균이 지난 12개월 최저보다 0.5%p 이상 오르면 경기침체가 시작된 것으로 봅니다. 1970년 이후 침체를 거의 모두 실시간으로 잡아냈습니다. 신규 실업수당 청구(4주 평균)는 매주 나오는 가장 빠른 고용 지표로, 꾸준히 늘면 해고가 늘고 있다는 신호입니다.',
+    source: 'FRED: SAHMREALTIME, IC4WSA (월말)',
+    defaultOn: true,
+    needs: () => [fred('SAHMREALTIME'), fred('IC4WSA')],
+    build: (get) => {
+      const sahm = get('IND:FRED:SAHMREALTIME');
+      const claims = get('IND:FRED:IC4WSA').map((p) => ({ ...p, value: p.value / 10_000 }));
+      return {
+        lines: [
+          { key: 'sahm', label: '샴 룰 지표', color: C.b, kind: 'area' },
+          { key: 'claims', label: '신규 실업수당 청구 (4주 평균)', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ sahm, claims }),
+        unit: '%p',
+        rightUnit: '만 건',
+        refs: [{ y: 0.5, label: '침체 신호 0.5' }],
+        latest: latestOf([
+          { label: '샴 룰', pts: sahm, unit: '%p' },
+          { label: '실업수당 청구', pts: claims, unit: '만 건', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-exports',
+    group: 'cycle',
+    title: '한국 수출',
+    about:
+      '한국 경제는 수출 비중이 커서 수출 증가율이 경기와 코스피 이익을 가장 먼저 알려 줍니다. 막대는 1년 전 같은 달 대비 증가율, 선은 월 수출액입니다. 반도체가 수출의 큰 몫이라 반도체 경기와 함께 움직입니다.',
+    source: '한국은행 ECOS: 901Y118 (관세청 수출입 총괄)',
+    defaultOn: true,
+    needs: () => [ecos('901Y118/M/T002')],
+    build: (get) => {
+      const amount = get('IND:ECOS:901Y118/M/T002');
+      const growth = yoy(amount);
+      const bn = amount.map((p) => ({ ...p, value: p.value / 100_000 }));
+      return {
+        lines: [
+          { key: 'growth', label: '수출 증가율 (1년 전 대비)', color: C.a, kind: 'bar' },
+          { key: 'bn', label: '수출액', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ growth, bn }),
+        unit: '%',
+        rightUnit: '억 달러',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '증가율', pts: growth, unit: '%', digits: 1 },
+          { label: '수출액', pts: bn, unit: '억 달러', digits: 0 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'lending-standards',
+    group: 'cycle',
+    title: '은행 대출태도',
+    about:
+      '은행이 대출 기준을 조이는지 푸는지 묻는 서베이입니다. 은행이 돈줄을 조이면 몇 분기 뒤 투자와 소비가 줄어 경기가 꺾이는 경우가 많아, 신용 사이클을 읽는 핵심 지표입니다. 미국은 조인다는 은행 비율에서 푼다는 비율을 뺀 값(+ = 강화)이고, 한국은행 지수는 + 가 완화라 부호를 바꿔 같은 방향(+ = 강화)으로 그렸습니다.',
+    source: 'FRED: DRTSCILM (연준 SLOOS, 대·중기업 대출), 한국은행 ECOS: 514Y001 (대출행태서베이)',
+    defaultOn: true,
+    needs: () => [fred('DRTSCILM', 'Q'), ecos('514Y001/Q/AA'), ecos('514Y001/Q/AA04')],
+    build: (get) => {
+      const us = get('IND:FRED:DRTSCILM');
+      const kr = get('IND:ECOS:514Y001/Q/AA').map((p) => ({ ...p, value: -p.value }));
+      const krHome = get('IND:ECOS:514Y001/Q/AA04').map((p) => ({ ...p, value: -p.value }));
+      return {
+        lines: [
+          { key: 'us', label: '미국 기업대출 (강화 − 완화, %)', color: C.a },
+          { key: 'kr', label: '한국 은행 종합 (부호 바꿈)', color: C.b },
+          { key: 'krHome', label: '한국 가계 주택대출 (부호 바꿈)', color: C.d, dash: true },
+        ],
+        rows: joinSeries({ us, kr, krHome }),
+        unit: '',
+        refs: [{ y: 0, label: '+ 강화 / − 완화' }],
+        latest: latestOf([
+          { label: '미국', pts: us, unit: '', freq: 'Q', digits: 1 },
+          { label: '한국 종합', pts: kr, unit: '', freq: 'Q', digits: 0 },
+          { label: '한국 주택', pts: krHome, unit: '', freq: 'Q', digits: 0 },
+        ]),
+      };
+    },
+  },
+
+  // ------------------------------------------------------------ real estate (added)
+  {
+    id: 'jeonse-growth',
+    group: 'realestate',
+    title: '전세가격 상승률',
+    about:
+      'KB 아파트 전세가격의 1년 상승률을 매매가격과 함께 봅니다. 전세는 실제 거주 수요라 투기 거품이 적고, 전세가가 오르면 매매가와의 차이(갭)가 줄어 매매 수요로 옮겨 가기 쉬워 "전세가가 매매가를 밀어 올린다"고 합니다. 전세 상승률이 매매 상승률보다 높게 이어지면 매매가 상승 압력으로 읽습니다.',
+    source: '한국은행 ECOS: 901Y063, 901Y062 (KB 주택가격지수)',
+    defaultOn: true,
+    needs: () => [ecos('901Y063/M/P64AC'), ecos('901Y063/M/P64ACA'), ecos('901Y062/M/P63AC'), ecos('901Y062/M/P63ACA')],
+    build: (get) => {
+      const jn = yoy(get('IND:ECOS:901Y063/M/P64AC')), js = yoy(get('IND:ECOS:901Y063/M/P64ACA'));
+      const sn = yoy(get('IND:ECOS:901Y062/M/P63AC')), ss = yoy(get('IND:ECOS:901Y062/M/P63ACA'));
+      return {
+        lines: [
+          { key: 'js', label: '서울 아파트 전세', color: C.a },
+          { key: 'jn', label: '전국 아파트 전세', color: C.c },
+          { key: 'ss', label: '서울 아파트 매매', color: C.a, dash: true },
+          { key: 'sn', label: '전국 아파트 매매', color: C.c, dash: true },
+        ],
+        rows: joinSeries({ js, jn, ss, sn }),
+        unit: '% (1년)',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '서울 전세', pts: js, unit: '%', digits: 1 },
+          { label: '서울 매매', pts: ss, unit: '%', digits: 1 },
+          { label: '전국 전세', pts: jn, unit: '%', digits: 1 },
+          { label: '전국 매매', pts: sn, unit: '%', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'jeonse-ratio',
+    group: 'realestate',
+    title: '전세가율 (매매가 대비 전세가)',
+    about:
+      '아파트 중위 매매가격 대비 중위 전세가격의 비율입니다. 높으면 적은 돈으로 집을 살 수 있어(갭) 매수 수요가 붙기 쉽고 가격 하락을 받쳐 주며, 낮으면 매매가가 실거주 가치보다 많이 올랐다는 신호로 봅니다. 서울은 보통 전국보다 낮습니다.',
+    source: '한국부동산원 R-ONE: 전국주택가격동향조사 (중위 매매가격 대비 전세가격, 아파트)',
+    defaultOn: true,
+    usesRegion: 'sido',
+    needs: (p) => {
+      const r = regionOf(p.region);
+      return [rone('A_2024_00073', r.rone), rone('A_2024_00073', '500001')];
+    },
+    build: (get, p) => {
+      const r = regionOf(p.region);
+      const here = get(`IND:RONE:A_2024_00073/${r.rone}/100001`), all = get('IND:RONE:A_2024_00073/500001/100001');
+      return {
+        lines: [
+          { key: 'here', label: `${r.name} 전세가율`, color: C.a },
+          ...(r.rone === '500001' ? [] : [{ key: 'all', label: '전국 전세가율', color: C.muted, dash: true }]),
+        ],
+        rows: joinSeries(r.rone === '500001' ? { here } : { here, all }),
+        unit: '%',
+        latest: latestOf([
+          { label: `${r.name}`, pts: here, unit: '%', digits: 1 },
+          ...(r.rone === '500001' ? [] : [{ label: '전국', pts: all, unit: '%', digits: 1 }]),
+        ]),
+      };
+    },
+  },
+  {
+    id: 'rone-demand',
+    group: 'realestate',
+    title: '매수 심리: 매매수급·전세수급 동향',
+    about:
+      '한국부동산원이 중개업소에 매수자와 매도자 중 어느 쪽이 많은지 물어 만든 지수입니다(0~200). 100보다 크면 사려는 사람이, 작으면 팔려는 사람이 많습니다. 매매수급은 가격보다 먼저 움직이는 경우가 많고, 전세수급이 높으면 전세 매물이 부족해 전세가가 오르기 쉽습니다. KB 매수우위지수와 같은 성격이지만 KB 지수는 공개 API가 없어 부동산원 지수를 씁니다.',
+    source: '한국부동산원 R-ONE: 전국주택가격동향조사 (매매·전세 수급동향, 아파트)',
+    defaultOn: true,
+    usesRegion: 'sido',
+    needs: (p) => {
+      const r = regionOf(p.region);
+      return [rone('A_2024_00076', r.rone), rone('A_2024_00077', r.rone)];
+    },
+    build: (get, p) => {
+      const r = regionOf(p.region);
+      const buy = get(`IND:RONE:A_2024_00076/${r.rone}/100001`), rent = get(`IND:RONE:A_2024_00077/${r.rone}/100001`);
+      return {
+        lines: [
+          { key: 'buy', label: `${r.name} 매매수급`, color: C.a },
+          { key: 'rent', label: `${r.name} 전세수급`, color: C.d },
+        ],
+        rows: joinSeries({ buy, rent }),
+        unit: '',
+        refs: [{ y: 100, label: '균형 100' }],
+        latest: latestOf([
+          { label: '매매수급', pts: buy, unit: '', digits: 1 },
+          { label: '전세수급', pts: rent, unit: '', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'trade-cycle',
+    group: 'realestate',
+    title: '거래량과 벌집순환 국면',
+    about:
+      '거래량은 가격보다 먼저 움직입니다. 벌집순환모형은 가격과 거래량의 조합으로 시장을 여섯 국면으로 나눕니다: 1 회복기(가격↑ 거래↑) → 2 활황기(가격↑ 거래↓) → 3 침체 진입기(가격→ 거래↓) → 4 침체기(가격↓ 거래↓) → 5 불황기(가격↓ 거래↑) → 6 회복 진입기(가격→ 거래↑) → 다시 1. 가격은 아파트 매매가격지수의 6개월 변화, 거래량은 최근 6개월 거래를 그 전 6개월과 비교합니다. 국면 판정은 참고용입니다.',
+    source: '한국부동산원 R-ONE: 아파트거래현황, 아파트 매매가격지수',
+    defaultOn: true,
+    usesRegion: 'sido',
+    needs: (p) => {
+      const r = regionOf(p.region);
+      return [rone('A_2024_00045', r.rone), ...(r.roneTrade ? [rone('A_2024_00549', r.roneTrade)] : [])];
+    },
+    build: (get, p) => {
+      const r = regionOf(p.region);
+      const price = changeOver(get(`IND:RONE:A_2024_00045/${r.rone}/100001`), 6);
+      const deals = r.roneTrade ? get(`IND:RONE:A_2024_00549/${r.roneTrade}/100001`) : [];
+      const six = rollingSum(deals, 6);
+      const volume = changeOver(six, 6);
+      const lp = price.at(-1), lv = volume.find((v) => v.date === lp?.date) ?? volume.at(-1);
+      const phase = lp && lv ? honeycombPhase(lp.value, lv.value) : null;
+      const k = deals.map((d) => ({ ...d, value: d.value / 1000 }));
+      return {
+        lines: [
+          { key: 'k', label: `${r.name} 아파트 거래`, color: C.muted, kind: 'bar', axis: 'right' },
+          { key: 'price', label: '가격 6개월 변화', color: C.a },
+          { key: 'volume', label: '거래량 6개월 변화 (÷10)', color: C.b },
+        ],
+        rows: joinSeries({ k, price, volume: volume.map((v) => ({ ...v, value: v.value / 10 })) }),
+        unit: '%',
+        rightUnit: '천 건',
+        refs: [{ y: 0, label: '' }],
+        latest: [
+          ...(phase && lp ? [{ label: '국면', value: phase.name, date: lp.date.slice(0, 7) }] : []),
+          ...latestOf([
+            { label: '가격 6개월', pts: price, unit: '%', digits: 2 },
+            { label: '거래량 6개월', pts: volume, unit: '%', digits: 0 },
+            { label: '월 거래', pts: k, unit: '천 건', digits: 1 },
+          ]),
+        ],
+        note: r.roneTrade ? '거래량 변화는 가격과 같은 축에 그리려고 10으로 나눴습니다.' : `${r.name}은 아파트거래현황 자료가 없어(전남광주 통합) 거래량 없이 가격만 보여 줍니다.`,
+      };
+    },
+  },
+  {
+    id: 'starts-pipeline',
+    group: 'realestate',
+    title: '공급 파이프라인: 착공 → 입주',
+    about:
+      '아파트는 착공하고 보통 2년 반~3년 뒤 입주합니다. 주거용 건축 착공 면적(12개월 합)을 30개월 뒤로 옮긴 점선이 앞으로 입주가 몰리거나 줄어드는 시기를 대략 보여 줍니다. 입주가 몰리면 전세가와 매매가가 눌리고, 끊기면 몇 년 뒤 공급 부족이 옵니다. 미분양(오른쪽 축)과 함께 봅니다. 전국 자료입니다.',
+    source: '한국은행 ECOS: 901Y103 (건축착공, 주거용 연면적), 901Y074 (미분양주택)',
+    defaultOn: true,
+    needs: () => [ecos('901Y103/M/1/I47ABA'), ecos('901Y074/M/I410A')],
+    build: (get) => {
+      const starts = rollingSum(get('IND:ECOS:901Y103/M/1/I47ABA'), 12).map((p) => ({ ...p, value: p.value / 10_000 }));
+      const landing = shiftMonths(starts, 30);
+      const unsold = get('IND:ECOS:901Y074/M/I410A').map((p) => ({ ...p, value: p.value / 1000 }));
+      return {
+        lines: [
+          { key: 'starts', label: '주거용 착공 (12개월 합)', color: C.a, kind: 'area' },
+          { key: 'landing', label: '입주 추정 (착공 30개월 뒤)', color: C.b, dash: true },
+          { key: 'unsold', label: '미분양 (전국)', color: C.d, axis: 'right' },
+        ],
+        rows: joinSeries({ starts, landing, unsold }),
+        unit: '만 ㎡',
+        rightUnit: '천 호',
+        latest: latestOf([
+          { label: '착공 12개월', pts: starts, unit: '만 ㎡', digits: 0 },
+          { label: '미분양', pts: unsold, unit: '천 호', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'affordability',
+    group: 'realestate',
+    title: '주택구입부담 (K-HAI 방식, 자체 계산)',
+    about:
+      '평균 주택을 집값의 47.9%만큼 대출(20년, 원리금균등, 그해 평균 주택담보대출 금리)받아 살 때, 매달 갚는 돈이 가구 월소득의 몇 %인지를 25%를 100으로 놓고 나타냅니다. 주택금융공사 주택구입부담지수(K-HAI)의 계산 방식을 따랐지만, 공사는 중위 주택·중위 소득을 쓰고 여기서는 평균값을 써서 숫자는 공사 발표와 다릅니다. PIR과 달리 금리 변화가 반영됩니다. 100을 넘으면 소득의 4분의 1 넘게 원리금으로 나간다는 뜻입니다.',
+    source: '한국은행 ECOS: 291Y524, 901Y106, 903Y201·903Y001(또는 903Y206·903Y006), 121Y006',
+    defaultOn: true,
+    usesRegion: 'sido',
+    usesIncome: true,
+    needs: (p) => [...indicatorById('pir')!.needs(p), ecos('121Y006/M/BECBLA0302')],
+    build: (get, p) => {
+      const r = regionOf(p.region);
+      const value = get(`IND:ECOS:291Y524/A/${r.value}`);
+      const stock = get(`IND:ECOS:901Y106/A/${r.stock}`);
+      const [older, newer] = p.incomeBase === 'region' ? [`903Y001/A/T01/A0100/${r.income}/C04`, `903Y201/A/T01/A0100/${r.income}/C04`] : [`903Y006/A/T01/A0100/${p.incomeBase}/C04`, `903Y206/A/T01/A0100/${p.incomeBase}/C04`];
+      const income = shiftYears(splice(get(`IND:ECOS:${older}`), get(`IND:ECOS:${newer}`)), -1);
+      const avgValue = combine(value, stock, (v, s) => (s > 0 ? (v * 1e9) / (s * 1e3) / 1e4 : null));
+      const rate = yearlyMean(get('IND:ECOS:121Y006/M/BECBLA0302'));
+      const hai = avgValue.flatMap((v) => {
+        const i = income.find((x) => x.date === v.date), rt = rate.find((x) => x.date === v.date);
+        return i && rt && i.value > 0 ? [{ date: v.date, value: affordability(v.value, i.value, rt.value) }] : [];
+      });
+      return {
+        lines: [
+          { key: 'hai', label: `${r.name} 주택구입부담`, color: C.a, kind: 'bar' },
+          { key: 'rate', label: '주택담보대출 금리 (연평균)', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ hai, rate: rate.filter((x) => hai.some((h) => h.date === x.date)) }),
+        unit: '',
+        rightUnit: '%',
+        refs: [{ y: 100, label: '소득의 25%' }],
+        latest: latestOf([
+          { label: '부담지수', pts: hai, unit: '', freq: 'A', digits: 0 },
+          { label: '대출금리', pts: rate, unit: '%', freq: 'A', digits: 2 },
+        ]),
+      };
+    },
+  },
+
+  // ------------------------------------------------------------ liquidity and flows
+  {
+    id: 'us-net-liquidity',
+    group: 'liquidity',
+    title: '미국 순유동성: 연준 자산 − TGA − 역레포',
+    about:
+      '연준이 푼 돈(총자산) 가운데 재무부 계좌(TGA)에 묶여 있거나 역레포로 연준에 다시 맡겨진 돈을 뺀 "시장에 실제로 도는 돈"입니다. 월가에서 주식·코인 같은 위험자산과 함께 많이 봅니다. 재무부가 국채를 많이 찍어 TGA를 채우면 시장 돈이 빨려 들어가고, 역레포 잔액은 시장으로 풀려 나올 수 있는 여력입니다. 점선은 은행 지급준비금입니다.',
+    source: 'FRED: WALCL, WTREGEN, RRPONTSYD, WRESBAL (월말)',
+    defaultOn: true,
+    needs: () => [fred('WALCL'), fred('WTREGEN'), fred('RRPONTSYD'), fred('WRESBAL')],
+    build: (get) => {
+      const assets = get('IND:FRED:WALCL').map((p) => ({ ...p, value: p.value / 1e6 }));
+      const tga = get('IND:FRED:WTREGEN').map((p) => ({ ...p, value: p.value / 1e6 }));
+      const rrp = get('IND:FRED:RRPONTSYD').map((p) => ({ ...p, value: p.value / 1e3 }));
+      const reserves = get('IND:FRED:WRESBAL').map((p) => ({ ...p, value: p.value / 1e6 }));
+      const net = combine(combine(assets, tga, (a, b) => a - b), rrp, (a, b) => a - b);
+      return {
+        lines: [
+          { key: 'net', label: '순유동성', color: C.a, kind: 'area' },
+          { key: 'assets', label: '연준 총자산', color: C.ink },
+          { key: 'reserves', label: '지급준비금', color: C.c, dash: true },
+          { key: 'tga', label: 'TGA (재무부 계좌)', color: C.b, axis: 'right' },
+          { key: 'rrp', label: '역레포', color: C.d, axis: 'right' },
+        ],
+        rows: joinSeries({ net, assets, reserves, tga, rrp }),
+        unit: '조 달러',
+        rightUnit: '조 달러',
+        latest: latestOf([
+          { label: '순유동성', pts: net, unit: '조 달러', digits: 2 },
+          { label: 'TGA', pts: tga, unit: '조 달러', digits: 2 },
+          { label: '역레포', pts: rrp, unit: '조 달러', digits: 2 },
+          { label: '지급준비금', pts: reserves, unit: '조 달러', digits: 2 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'us-cash',
+    group: 'liquidity',
+    title: '미국 대기자금: MMF',
+    about:
+      '머니마켓펀드(MMF)는 주식·채권에 들어가지 않고 기다리는 현금이 모이는 곳이라 "대기자금"으로 봅니다. 잔액이 사상 최대여도 금리가 높으면 이자를 받으며 머무르고, 금리가 내려가면 일부가 위험자산으로 옮겨 갈 여력으로 읽습니다. 분기 자료는 전체 MMF(연준 금융계정), 월 자료는 개인 MMF입니다.',
+    source: 'FRED: MMMFFAQ027S (전체, 분기), WRMFNS (개인, 월)',
+    defaultOn: true,
+    needs: () => [fred('MMMFFAQ027S', 'Q'), fred('WRMFNS')],
+    build: (get) => {
+      const total = get('IND:FRED:MMMFFAQ027S').map((p) => ({ ...p, value: p.value / 1e6 }));
+      const retail = get('IND:FRED:WRMFNS').map((p) => ({ ...p, value: p.value / 1e3 }));
+      return {
+        lines: [
+          { key: 'total', label: 'MMF 전체 (분기)', color: C.a, kind: 'area' },
+          { key: 'retail', label: '개인 MMF (월)', color: C.b },
+        ],
+        rows: joinSeries({ total, retail }),
+        unit: '조 달러',
+        latest: latestOf([
+          { label: 'MMF 전체', pts: total, unit: '조 달러', freq: 'Q', digits: 2 },
+          { label: '개인 MMF', pts: retail, unit: '조 달러', digits: 2 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'us-margin',
+    group: 'liquidity',
+    title: '미국 신용(빚투) 규모',
+    about:
+      '증권사가 고객에게 빌려준 돈(신용융자에 해당)과 그것이 주식 시가총액의 몇 %인지입니다. 빚을 내 투자하는 돈이 빠르게 늘면 상승장의 연료가 되지만, 하락할 때 반대매매로 낙폭을 키웁니다.',
+    source: 'FRED: BOGZ1FL663067003Q (연준 금융계정, 증권사의 고객 신용), NCBEILQ027S',
+    defaultOn: false,
+    needs: () => [fred('BOGZ1FL663067003Q', 'Q'), fred('NCBEILQ027S', 'Q')],
+    build: (get) => {
+      const margin = get('IND:FRED:BOGZ1FL663067003Q');
+      const share = combine(margin, get('IND:FRED:NCBEILQ027S'), (a, b) => (b > 0 ? (a / b) * 100 : null));
+      // 백만 달러 → 억 달러
+      const bn = margin.map((p) => ({ ...p, value: p.value / 100 }));
+      return {
+        lines: [
+          { key: 'bn', label: '고객 신용', color: C.a, kind: 'area' },
+          { key: 'share', label: '시가총액 대비', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ bn, share }),
+        unit: '억 달러',
+        rightUnit: '%',
+        latest: latestOf([
+          { label: '고객 신용', pts: bn, unit: '억 달러', freq: 'Q', digits: 0 },
+          { label: '시가총액 대비', pts: share, unit: '%', freq: 'Q', digits: 2 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-idle-money',
+    group: 'liquidity',
+    title: '한국 대기자금: MMF · 예금 · 투자자예탁금',
+    about:
+      '언제든 투자로 옮겨 갈 수 있는 돈의 크기입니다. MMF와 요구불·수시입출식 예금은 바로 꺼낼 수 있는 단기 자금이고, 투자자예탁금은 증권 계좌에서 주식을 사려고 기다리는 돈입니다. 정기예금은 금리가 내려 만기 때 다시 맡기지 않으면 주식·부동산으로 옮겨 갈 수 있는 잠재 자금입니다. 이 돈이 늘어 있고 금리가 내려가는 시기에는 자산 가격을 밀어 올릴 여력이 큽니다.',
+    source: '한국은행 ECOS: 161Y008 (M2 상품별, 말잔), 104Y015 (예금은행 정기예금), 901Y056 (증시주변자금)',
+    defaultOn: true,
+    needs: () => [ecos('161Y008/M/BBGA04'), ecos('161Y008/M/BBGA02'), ecos('161Y008/M/BBGA03'), ecos('104Y015/M/BDAA31'), ecos('901Y056/M/S23A')],
+    build: (get) => {
+      const jo = (pts: Point[], div: number) => pts.map((p) => ({ ...p, value: p.value / div }));
+      const mmf = jo(get('IND:ECOS:161Y008/M/BBGA04'), 1000);
+      const demand = jo(sumAll([get('IND:ECOS:161Y008/M/BBGA02'), get('IND:ECOS:161Y008/M/BBGA03')]), 1000);
+      const time = jo(get('IND:ECOS:104Y015/M/BDAA31'), 1000);
+      const deposit = jo(get('IND:ECOS:901Y056/M/S23A'), 1e12);
+      return {
+        lines: [
+          { key: 'demand', label: '요구불 + 수시입출식 예금', color: C.c },
+          { key: 'time', label: '정기예금 (예금은행)', color: C.muted, dash: true },
+          { key: 'mmf', label: 'MMF', color: C.a, axis: 'right' },
+          { key: 'deposit', label: '투자자예탁금', color: C.b, axis: 'right' },
+        ],
+        rows: joinSeries({ demand, time, mmf, deposit }),
+        unit: '조원',
+        rightUnit: '조원',
+        latest: latestOf([
+          { label: '요구불·수시입출식', pts: demand, unit: '조원', digits: 0 },
+          { label: '정기예금', pts: time, unit: '조원', digits: 0 },
+          { label: 'MMF', pts: mmf, unit: '조원', digits: 1 },
+          { label: '투자자예탁금', pts: deposit, unit: '조원', digits: 1 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-market-leverage',
+    group: 'liquidity',
+    title: '한국 증시 자금: 예탁금과 신용융자',
+    about:
+      '투자자예탁금은 주식을 살 수 있게 대기 중인 돈, 신용융자는 증권사에서 빌려 주식을 산 돈(빚투)입니다. 예탁금 대비 신용융자 비율이 높을수록 개인이 빚을 많이 지고 있다는 뜻으로, 시장이 꺾일 때 반대매매가 쏟아질 위험이 커집니다. 위탁매매 미수금도 단기 빚투의 크기입니다.',
+    source: '한국은행 ECOS: 901Y056 (금융투자협회 증시주변자금)',
+    defaultOn: true,
+    needs: () => [ecos('901Y056/M/S23A'), ecos('901Y056/M/S23E'), ecos('901Y056/M/S23D')],
+    build: (get) => {
+      const deposit = get('IND:ECOS:901Y056/M/S23A').map((p) => ({ ...p, value: p.value / 1e12 }));
+      const credit = get('IND:ECOS:901Y056/M/S23E').map((p) => ({ ...p, value: p.value / 1e12 }));
+      const unpaid = get('IND:ECOS:901Y056/M/S23D').map((p) => ({ ...p, value: p.value / 1e12 }));
+      const ratio = combine(credit, deposit, (c, d) => (d > 0 ? (c / d) * 100 : null));
+      return {
+        lines: [
+          { key: 'deposit', label: '투자자예탁금', color: C.a, kind: 'area' },
+          { key: 'credit', label: '신용융자 잔고', color: C.b },
+          { key: 'unpaid', label: '위탁매매 미수금', color: C.d },
+          { key: 'ratio', label: '신용융자 / 예탁금', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ deposit, credit, unpaid, ratio }),
+        unit: '조원',
+        rightUnit: '%',
+        latest: latestOf([
+          { label: '예탁금', pts: deposit, unit: '조원', digits: 1 },
+          { label: '신용융자', pts: credit, unit: '조원', digits: 1 },
+          { label: '신용/예탁', pts: ratio, unit: '%', digits: 0 },
+        ]),
+      };
+    },
+  },
+  {
+    id: 'kr-investor-flows',
+    group: 'liquidity',
+    title: '한국 투자자별 순매수 (KOSPI)',
+    about:
+      '개인·외국인·기관이 주식을 산 금액에서 판 금액을 뺀 값입니다. 그래프는 최근 12개월을 더한 값이라 어느 쪽으로 꾸준히 사거나 팔았는지가 보이고, 최근 값에는 그달의 순매수가 나옵니다. 외국인 순매수는 코스피 방향과 가장 밀접하고, 개인은 하락장에서 사고 상승장에서 파는 경우가 많습니다.',
+    source: '한국은행 ECOS: 901Y055 (투자자별 주식거래, 거래대금)',
+    defaultOn: true,
+    needs: () => [ecos('901Y055/M/S22CB/VA'), ecos('901Y055/M/S22CC/VA'), ecos('901Y055/M/S22CA/VA')],
+    build: (get) => {
+      const jo = (id: string) => get(id).map((p) => ({ ...p, value: p.value / 1e6 }));
+      const retail = jo('IND:ECOS:901Y055/M/S22CB/VA'), foreign = jo('IND:ECOS:901Y055/M/S22CC/VA'), inst = jo('IND:ECOS:901Y055/M/S22CA/VA');
+      // Twelve-month sums show which way each group has leaned; the month itself is in the latest values
+      const y = (pts: Point[]) => rollingSum(pts, 12);
+      return {
+        lines: [
+          { key: 'retail', label: '개인 (12개월 누적)', color: C.a },
+          { key: 'foreign', label: '외국인 (12개월 누적)', color: C.b },
+          { key: 'inst', label: '기관 (12개월 누적)', color: C.c },
+        ],
+        rows: joinSeries({ retail: y(retail), foreign: y(foreign), inst: y(inst) }),
+        unit: '조원',
+        refs: [{ y: 0, label: '' }],
+        latest: latestOf([
+          { label: '개인 (월)', pts: retail, unit: '조원', digits: 1 },
+          { label: '외국인 (월)', pts: foreign, unit: '조원', digits: 1 },
+          { label: '기관 (월)', pts: inst, unit: '조원', digits: 1 },
+          { label: '외국인 12개월', pts: y(foreign), unit: '조원', digits: 1 },
+        ]),
+      };
+    },
+  },
 ];
 
 export const indicatorById = (id: string) => INDICATORS.find((i) => i.id === id);
@@ -784,6 +1543,48 @@ export function parseKosis(body: unknown): { rows: { region: string; age: string
     return [{ region: String(r.C1 ?? ''), age: String(r.C2 ?? ''), date: `${prd.slice(0, 4)}-${prd.slice(4)}-01`, value: v }];
   });
   return { rows, error: null, code: null };
+}
+
+/** 한국부동산원 R-ONE SttsApiTblData (json): rows with WRTTIME_IDTFR_ID "202607" and DTA_VAL. */
+export function parseRone(body: unknown): { points: Point[]; total: number; error: string | null; code: string | null } {
+  const b = body as { SttsApiTblData?: [{ head?: [{ list_total_count?: number }, { RESULT?: { CODE?: string; MESSAGE?: string } }] }, { row?: Record<string, unknown>[] }?]; RESULT?: { CODE?: string; MESSAGE?: string } } | null;
+  const result = b?.SttsApiTblData?.[0]?.head?.[1]?.RESULT ?? b?.RESULT;
+  const code = result?.CODE ?? null;
+  if (!b?.SttsApiTblData) return { points: [], total: 0, code, error: code === 'INFO-200' ? null : (result?.MESSAGE ?? 'R-ONE 응답을 읽지 못했습니다') };
+  const total = Number(b.SttsApiTblData[0]?.head?.[0]?.list_total_count ?? 0);
+  const points = (b.SttsApiTblData[1]?.row ?? []).flatMap((r) => {
+    const t = String(r.WRTTIME_IDTFR_ID ?? '');
+    const v = r.DTA_VAL;
+    if (!/^\d{6}$/.test(t) || v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) return [];
+    return [{ date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }];
+  });
+  return { points: points.sort((a, b2) => a.date.localeCompare(b2.date)), total, error: null, code };
+}
+
+/**
+ * The New York Fed's Laubach-Williams sheet "data": a header row with "Date" and, under
+ * "One-Sided Estimates", "rstar" and "Output gap" (the first of each, the one-sided ones).
+ */
+export function parseLw(rows: unknown[][]): { rstar: Point[]; gap: Point[] } {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  const h = rows.findIndex((r) => r?.some((c) => text(c) === 'date') && r.some((c) => text(c) === 'rstar'));
+  if (h < 0) return { rstar: [], gap: [] };
+  const head = rows[h];
+  const di = head.findIndex((c) => text(c) === 'date');
+  const ri = head.findIndex((c) => text(c) === 'rstar');
+  const gi = head.findIndex((c) => text(c) === 'output gap');
+  const dateOf = (v: unknown): string | null => {
+    const d = v instanceof Date ? v.toISOString() : typeof v === 'string' ? v : null;
+    return d && /^\d{4}-\d{2}-\d{2}/.test(d) ? `${d.slice(0, 7)}-01` : null;
+  };
+  const rstar: Point[] = [], gap: Point[] = [];
+  for (const r of rows.slice(h + 1)) {
+    const date = dateOf(r?.[di]);
+    if (!date) continue;
+    if (typeof r[ri] === 'number') rstar.push({ date, value: r[ri] as number });
+    if (gi >= 0 && typeof r[gi] === 'number') gap.push({ date, value: r[gi] as number });
+  }
+  return { rstar, gap };
 }
 
 /** The ACM sheet ("DATE", "ACMY01", ...) → month-start points per column. Dates read "30-Sep-2026". */

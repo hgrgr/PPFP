@@ -117,25 +117,41 @@ const SHOTS: Shot[] = [
     path: () => '/analysis',
     width: 1440,
     // Tall from the start: headless Chrome leaves charts that start below the first screen empty
-    height: 6000,
-    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 60_000 }, { wait: 1500 }],
-    clip: [{ sel: '.page-head' }, { sel: 'h2', text: '금리', closest: 'section' }],
+    height: 14000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: '.page-head' }, { sel: '#ind-us-10y-fisher' }],
     marks: [{ sel: '[aria-label="기간"]' }, { sel: 'select', closest: 'label' }, { sel: 'summary', text: '지표 고르기' }, { sel: '.indicator .ind-latest' }, { sel: '[aria-label="선 켜고 끄기"]' }],
   },
   {
     file: 'analysis-realestate',
     path: () => '/analysis',
     width: 1440,
-    height: 6000,
-    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 60_000 }, { wait: 1500 }],
+    height: 14000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
     clip: [{ sel: 'h2', text: '부동산', closest: 'section' }],
+  },
+  {
+    file: 'analysis-cycle',
+    path: () => '/analysis',
+    width: 1440,
+    height: 14000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'h2', text: '경기 사이클', closest: 'section' }],
+  },
+  {
+    file: 'analysis-liquidity',
+    path: () => '/analysis',
+    width: 1440,
+    height: 14000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'h2', text: '유동성 · 수급', closest: 'section' }],
   },
   {
     file: 'analysis-stocks',
     path: () => '/analysis',
     width: 1440,
-    height: 6000,
-    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 60_000 }, { wait: 1500 }],
+    height: 14000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
     clip: [{ sel: 'h2', text: '주식 · 위험', closest: 'section' }],
   },
   {
@@ -1101,7 +1117,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
     let full = 0;
     if (shot.clip) {
       full = await run('Math.ceil(document.documentElement.scrollHeight)');
-      await s('Emulation.setDeviceMetricsOverride', { width, height: Math.min(full, 6000), deviceScaleFactor: scale, mobile: !!shot.mobile });
+      await s('Emulation.setDeviceMetricsOverride', { width, height: Math.min(full, Math.max(6000, height)), deviceScaleFactor: scale, mobile: !!shot.mobile });
       // Charts that just came into view lay out and animate
       await sleep(2000);
       // A chart sized while it was off screen can stay empty for a while; wait until each has drawn
@@ -1118,7 +1134,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
     const clip = shot.clip ? { ...(await run(`__docs.box(${JSON.stringify(shot.clip)}, ${shot.pad ?? 28})`)), scale: 1 } : undefined;
     // When the whole page fits the window, capture it as shown: capturing beyond the viewport
     // sometimes leaves SVG charts out
-    const { data } = await s('Page.captureScreenshot', { format: 'webp', quality: 92, captureBeyondViewport: !!clip && full > 6000, ...(clip ? { clip } : {}) });
+    const { data } = await s('Page.captureScreenshot', { format: 'webp', quality: 92, captureBeyondViewport: !!clip && full > Math.max(6000, height), ...(clip ? { clip } : {}) });
     const file = path.join(OUT, `${shot.file}.webp`);
     writeFileSync(file, Buffer.from(data, 'base64'));
     console.log(`  ${shot.file}.webp  ${(Buffer.byteLength(data, 'base64') / 1024).toFixed(0)} KB`);
@@ -1172,6 +1188,7 @@ async function main() {
     PPFP_FAKE_INDICATORS: '1',
     ECOS_API_KEY: 'DOCSDEMOECOSKEY0000',
     KOSIS_API_KEY: 'docsDemoKosisKeyNotReal0000',
+    RONE_API_KEY: 'docsDemoRoneKeyNotReal0000',
     // Two-step sign-in, devices and a backup record for the security screens (seed-demo.ts)
     DOCS_CAPTURE: '1',
   };
