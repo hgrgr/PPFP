@@ -91,7 +91,22 @@ async function loadKosis(userId: string, reqs: SeriesReq[], key: string) {
     const [, , , region] = r.code.split('/');
     byRegion.set(region, [...(byRegion.get(region) ?? []), r]);
   }
-  for (const [region, list] of byRegion) {
+  for (const [region, all] of byRegion) {
+    // 세대수 (DT_1B040B3) has no age split: every item is fetched and the one named 세대수 kept
+    for (const r of all.filter((x) => x.code.split('/')[1] === 'DT_1B040B3')) {
+      const [orgId, tblId] = r.code.split('/');
+      const q = new URLSearchParams({ method: 'getList', apiKey: key, orgId, tblId, itmId: 'ALL', objL1: region, format: 'json', jsonVD: 'Y', prdSe: 'M', startPrdDe: '201101', endPrdDe: ym(kstDate()) });
+      const res = parseKosis(JSON.parse(await getText(`https://kosis.kr/openapi/Param/statisticsParameterData.do?${q}`, userId, 'kosis')));
+      if (res.error && !res.rows.length) {
+        if (res.code === '30') continue;
+        throw new Error(res.error);
+      }
+      const names = [...new Set(res.rows.map((x) => x.item))];
+      const name = names.find((n) => n.replace(/\s/g, '') === '세대수') ?? names.find((n) => n.includes('세대수') && !n.includes('당')) ?? names[0];
+      await store(r.id, 'KOSIS', res.rows.filter((x) => x.region === region && x.item === name).map((x) => ({ date: x.date, value: x.value })).sort((a, b) => a.date.localeCompare(b.date)));
+    }
+    const list = all.filter((x) => x.code.split('/')[1] !== 'DT_1B040B3');
+    if (!list.length) continue;
     const [orgId, tblId, itmId] = list[0].code.split('/');
     const ages = list.map((r) => r.code.split('/')[4]);
     const q = new URLSearchParams({ method: 'getList', apiKey: key, orgId, tblId, itmId, objL1: region, objL2: ages.join(' '), format: 'json', jsonVD: 'Y', prdSe: 'M', startPrdDe: '201101', endPrdDe: ym(kstDate()) });
