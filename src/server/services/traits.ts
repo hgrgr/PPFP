@@ -224,7 +224,7 @@ export async function traitOverview(userId: string): Promise<TraitOverview> {
     traitGroups(userId),
     assetTraitMap(userId),
     holdingValues(userId),
-    prisma.asset.findMany({ where: { userId, type: { not: 'LIABILITY' } }, orderBy: { name: 'asc' } }),
+    prisma.asset.findMany({ where: { userId, type: { not: 'LIABILITY' }, holdings: { some: {} } }, orderBy: { name: 'asc' } }),
     prisma.watchItem.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
   ]);
   const rows: TraitAssetRow[] = assets

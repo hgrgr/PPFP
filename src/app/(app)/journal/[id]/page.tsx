@@ -9,7 +9,9 @@ export const dynamic = 'force-dynamic';
 export default async function JournalPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
-  const [entry, assets, formats] = await Promise.all([getJournal(user.id, id), journalAssets(user.id), journalFormats(user.id)]);
+  const [entry, formats] = await Promise.all([getJournal(user.id, id), journalFormats(user.id)]);
   if (!entry) notFound();
+  // The entry's own asset stays pickable even if it was taken out of every portfolio
+  const assets = await journalAssets(user.id, { include: [entry.assetId] });
   return <JournalEntryForm entry={entry} assets={assets} formats={formats} />;
 }

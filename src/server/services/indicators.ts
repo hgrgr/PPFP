@@ -263,7 +263,7 @@ export async function indicatorView(userId: string, id: string, params: Analysis
 
 /** Population regions offered besides the 시도: the 시군구 of the user's linked real estate */
 export async function myPropertyDistricts(userId: string): Promise<{ code: string; name: string }[]> {
-  const assets = await prisma.asset.findMany({ where: { userId, type: 'REAL_ESTATE' }, select: { meta: true } });
+  const assets = await prisma.asset.findMany({ where: { userId, type: 'REAL_ESTATE', holdings: { some: {} } }, select: { meta: true } });
   const out = new Map<string, string>();
   for (const a of assets) {
     const m = a.meta as { lawdCd?: unknown; address?: unknown } | null;

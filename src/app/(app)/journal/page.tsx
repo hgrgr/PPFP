@@ -53,7 +53,7 @@ export default async function JournalListPage({ searchParams }: { searchParams: 
       </>
     );
   }
-  const [rows, assets] = await Promise.all([listJournals(user.id, { assetId: sp.asset, status: sp.status, q: sp.q?.trim() }), journalAssets(user.id)]);
+  const [rows, assets] = await Promise.all([listJournals(user.id, { assetId: sp.asset, status: sp.status, q: sp.q?.trim() }), journalAssets(user.id, { withJournals: true })]);
   const filtered = Boolean(sp.asset || sp.status || sp.q);
 
   return (
