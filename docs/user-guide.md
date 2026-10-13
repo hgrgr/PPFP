@@ -1738,8 +1738,8 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-13 | [`f97b69c`](https://github.com/hgrgr/PPFP/commit/f97b69c16f7b025a2c9c57ad826e7ffab702d5aa) | [#42](https://github.com/hgrgr/PPFP/pull/42) | — | 보유 자산에서 지운 종목이 매매일지 종목 목록·가격 알림·부동산 알림·자산 성질·투자 노트 연결·분석 지표 시군구 목록에 남던 문제 수정. 지운 종목으로 새 일지를 저장하면 거절 |
 | 2026-10-13 | [`0df0038`](https://github.com/hgrgr/PPFP/commit/0df0038bb388afbcc73576eb2ae651dd70b50d5a) | [#42](https://github.com/hgrgr/PPFP/pull/42) | 분석 지표 인구 카드에 주민등록 세대수와 세대당 인구, 세대수 관련 주목할 점 | — |
 | 2026-10-13 | [`c349e6c`](https://github.com/hgrgr/PPFP/commit/c349e6c23c584a0ace2e1ac7b4ced01602ffd309) | [#42](https://github.com/hgrgr/PPFP/pull/42) | 매매일지 *📈 분석 지표* 패널: 일지 옆에서 지표를 보고 그래프 그림·최근 값·주목할 점을 본문에 넣기 | — |
-| 2026-10-13 | [`f436619`](https://github.com/hgrgr/PPFP/commit/f436619cc8d3a72e6e5b96353360c833e151001e) | — | AI 어드바이저 *실적·공시 분석가*: SEC EDGAR의 10-K·10-Q·20-F·8-K 실적 발표를 읽고 요약(공시 목록, 본문·부분 읽기, XBRL 분기·연간 재무 수치). 분석 관점으로 내 가이드라인(예시: 성장주·배당·버핏·린치·피셔·그레이엄)과 투자 노트의 거장 | 사용량 · 비용에 SEC EDGAR |
-| 2026-10-13 | [`deafdcf`](https://github.com/hgrgr/PPFP/commit/deafdcf27be1e68531ec34829bd7396c11b0a28d) | — | 분석 지표 목차(그룹별 지표, 지금 주목할 점 개수)와 맨 위에 붙는 그룹 이동 막대 | — |
+| 2026-10-13 | [`f436619`](https://github.com/hgrgr/PPFP/commit/f436619cc8d3a72e6e5b96353360c833e151001e) | [#43](https://github.com/hgrgr/PPFP/pull/43) | AI 어드바이저 *실적·공시 분석가*: SEC EDGAR의 10-K·10-Q·20-F·8-K 실적 발표를 읽고 요약(공시 목록, 본문·부분 읽기, XBRL 분기·연간 재무 수치). 분석 관점으로 내 가이드라인(예시: 성장주·배당·버핏·린치·피셔·그레이엄)과 투자 노트의 거장 | 사용량 · 비용에 SEC EDGAR |
+| 2026-10-13 | [`deafdcf`](https://github.com/hgrgr/PPFP/commit/deafdcf27be1e68531ec34829bd7396c11b0a28d) | [#43](https://github.com/hgrgr/PPFP/pull/43) | 분석 지표 목차(그룹별 지표, 지금 주목할 점 개수)와 맨 위에 붙는 그룹 이동 막대 | — |
 
 ## 사라진 기능
 
