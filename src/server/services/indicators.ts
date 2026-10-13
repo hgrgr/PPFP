@@ -21,12 +21,16 @@ export type Missing = 'ECOS' | 'KOSIS';
 
 const inflight = new Map<string, Promise<void>>();
 
+/** Bumped when what is stored for a series changes (2: FRED month-end instead of average), so it is fetched again */
+const STORE_VERSION = 2;
+
 async function fetchedAt(id: string): Promise<number> {
   const row = await prisma.appSetting.findUnique({ where: { key: `ind:${id}` } });
-  return row ? Date.parse(row.value) || 0 : 0;
+  const [at, v] = (row?.value ?? '').split(' ');
+  return Number(v) === STORE_VERSION ? Date.parse(at) || 0 : 0;
 }
 async function markFetched(ids: string[]) {
-  const at = new Date().toISOString();
+  const at = `${new Date().toISOString()} ${STORE_VERSION}`;
   await prisma.$transaction(ids.map((id) => prisma.appSetting.upsert({ where: { key: `ind:${id}` }, create: { key: `ind:${id}`, value: at }, update: { value: at } })));
 }
 
@@ -60,9 +64,11 @@ function ecosRange(freq: SeriesReq['freq'], today: string): [string, string] {
 }
 
 async function loadFred(userId: string, r: SeriesReq) {
-  const monthly = r.freq === 'M' ? '&fq=Monthly&fam=avg' : '';
+  // The month's last close, as the ACM file's monthly sheet is month-end, so cards that set the
+  // market 10-year beside ACM's parts compare the same day
+  const monthly = r.freq === 'M' ? '&fq=Monthly&fam=eop' : '';
   const pts = parseFredCsv(await getText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(r.code)}&cosd=1950-01-01${monthly}`, userId, 'fred'));
-  // Monthly averages: a month still running is averaged so far; keep it, it settles at month end
+  // A month still running shows its latest close so far
   await store(r.id, 'FRED', pts.map((p) => ({ date: p.date, value: p.close })));
 }
 

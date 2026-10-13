@@ -77,18 +77,25 @@ describe('regions', () => {
 });
 
 describe('indicators', () => {
-  it('builds the ACM decomposition so the parts add up to the yield', () => {
+  it('explains the market 10-year with ACM parts, leaving the model residual', () => {
     const ind = indicatorById('us-10y-acm')!;
     const data: Record<string, Point[]> = {
-      'IND:ACM:ACMY10': pts(['2026-09-01', 5.26]),
+      'IND:FRED:DGS10': pts(['2026-09-01', 5.29]),
       'IND:ACM:ACMTP10': pts(['2026-09-01', 0.885]),
       'IND:ACM:ACMRNY10': pts(['2026-09-01', 4.375]),
       'IND:FRED:DFF': pts(['2026-09-01', 3.88]),
     };
+    assert.ok(!ind.needs({ region: '11', incomeBase: 'region' }).some((r) => r.id === 'IND:ACM:ACMY10'));
     const c = ind.build((id) => data[id] ?? [], { region: '11', incomeBase: 'region' });
-    const row = c.rows[0];
-    assert.equal(Number(row.rn) + Number(row.tp), Number(row.y));
-    assert.equal(c.latest[0].value, '5.26%');
+    assert.equal(c.rows[0].n, 5.29);
+    assert.deepEqual(c.latest.map((l) => l.value), ['5.29%', '4.38%', '0.89%p', '0.03%p']);
+  });
+
+  it('splits the market 10-year exactly into real yield and breakeven', () => {
+    const ind = indicatorById('us-10y-fisher')!;
+    const data: Record<string, Point[]> = { 'IND:FRED:DGS10': pts(['2026-09-01', 5.29]), 'IND:FRED:DFII10': pts(['2026-09-01', 2.9]) };
+    const c = ind.build((id) => data[id] ?? [], { region: '11', incomeBase: 'region' });
+    assert.equal(Number(c.rows[0].r) + Number(c.rows[0].b), Number(c.rows[0].n));
   });
 
   it('computes PIR as the average house value over the previous year’s household income', () => {

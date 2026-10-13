@@ -2,13 +2,15 @@
  * 분석 지표: macro series for rates, real estate and stocks, and the charts built from them.
  *
  * Every series is brought to one point per period, dated on the period's first day: daily
- * FRED series as monthly averages (fredgraph's fq=Monthly), ECOS and KOSIS as published
+ * FRED series as the month's last close (fredgraph's fq=Monthly&fam=eop, as the ACM file's
+ * monthly sheet is month-end), ECOS and KOSIS as published
  * (monthly, quarterly "2025-04-01", annual "2025-01-01"). Charts are pure functions of those
  * series, so the screen, the tests and the demo agree.
  *
- * The long-rate card follows the user's idea with two standard decompositions instead of one
- * sum: the 10-year yield = the expected path of short rates + the term premium (Adrian, Crump
- * & Moench 2013, New York Fed), and = the real (TIPS) yield + breakeven inflation (Fisher).
+ * The long-rate cards start from the market 10-year yield and explain it two standard ways
+ * instead of one sum: the expected path of short rates + the term premium (Adrian, Crump &
+ * Moench 2013, New York Fed; a few bp of model residual remain), and the real (TIPS) yield +
+ * breakeven inflation (Fisher; exact).
  * "Trust in the Fed" is not a residual of either; the market's usual gauge is the 5y5y
  * forward inflation expectation staying near 2% (anchored expectations).
  */
@@ -247,27 +249,33 @@ export const INDICATORS: Indicator[] = [
     group: 'rates',
     title: '미국 10년 금리 분해 ① 기대 단기금리 + 기간 프리미엄',
     about:
-      '10년 금리를 앞으로 10년간 예상되는 단기금리의 평균(기준금리 경로에 대한 기대)과, 장기채를 들고 있는 대가로 더 받는 기간 프리미엄으로 나눕니다. 뉴욕연준의 ACM 모형 추정치입니다. 금리가 오를 때 어느 쪽이 올렸는지 보면, 연준의 긴축 기대 때문인지(기대 단기금리) 재정·수급 불안 때문인지(기간 프리미엄) 구분할 수 있습니다.',
-    source: '뉴욕연준 ACM Term Premium, FRED (연방기금금리)',
+      '시장의 10년 국채금리(검은 선)를 앞으로 10년간 예상되는 단기금리의 평균(기준금리 경로에 대한 기대)과, 장기채를 들고 있는 대가로 더 받는 기간 프리미엄으로 나눕니다. 두 부분은 뉴욕연준 ACM 모형의 추정치입니다. 금리가 오를 때 어느 쪽이 올렸는지 보면, 연준의 긴축 기대 때문인지(기대 단기금리) 재정·수급 불안 때문인지(기간 프리미엄) 구분할 수 있습니다. 두 부분의 합과 시장 금리 사이에 남는 몇 bp는 모형 잔차입니다.',
+    source: '뉴욕연준 ACM Term Premium (월말), FRED: DGS10, 연방기금금리 (월말)',
     defaultOn: true,
-    needs: () => [acm('ACMY10'), acm('ACMTP10'), acm('ACMRNY10'), fred('DFF')],
+    needs: () => [acm('ACMTP10'), acm('ACMRNY10'), fred('DGS10'), fred('DFF')],
     build: (get) => {
-      const y = get('IND:ACM:ACMY10'), tp = get('IND:ACM:ACMTP10'), rn = get('IND:ACM:ACMRNY10'), ff = get('IND:FRED:DFF');
+      const n = get('IND:FRED:DGS10'), tp = get('IND:ACM:ACMTP10'), rn = get('IND:ACM:ACMRNY10'), ff = get('IND:FRED:DFF');
+      // What the two parts leave of the market yield: the fit error of the model, and that ACM
+      // models zero-coupon yields while DGS10 is the yield of coupon-paying bonds
+      const fitted = combine(rn, tp, (a, b) => a + b);
+      const residual = combine(n, fitted, (a, b) => a - b);
       return {
         lines: [
           { key: 'rn', label: '기대 단기금리 (10년 평균)', color: C.a, kind: 'area' },
           { key: 'tp', label: '기간 프리미엄', color: C.b, kind: 'bar' },
-          { key: 'y', label: '10년 금리 (모형)', color: C.ink },
+          { key: 'n', label: '10년 국채금리 (시장)', color: C.ink },
           { key: 'ff', label: '연방기금금리', color: C.muted, dash: true },
         ],
-        rows: joinSeries({ rn, tp, y, ff }),
+        rows: joinSeries({ rn, tp, n, ff }),
         unit: '%',
         refs: [{ y: 0, label: '' }],
         latest: latestOf([
-          { label: '10년 금리', pts: y, unit: '%' },
+          { label: '10년 금리 (시장)', pts: n, unit: '%' },
           { label: '기대 단기금리', pts: rn, unit: '%' },
           { label: '기간 프리미엄', pts: tp, unit: '%p' },
+          { label: '모형 잔차', pts: residual, unit: '%p' },
         ]),
+        note: '모든 값은 그달 마지막 거래일 기준입니다. 모형 잔차는 ACM이 쿠폰 없는 채권 금리를 모형으로 맞춘 값이라 생기는 작은 차이입니다.',
       };
     },
   },
@@ -276,26 +284,29 @@ export const INDICATORS: Indicator[] = [
     group: 'rates',
     title: '미국 10년 금리 분해 ② 실질금리 + 기대인플레이션',
     about:
-      '같은 10년 금리를 물가연동국채(TIPS) 금리, 곧 실질금리와 손익분기 기대인플레이션(BEI = 명목 − TIPS)으로 나눕니다. 실질금리가 오르면 성장주·장기자산의 할인율이 올라 부담이 커지고, 기대인플레이션이 오르면 물가 우려가 금리를 끌어올리는 것입니다.',
-    source: 'FRED: DGS10, DFII10, T10YIE (월평균)',
+      '같은 시장 10년 국채금리를 물가연동국채(TIPS) 금리, 곧 실질금리와 기대인플레이션(BEI = 명목 − TIPS)으로 나눕니다. 이 분해는 모형 없이 시장 가격만으로 정확히 맞아떨어집니다. 실질금리가 오르면 성장주·장기자산의 할인율이 올라 부담이 커지고, 기대인플레이션이 오르면 물가 우려가 금리를 끌어올리는 것입니다.',
+    source: 'FRED: DGS10, DFII10 (월말)',
     defaultOn: true,
-    needs: () => [fred('DGS10'), fred('DFII10'), fred('T10YIE')],
+    needs: () => [fred('DGS10'), fred('DFII10')],
     build: (get) => {
-      const n = get('IND:FRED:DGS10'), r = get('IND:FRED:DFII10'), b = get('IND:FRED:T10YIE');
+      const n = get('IND:FRED:DGS10'), r = get('IND:FRED:DFII10');
+      // Breakeven straight from the same two closes (as FRED's T10YIE is), so the parts add up exactly
+      const b = combine(n, r, (x, y) => x - y);
       return {
         lines: [
           { key: 'b', label: '기대인플레이션 (BEI 10년)', color: C.d, kind: 'area' },
           { key: 'r', label: '실질금리 (TIPS 10년)', color: C.c },
-          { key: 'n', label: '10년 국채금리', color: C.ink },
+          { key: 'n', label: '10년 국채금리 (시장)', color: C.ink },
         ],
         rows: joinSeries({ r, b, n }),
         unit: '%',
         refs: [{ y: 0, label: '' }],
         latest: latestOf([
-          { label: '10년 금리', pts: n, unit: '%' },
+          { label: '10년 금리 (시장)', pts: n, unit: '%' },
           { label: '실질금리', pts: r, unit: '%' },
           { label: '기대인플레이션', pts: b, unit: '%' },
         ]),
+        note: '모든 값은 그달 마지막 거래일 기준입니다.',
       };
     },
   },
@@ -305,7 +316,7 @@ export const INDICATORS: Indicator[] = [
     title: '연준에 대한 신뢰: 5년 뒤 5년 기대인플레이션',
     about:
       '시장이 5년 뒤부터 5년간 예상하는 물가상승률(5y5y)입니다. 단기 물가가 흔들려도 이 값이 연준 목표 2% 근처에 머물면 시장이 연준을 믿는 것이고(기대가 고정됨), 오래 벗어나면 신뢰가 흔들리는 신호입니다. 연준 신뢰를 금리의 나머지 값으로 계산하지 않는 이유는, 그 나머지에 모형 오차와 다른 위험이 함께 섞이기 때문입니다.',
-    source: 'FRED: T5YIFR (월평균)',
+    source: 'FRED: T5YIFR (월말)',
     defaultOn: true,
     needs: () => [fred('T5YIFR')],
     build: (get) => {
@@ -325,7 +336,7 @@ export const INDICATORS: Indicator[] = [
     title: '미국 장단기 금리차',
     about:
       '10년 금리에서 3개월·2년 금리를 뺀 값입니다. 0 아래로 뒤집히면(역전) 시장이 앞으로 금리 인하, 곧 경기 둔화를 예상한다는 뜻이라 경기침체 예측에 가장 많이 쓰입니다(뉴욕연준은 10년−3개월을 씁니다). 역전이 풀리며 다시 벌어질 때 침체가 시작된 경우가 많았습니다.',
-    source: 'FRED: T10Y3M, T10Y2Y (월평균)',
+    source: 'FRED: T10Y3M, T10Y2Y (월말)',
     defaultOn: true,
     needs: () => [fred('T10Y3M'), fred('T10Y2Y')],
     build: (get) => {
@@ -663,7 +674,7 @@ export const INDICATORS: Indicator[] = [
     group: 'stocks',
     title: '위험 선호: 하이일드 스프레드와 VIX',
     about: '하이일드 회사채가 국채보다 더 받는 금리(신용 스프레드)와 S&P 500 옵션의 내재 변동성(VIX)입니다. 둘이 함께 뛰면 시장이 위험을 피하고 있다는 뜻이고, 낮게 눌려 있으면 낙관이 강한 것입니다.',
-    source: 'FRED: BAMLH0A0HYM2 (ICE BofA), VIXCLS (월평균)',
+    source: 'FRED: BAMLH0A0HYM2 (ICE BofA), VIXCLS (월말)',
     defaultOn: true,
     needs: () => [fred('BAMLH0A0HYM2'), fred('VIXCLS')],
     build: (get) => {
@@ -688,7 +699,7 @@ export const INDICATORS: Indicator[] = [
     group: 'stocks',
     title: '금융 여건 (시카고 연준 NFCI)',
     about: '금리·신용·주식·레버리지 105개 지표를 묶은 미국 금융 여건 지수입니다. 0보다 작으면 평균보다 돈 빌리기 쉬운(완화적) 상태, 크면 긴축적인 상태입니다.',
-    source: 'FRED: NFCI (월평균)',
+    source: 'FRED: NFCI (월말)',
     defaultOn: false,
     needs: () => [fred('NFCI')],
     build: (get) => {
