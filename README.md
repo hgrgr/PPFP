@@ -52,7 +52,7 @@ docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지
 
 ### 클라우드에 올리기 (Oracle 무료 VM + Tailscale)
 
-집 PC를 켜 두지 않고 24시간 돌리려면 Oracle Cloud 상시 무료 Arm VM에 같은 `docker compose`를 올리고, Tailscale로 내 기기와 허락한 가족 기기에만 엽니다. 포트를 인터넷에 열지 않고 `https://ppfp.<tailnet>.ts.net`으로 접속하며, 휴대폰에서는 웹 앱을 설치해 씁니다. VM에서 `bash deploy/cloud/setup.sh` 하나로 설치되고, 암호화 백업은 Google Drive로 복사할 수 있습니다. 단계별 안내와 주의할 점(무료 VM 회수 정책 등)은 [docs/deploy-cloud.md](docs/deploy-cloud.md)에 있습니다.
+집 PC를 켜 두지 않고 24시간 돌리려면 Oracle Cloud 상시 무료 Arm VM에 같은 `docker compose`를 올리고, Tailscale로 내 기기와 허락한 가족 기기에만 엽니다. 포트를 인터넷에 열지 않고 `https://ppfp.<tailnet>.ts.net`으로 접속하며, 휴대폰에서는 웹 앱을 설치해 씁니다. VM에서 `bash deploy/cloud/setup.sh` 하나로 설치되고, 암호화 백업은 Google Drive로 복사할 수 있습니다. 단계별 안내와 주의할 점(무료 VM 회수 정책 등)은 [docs/deploy-cloud.md](docs/deploy-cloud.md)에 있습니다. VM과 개발 Mac을 모두 잃었을 때 GitHub와 Drive만으로 되살리는 방법은 [docs/recovery.md](docs/recovery.md)에 있습니다.
 
 ### 안드로이드 앱
 
