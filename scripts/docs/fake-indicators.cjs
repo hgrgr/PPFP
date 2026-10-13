@@ -34,7 +34,7 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     DGS10: [3.4, 1.1, 0.004], DFII10: [0.9, 0.9, 0.004], T10YIE: [2.2, 0.35, 0], T5YIFR: [2.25, 0.2, 0],
     DGS3MO: [2.4, 2.0, 0.003], T10Y3M: [1.0, 1.3, -0.002], T10Y2Y: [0.8, 1.0, -0.002], DFF: [2.2, 2.0, 0.003], MORTGAGE30US: [5.6, 1.2, 0.002],
     BAMLH0A0HYM2: [4.6, 1.6, -0.004], VIXCLS: [19, 6, -0.005], NFCI: [-0.35, 0.3, 0],
-    DGS2: [3.0, 1.2, 0.004], DEXKOUS: [1250, 80, 0.4], PCEPILFE: [100, 1.5, 0.22], SAHMREALTIME: [0.15, 0.25, 0], IC4WSA: [230000, 30000, -40],
+    DTWEXBGS: [112, 6, 0.02], DGS2: [3.0, 1.2, 0.004], DEXKOUS: [1250, 80, 0.4], PCEPILFE: [100, 1.5, 0.22], SAHMREALTIME: [0.15, 0.25, 0], IC4WSA: [230000, 30000, -40],
     DRTSCILM: [5, 15, 0], WALCL: [6500000, 1200000, 6000], WTREGEN: [600000, 250000, 1000], RRPONTSYD: [500, 700, -1], WRESBAL: [2800000, 600000, 4000],
     MMMFFAQ027S: [5000000, 600000, 18000], WRMFNS: [1600, 300, 7], BOGZ1FL663067003Q: [450000, 90000, 1200],
     QKRHAM770A: [75, 6, 0.08], QUSHAM770A: [84, 8, -0.07], QKRPAM770A: [180, 12, 0.12], NCBEILQ027S: [25000000, 4000000, 230000], GDP: [14000, 300, 70],
@@ -232,6 +232,14 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     if (url.hostname === 'fred.stlouisfed.org' && url.pathname === '/graph/fredgraph.csv') return new Response(fredCsv(url), { status: 200, headers: { 'content-type': 'text/csv' } });
     if (url.hostname === 'ecos.bok.or.kr' && url.pathname.startsWith('/api/StatisticSearch/')) return new Response(JSON.stringify(ecosRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
     if (url.hostname === 'kosis.kr' && url.pathname.includes('statisticsParameterData')) return new Response(JSON.stringify(kosisRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.hostname === 'query1.finance.yahoo.com' && url.pathname.endsWith('/DX-Y.NYB') && url.searchParams.get('interval') === '1mo') {
+      const timestamp = [], close = [];
+      for (const [y, m, t] of monthsFrom(1990, 1)) {
+        timestamp.push(Date.UTC(y, m - 1, 1) / 1000 + 4 * 3600);
+        close.push(Number(wave('dxy', t, 96, 8, 0.01).toFixed(2)));
+      }
+      return new Response(JSON.stringify({ chart: { result: [{ meta: { gmtoffset: -14400 }, timestamp, indicators: { quote: [{ close }] } }] } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     if (url.hostname === 'www.reb.or.kr' && url.pathname.endsWith('SttsApiTblData.do')) return new Response(JSON.stringify(roneRows(url)), { status: 200, headers: { 'content-type': 'application/json' } });
     if (url.hostname === 'www.newyorkfed.org' && url.pathname.endsWith('Laubach_Williams_current_estimates.xlsx')) return new Response(await lwXlsx(), { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
     if (url.hostname === 'www.newyorkfed.org' && url.pathname.endsWith('ACMTermPremium.xls')) return new Response(acmXls(), { status: 200, headers: { 'content-type': 'application/vnd.ms-excel' } });
