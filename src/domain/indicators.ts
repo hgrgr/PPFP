@@ -251,33 +251,36 @@ export const INDICATORS: Indicator[] = [
     group: 'rates',
     title: '미국 10년 금리 분해 ① 기대 단기금리 + 기간 프리미엄',
     about:
-      '시장의 10년 국채금리(검은 선)를 앞으로 10년간 예상되는 단기금리의 평균(기준금리 경로에 대한 기대)과, 장기채를 들고 있는 대가로 더 받는 기간 프리미엄으로 나눕니다. 두 부분은 뉴욕연준 ACM 모형의 추정치입니다. 금리가 오를 때 어느 쪽이 올렸는지 보면, 연준의 긴축 기대 때문인지(기대 단기금리) 재정·수급 불안 때문인지(기간 프리미엄) 구분할 수 있습니다. 두 부분의 합과 시장 금리 사이에 남는 몇 bp는 모형 잔차입니다.',
-    source: '뉴욕연준 ACM Term Premium (월말), FRED: DGS10, 연방기금금리 (월말)',
+      '시장의 10년 국채금리(검은 선)를 앞으로 10년 동안 단기금리가 평균 얼마일지에 대한 기대(파란 선)와, 장기채를 들고 있는 대가로 더 받는 기간 프리미엄(막대)으로 나눕니다. 기대 단기금리는 다시 지금의 단기금리(3개월 국채, 회색 면적)와 앞으로 단기금리가 오르거나 내릴 것이라는 기대(둘 사이의 간격)로 나뉩니다. 기대 단기금리와 기간 프리미엄은 뉴욕연준 ACM 모형의 추정치이고, 둘의 합과 시장 금리 사이에 남는 몇 bp는 모형 잔차입니다. 금리가 오를 때 어느 부분이 올렸는지 보면, 지금의 정책금리 때문인지, 앞으로의 인상·인하 기대 때문인지, 장기채를 꺼리는 수급 때문인지(기간 프리미엄) 구분할 수 있습니다.',
+    source: '뉴욕연준 ACM Term Premium (월말), FRED: DGS10, DGS3MO, 연방기금금리 (월말)',
     defaultOn: true,
-    needs: () => [acm('ACMTP10'), acm('ACMRNY10'), fred('DGS10'), fred('DFF')],
+    needs: () => [acm('ACMTP10'), acm('ACMRNY10'), fred('DGS10'), fred('DGS3MO'), fred('DFF')],
     build: (get) => {
-      const n = get('IND:FRED:DGS10'), tp = get('IND:ACM:ACMTP10'), rn = get('IND:ACM:ACMRNY10'), ff = get('IND:FRED:DFF');
-      // What the two parts leave of the market yield: the fit error of the model, and that ACM
+      const n = get('IND:FRED:DGS10'), tp = get('IND:ACM:ACMTP10'), rn = get('IND:ACM:ACMRNY10'), bill = get('IND:FRED:DGS3MO'), ff = get('IND:FRED:DFF');
+      // The expected path splits into where short rates are now and where they are expected to go
+      const path = combine(rn, bill, (a, b) => a - b);
+      // What the two ACM parts leave of the market yield: the fit error of the model, and that ACM
       // models zero-coupon yields while DGS10 is the yield of coupon-paying bonds
-      const fitted = combine(rn, tp, (a, b) => a + b);
-      const residual = combine(n, fitted, (a, b) => a - b);
+      const residual = combine(n, combine(rn, tp, (a, b) => a + b), (a, b) => a - b);
       return {
         lines: [
-          { key: 'rn', label: '기대 단기금리 (10년 평균)', color: C.a, kind: 'area' },
+          { key: 'bill', label: '지금의 단기금리 (3개월 국채)', color: C.muted, kind: 'area' },
+          { key: 'rn', label: '기대 단기금리 (앞으로 10년 평균)', color: C.a },
           { key: 'tp', label: '기간 프리미엄', color: C.b, kind: 'bar' },
           { key: 'n', label: '10년 국채금리 (시장)', color: C.ink },
           { key: 'ff', label: '연방기금금리', color: C.muted, dash: true },
         ],
-        rows: joinSeries({ rn, tp, n, ff }),
+        rows: joinSeries({ bill, rn, tp, n, ff }),
         unit: '%',
         refs: [{ y: 0, label: '' }],
         latest: latestOf([
           { label: '10년 금리 (시장)', pts: n, unit: '%' },
-          { label: '기대 단기금리', pts: rn, unit: '%' },
-          { label: '기간 프리미엄', pts: tp, unit: '%p' },
-          { label: '모형 잔차', pts: residual, unit: '%p' },
+          { label: '= 지금의 단기금리', pts: bill, unit: '%' },
+          { label: '+ 앞으로의 변화 기대', pts: path, unit: '%p' },
+          { label: '+ 기간 프리미엄', pts: tp, unit: '%p' },
+          { label: '+ 모형 잔차', pts: residual, unit: '%p' },
         ]),
-        note: '모든 값은 그달 마지막 거래일 기준입니다. 모형 잔차는 ACM이 쿠폰 없는 채권 금리를 모형으로 맞춘 값이라 생기는 작은 차이입니다.',
+        note: '지금의 단기금리 + 앞으로의 변화 기대 = 기대 단기금리(파란 선)입니다. 모든 값은 그달 마지막 거래일 기준입니다. 모형 잔차는 ACM이 쿠폰 없는 채권 금리를 모형으로 맞춘 값이라 생기는 작은 차이입니다.',
       };
     },
   },

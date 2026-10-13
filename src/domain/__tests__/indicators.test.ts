@@ -84,11 +84,13 @@ describe('indicators', () => {
       'IND:ACM:ACMTP10': pts(['2026-09-01', 0.885]),
       'IND:ACM:ACMRNY10': pts(['2026-09-01', 4.375]),
       'IND:FRED:DFF': pts(['2026-09-01', 3.88]),
+      'IND:FRED:DGS3MO': pts(['2026-09-01', 4.2]),
     };
     assert.ok(!ind.needs({ region: '11', incomeBase: 'region' }).some((r) => r.id === 'IND:ACM:ACMY10'));
     const c = ind.build((id) => data[id] ?? [], { region: '11', incomeBase: 'region' });
     assert.equal(c.rows[0].n, 5.29);
-    assert.deepEqual(c.latest.map((l) => l.value), ['5.29%', '4.38%', '0.89%p', '0.03%p']);
+    // 5.29 = 4.20 now + 0.17 expected change (4.375 − 4.2) + 0.89 term premium + 0.03 residual
+    assert.deepEqual(c.latest.map((l) => l.value), ['5.29%', '4.2%', '0.17%p', '0.89%p', '0.03%p']);
   });
 
   it('splits the market 10-year exactly into real yield and breakeven', () => {
