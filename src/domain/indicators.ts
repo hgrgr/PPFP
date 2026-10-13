@@ -15,7 +15,7 @@
  * forward inflation expectation staying near 2% (anchored expectations).
  */
 
-export type IndicatorSource = 'FRED' | 'ECOS' | 'KOSIS' | 'ACM' | 'RONE' | 'LW';
+export type IndicatorSource = 'FRED' | 'ECOS' | 'KOSIS' | 'ACM' | 'RONE' | 'LW' | 'YAHOO';
 export type Freq = 'M' | 'Q' | 'A';
 
 export interface Point {
@@ -38,6 +38,8 @@ const ecos = (code: string): SeriesReq => {
   return { id: `IND:ECOS:${code}`, source: 'ECOS', code, freq: cycle };
 };
 const acm = (col: string): SeriesReq => ({ id: `IND:ACM:${col}`, source: 'ACM', code: col, freq: 'M' });
+/** A Yahoo Finance symbol, month-end closes */
+const yahoo = (symbol: string): SeriesReq => ({ id: `IND:YAHOO:${symbol}`, source: 'YAHOO', code: symbol, freq: 'M' });
 /** 한국부동산원 R-ONE 통계표 (monthly), one region and item */
 const rone = (table: string, cls: string, item = '100001'): SeriesReq => ({ id: `IND:RONE:${table}/${cls}/${item}`, source: 'RONE', code: `${table}/${cls}/${item}`, freq: 'M' });
 /** New York Fed Laubach-Williams estimates (quarterly): one-sided r* or the output gap */
@@ -150,6 +152,10 @@ export interface ChartData {
   /** What the latest point says, one line per series, for the card's summary */
   latest: { label: string; value: string; date: string }[];
   note?: string;
+  /** What to watch on this card (filled in by watchFor) */
+  watch?: WatchItem[];
+  /** Stretches shaded on the chart */
+  bands?: { from: string; to: string; label: string }[];
 }
 
 export type Group = 'rates' | 'cycle' | 'realestate' | 'liquidity' | 'stocks';
@@ -1472,9 +1478,461 @@ export const INDICATORS: Indicator[] = [
       };
     },
   },
+  {
+    id: 'dollar-index',
+    group: 'liquidity',
+    title: '달러 인덱스',
+    about:
+      '달러 인덱스(DXY)는 유로·엔·파운드 등 6개 통화 대비 달러 가치입니다(1973년 = 100). 달러가 강해지면 세계 돈이 미국으로 몰려 신흥국 통화와 주식이 약해지고 원자재 가격도 눌리기 쉬워, 세계 유동성의 온도계로 봅니다. 점선은 연준이 발표하는 더 넓은 무역가중 달러지수(26개 통화)이고, 원/달러(오른쪽 축)를 함께 봅니다.',
+    source: 'Yahoo Finance: DX-Y.NYB (ICE 달러 인덱스, 월말), FRED: DTWEXBGS, DEXKOUS (월말)',
+    defaultOn: true,
+    needs: () => [yahoo('DX-Y.NYB'), fred('DTWEXBGS'), fred('DEXKOUS')],
+    build: (get) => {
+      const dxy = get('IND:YAHOO:DX-Y.NYB'), broad = get('IND:FRED:DTWEXBGS'), fx = get('IND:FRED:DEXKOUS');
+      return {
+        lines: [
+          { key: 'dxy', label: '달러 인덱스 (DXY)', color: C.a },
+          { key: 'broad', label: '무역가중 달러지수 (광의)', color: C.c, dash: true },
+          { key: 'fx', label: '원/달러', color: C.ink, axis: 'right' },
+        ],
+        rows: joinSeries({ dxy, broad, fx }),
+        unit: '',
+        rightUnit: '원',
+        refs: [{ y: 100, label: '100' }],
+        latest: latestOf([
+          { label: 'DXY', pts: dxy, unit: '', digits: 2 },
+          { label: '무역가중', pts: broad, unit: '', digits: 1 },
+          { label: '원/달러', pts: fx, unit: '원', digits: 1 },
+        ]),
+      };
+    },
+  },
 ];
 
 export const indicatorById = (id: string) => INDICATORS.find((i) => i.id === id);
+
+// ---------------------------------------------------------------- what to watch
+
+/** A point to watch on a card: what it is, why it matters, and whether it holds now. */
+export interface WatchItem {
+  title: string;
+  note: string;
+  /** true: it holds now · false: it does not · null: not enough data */
+  active: boolean | null;
+  /** The numbers behind it, e.g. "지금 −0.42%p (2026-09)" */
+  detail?: string;
+}
+export interface WatchResult {
+  items: WatchItem[];
+  /** Stretches to shade on the chart, e.g. while the curve was inverted */
+  bands?: { from: string; to: string; label: string }[];
+}
+
+/** A column of a built chart as points */
+export function col(data: ChartData, key: string): Point[] {
+  return data.rows.flatMap((r) => (typeof r[key] === 'number' ? [{ date: String(r.date), value: r[key] as number }] : []));
+}
+const lastOf = (pts: Point[]) => pts.at(-1);
+const agoOf = (pts: Point[], months: number) => {
+  const l = pts.at(-1);
+  return l ? pts.find((p) => p.date === addMonths(l.date, -months)) : undefined;
+};
+function statsOf(pts: Point[]): { mean: number; sd: number } | null {
+  if (pts.length < 8) return null;
+  const mean = pts.reduce((a, b) => a + b.value, 0) / pts.length;
+  const sd = Math.sqrt(pts.reduce((a, b) => a + (b.value - mean) ** 2, 0) / pts.length);
+  return { mean, sd };
+}
+/** How many of the latest points in a row satisfy `pred` */
+function streak(pts: Point[], pred: (v: number) => boolean): number {
+  let n = 0;
+  for (let i = pts.length - 1; i >= 0 && pred(pts[i].value); i--) n++;
+  return n;
+}
+/** Runs of consecutive points where `pred` holds, as [first date, last date] */
+export function periodsWhere(pts: Point[], pred: (v: number) => boolean, label: string): { from: string; to: string; label: string }[] {
+  const out: { from: string; to: string; label: string }[] = [];
+  let start: string | null = null;
+  pts.forEach((p, i) => {
+    if (pred(p.value)) start ??= p.date;
+    if (start && (!pred(p.value) || i === pts.length - 1)) {
+      out.push({ from: start, to: pred(p.value) ? p.date : pts[i - 1].date, label });
+      start = null;
+    }
+  });
+  return out;
+}
+const ym = (d: string) => d.slice(0, 7);
+const num = (v: number, digits = 2) => v.toLocaleString('ko-KR', { maximumFractionDigits: digits });
+const now = (p: Point | undefined, unit: string, digits = 2) => (p ? `지금 ${num(p.value, digits)}${unit} (${ym(p.date)})` : undefined);
+const W = (title: string, note: string, active: boolean | null, detail?: string): WatchItem => ({ title, note, active, detail });
+const when = (p: Point | undefined, pred: (v: number) => boolean) => (p ? pred(p.value) : null);
+/** Above or below the series' own history by a standard deviation */
+function valuation(pts: Point[], unit: string, digits: number, high: string, low: string): WatchItem[] {
+  const s = statsOf(pts), l = lastOf(pts);
+  const d = s && l ? `${now(l, unit, digits)}, 기간 평균 ${num(s.mean, digits)}${unit} ± ${num(s.sd, digits)}` : undefined;
+  return [
+    W(high, '자기 역사 평균보다 1표준편차 넘게 높은 구간입니다. 과거에는 이런 때 이후 평균 쪽으로 되돌아오는 경우가 많았습니다.', s && l ? l.value > s.mean + s.sd : null, d),
+    W(low, '자기 역사 평균보다 1표준편차 넘게 낮은 구간입니다.', s && l ? l.value < s.mean - s.sd : null, d),
+  ];
+}
+
+type WatchFn = (data: ChartData, get: (id: string) => Point[], p: AnalysisParams) => WatchResult;
+
+export const WATCH: Record<string, WatchFn> = {
+  'us-10y-acm': (d) => {
+    const tp = col(d, 'tp'), rn = col(d, 'rn'), bill = col(d, 'bill');
+    const l = lastOf(tp), a6 = agoOf(tp, 6);
+    const path = combine(rn, bill, (a, b) => a - b);
+    return {
+      items: [
+        W('기간 프리미엄이 플러스', '장기채를 들고 있는 대가를 더 요구하는 상태입니다. 재정적자·국채 공급 증가·물가 불확실성이 클 때 오르고, 이때 장기금리는 연준과 무관하게 오를 수 있습니다. 2010년대 대부분은 마이너스였습니다.', when(l, (v) => v > 0), now(l, '%p')),
+        W('기간 프리미엄 6개월 새 0.5%p 넘게 급등', '채권시장이 재정·물가를 걱정하며 장기채를 팔 때 나타납니다("채권 자경단"). 주식·부동산 할인율을 빠르게 끌어올립니다.', l && a6 ? l.value - a6.value > 0.5 : null, l && a6 ? `6개월 변화 ${num(l.value - a6.value)}%p` : undefined),
+        W('시장이 금리 인하를 예상 (변화 기대 마이너스)', '앞으로 10년 평균 단기금리가 지금 단기금리보다 낮다는 뜻으로, 시장이 인하 사이클을 예상합니다.', when(lastOf(path), (v) => v < 0), now(lastOf(path), '%p')),
+      ],
+    };
+  },
+  'us-10y-fisher': (d) => {
+    const r = lastOf(col(d, 'r')), b = lastOf(col(d, 'b'));
+    return {
+      items: [
+        W('실질금리 2% 이상', '물가를 뺀 실제 금리 부담이 2008년 이후 가장 높은 축입니다. 미래 이익을 할인하는 성장주와, 대출로 사는 부동산의 가치를 누릅니다.', when(r, (v) => v >= 2), now(r, '%')),
+        W('실질금리 마이너스', '돈을 빌리는 실제 비용이 0보다 낮아 자산 가격을 크게 밀어 올리던 구간입니다(2020~2021년).', when(r, (v) => v < 0), now(r, '%')),
+        W('기대인플레이션 2.5% 이상', '채권시장이 연준 목표(2%)보다 높은 물가를 예상합니다. 연준이 금리를 내리기 어렵게 만듭니다.', when(b, (v) => v >= 2.5), now(b, '%')),
+      ],
+    };
+  },
+  'us-anchor': (d) => {
+    const f = lastOf(col(d, 'f'));
+    return {
+      items: [
+        W('5y5y가 2.0~2.5% 범위를 벗어남', '연준이 편하게 여기는 범위입니다. 위로 벗어나면 장기 물가 기대가 풀리고(신뢰 약화), 아래로 벗어나면 디플레이션 우려입니다. 연준 위원들이 연설에서 자주 확인하는 수치입니다.', when(f, (v) => v > 2.5 || v < 2.0), now(f, '%')),
+      ],
+    };
+  },
+  'us-curve': (d) => {
+    const a = col(d, 'a'), b = col(d, 'b');
+    const la = lastOf(a);
+    const wasInverted = a.slice(-12).some((p) => p.value < 0);
+    return {
+      items: [
+        W('10년−3개월 역전 (0 아래)', '1968년 이후 미국 경기침체 앞에는 거의 항상 이 역전이 있었고, 역전 뒤 침체까지 보통 6~24개월이 걸렸습니다. 뉴욕연준 침체확률 모형도 이 차이를 씁니다.', when(la, (v) => v < 0), la ? (la.value < 0 ? `${now(la, '%p')}, 역전 ${streak(a, (v) => v < 0)}개월째` : now(la, '%p')) : undefined),
+        W('역전이 풀리고 다시 가팔라짐', '역설적으로 침체는 역전이 풀리는 무렵(연준이 급히 금리를 내릴 때) 시작된 경우가 많았습니다. 최근 12개월 안에 역전됐다가 지금 0 위면 해당합니다.', la ? la.value > 0 && wasInverted : null, now(la, '%p')),
+        W('10년−2년 역전', '시장이 더 자주 인용하는 차이입니다. 10년−3개월보다 먼저 역전되는 경향이 있습니다.', when(lastOf(b), (v) => v < 0), now(lastOf(b), '%p')),
+      ],
+      bands: periodsWhere(a, (v) => v < 0, '10년−3개월 역전'),
+    };
+  },
+  'kr-rates': (d) => {
+    const s = lastOf(col(d, 'slope')), y3 = lastOf(col(d, 'y3')), base = lastOf(col(d, 'base'));
+    return {
+      items: [
+        W('국고채 10년−3년 역전', '한국에서도 장단기 역전은 경기 둔화 기대를 뜻합니다. 다만 한국은 수출 경기에 더 크게 좌우돼 미국만큼 신호가 깔끔하지는 않습니다.', when(s, (v) => v < 0), now(s, '%p')),
+        W('국고채 3년이 기준금리보다 낮음', '시장이 한국은행의 금리 인하를 예상한다는 뜻입니다.', y3 && base ? y3.value < base.value : null, y3 && base ? `3년 ${num(y3.value, 3)}% vs 기준 ${num(base.value)}%` : undefined),
+      ],
+      bands: periodsWhere(col(d, 'slope'), (v) => v < 0, '10년−3년 역전'),
+    };
+  },
+  'kr-inflation-exp': (d) => {
+    const real = lastOf(col(d, 'real')), e = lastOf(col(d, 'e'));
+    return {
+      items: [
+        W('실질 기준금리 마이너스', '기준금리가 기대 물가보다 낮아 통화정책이 여전히 완화적입니다. 대출·자산 수요를 부추깁니다.', when(real, (v) => v < 0), now(real, '%')),
+        W('기대인플레이션 3% 이상', '가계가 물가 목표(2%)보다 한참 높은 물가를 예상해, 임금·가격 결정에 반영될 위험이 큽니다.', when(e, (v) => v >= 3), now(e, '%')),
+      ],
+    };
+  },
+  mortgage: (d) => {
+    const kr = col(d, 'kr'), us = lastOf(col(d, 'us'));
+    const l = lastOf(kr), a12 = agoOf(kr, 12);
+    return {
+      items: [
+        W('한국 주담대 금리 1년 새 1%p 넘게 상승', '같은 대출의 이자 부담이 크게 늘어 매수 여력이 빠르게 줄어듭니다(2022년).', l && a12 ? l.value - a12.value > 1 : null, l && a12 ? `1년 변화 ${num(l.value - a12.value)}%p` : undefined),
+        W('미국 30년 모기지 7% 이상', '기존 저금리 대출 보유자가 집을 팔지 않아(잠금 효과) 거래와 매물이 크게 줄어드는 구간입니다.', when(us, (v) => v >= 7), now(us, '%')),
+      ],
+    };
+  },
+  'policy-path': (d) => {
+    const us = lastOf(col(d, 'us')), kr = lastOf(col(d, 'kr'));
+    return {
+      items: [
+        W('미국: 인하 사이클 예상 (−0.5%p 아래)', '2년물이 기준금리보다 0.5%p 넘게 낮으면 시장이 앞으로 2년 동안 두 번 이상의 인하를 예상한다는 뜻입니다.', when(us, (v) => v < -0.5), now(us, '%p')),
+        W('미국: 인상 예상 (+0.5%p 위)', '시장이 추가 인상을 예상합니다.', when(us, (v) => v > 0.5), now(us, '%p')),
+        W('한국: 인하 예상 (−0.25%p 아래)', '국고채 3년이 기준금리보다 낮으면 한국은행 인하 기대입니다.', when(kr, (v) => v < -0.25), now(kr, '%p')),
+      ],
+    };
+  },
+  'kr-us-gap': (d) => {
+    const g = lastOf(col(d, 'policy')), fx = lastOf(col(d, 'fx'));
+    return {
+      items: [
+        W('기준금리 역전 폭 1.5%p 이상 (미국이 더 높음)', '역대 최대 역전은 2023년 −2.0%p였습니다. 역전 폭이 클수록 외국인 채권 자금 유출과 원화 약세 압력이 커져 한국은행이 금리를 내리기 어렵습니다.', when(g, (v) => v <= -1.5), now(g, '%p')),
+        W('원/달러 1,400원 이상', '1997년 외환위기·2008년 금융위기·2022년 강달러 때만 넘었던 선으로, 시장이 위기 신호로 받아들이는 수준입니다.', when(fx, (v) => v >= 1400), now(fx, '원', 1)),
+      ],
+    };
+  },
+  'neutral-rate': (d) => {
+    const s = lastOf(col(d, 'stance'));
+    return {
+      items: [
+        W('긴축적: 실질 기준금리가 r*보다 1%p 넘게 높음', '정책금리가 경기를 확실히 누르는 수준입니다. 시차(보통 1~2년)를 두고 성장·고용이 둔화합니다.', when(s, (v) => v > 1), now(s, '%p')),
+        W('완화적: 실질 기준금리가 r*보다 낮음', '정책금리가 경기를 부양하는 쪽입니다. 물가가 높은데 이 상태가 이어지면 물가 위험이 커집니다.', when(s, (v) => v < 0), now(s, '%p')),
+      ],
+    };
+  },
+  taylor: (d) => {
+    const diff = combine(col(d, 'ff'), col(d, 'taylor'), (a, b) => a - b);
+    const l = lastOf(diff);
+    return {
+      items: [
+        W('실제 금리가 준칙보다 1%p 넘게 낮음', '연준이 물가·경기에 비해 느슨하다는 뜻("behind the curve")으로, 2021~2022년처럼 뒤늦은 급격한 인상으로 이어질 수 있습니다.', when(l, (v) => v < -1), now(l, '%p')),
+        W('실제 금리가 준칙보다 1%p 넘게 높음', '과도한 긴축으로 경기를 지나치게 누를 위험입니다. 금리 인하 여지로도 읽습니다.', when(l, (v) => v > 1), now(l, '%p')),
+      ],
+    };
+  },
+  'kr-credit': (d) => {
+    const c = lastOf(col(d, 'credit')), cp = lastOf(col(d, 'cp'));
+    return {
+      items: [
+        W('회사채 AA− 스프레드 1%p 이상', '우량 회사채도 국채보다 1%p 넘게 더 줘야 팔리는 상태로, 2008년 금융위기(최고 약 4%p)와 2022년 레고랜드 사태 때 나타났습니다.', when(c, (v) => v >= 1), now(c, '%p', 3)),
+        W('CP − CD 1%p 이상', '기업의 단기 자금 조달이 막히는 신호입니다. 2022년 말 CP 금리가 CD보다 1.5%p 넘게 뛰며 단기자금시장이 경색됐습니다.', when(cp, (v) => v >= 1), now(cp, '%p')),
+      ],
+    };
+  },
+
+  population: (d) => {
+    const yo = (k: string) => {
+      const pts = col(d, k), l = lastOf(pts), a = agoOf(pts, 12);
+      return l && a ? l.value - a.value : null;
+    };
+    const t = yo('total'), mid = [yo('a30'), yo('a40')];
+    return {
+      items: [
+        W('30~40대 인구가 1년 새 줄어듦', '집을 처음 사거나 넓혀 가는 주력 연령대입니다. 이 연령대가 줄어드는 지역은 매수 수요가 구조적으로 약해집니다.', mid.some((v) => v === null) ? null : (mid[0]! + mid[1]!) < 0, mid.every((v) => v !== null) ? `1년 변화 30대 ${num(mid[0]! * 10_000, 0)}명, 40대 ${num(mid[1]! * 10_000, 0)}명` : undefined),
+        W('총인구 감소', '인구가 줄면 장기적으로 빈집이 늘고 외곽부터 가격이 약해집니다. 다만 가구 수는 1인 가구 증가로 한동안 더 늘 수 있습니다.', t === null ? null : t < 0, t === null ? undefined : `1년 변화 ${num(t * 10_000, 0)}명`),
+      ],
+    };
+  },
+  pir: (d) => ({ items: valuation(col(d, 'pir'), '배', 1, 'PIR이 역사적으로 높음', 'PIR이 역사적으로 낮음') }),
+  'household-debt': (d) => {
+    const kr = lastOf(col(d, 'kr'));
+    return {
+      items: [
+        W('한국 가계부채 GDP 대비 85% 이상', '국제결제은행(BIS) 연구는 가계부채가 GDP의 80~85%를 넘으면 소비와 성장을 누르기 시작한다고 봅니다. 한국은 2020년 이후 100% 안팎으로 주요국 최고 수준입니다.', when(kr, (v) => v >= 85), now(kr, '%', 1)),
+      ],
+    };
+  },
+  liquidity: (d) => {
+    const m2 = lastOf(col(d, 'm2')), s = lastOf(col(d, 'seoul'));
+    return {
+      items: [
+        W('M2 증가율 8% 이상', '돈이 빠르게 풀리는 구간입니다. 2020~2021년 M2가 10% 넘게 늘 때 집값이 크게 올랐습니다.', when(m2, (v) => v >= 8), now(m2, '%', 1)),
+        W('서울 아파트값이 M2보다 5%p 넘게 빨리 오름', '돈이 풀리는 속도보다 집값이 훨씬 빨리 올라 과열 쪽으로 읽습니다.', m2 && s ? s.value - m2.value > 5 : null, m2 && s ? `서울 ${num(s.value, 1)}% vs M2 ${num(m2.value, 1)}%` : undefined),
+      ],
+    };
+  },
+  supply: (d) => {
+    const permit = col(d, 'permit'), unsold = col(d, 'unsold');
+    const p = lastOf(permit), p36 = agoOf(permit, 36), u = lastOf(unsold), u12 = agoOf(unsold, 12);
+    return {
+      items: [
+        W('인허가가 3년 전보다 30% 넘게 줄어듦', '인허가는 2~4년 뒤 입주 물량입니다. 크게 줄면 몇 년 뒤 공급 부족으로 전세·매매가가 오를 수 있습니다.', p && p36 ? p.value < p36.value * 0.7 : null, p && p36 ? `${num(p.value, 1)}천 호, 3년 전 ${num(p36.value, 1)}천 호` : undefined),
+        W('미분양 1년 새 50% 넘게 증가', '공급이 수요를 넘어선다는 가장 직접적인 신호입니다. 미분양이 쌓이는 지역은 가격 조정이 길어집니다.', u && u12 ? u.value > u12.value * 1.5 : null, u && u12 ? `${num(u.value, 1)}천 호, 1년 전 ${num(u12.value, 1)}천 호` : undefined),
+      ],
+    };
+  },
+  'housing-sentiment': (d) => {
+    const s = col(d, 's'), l = lastOf(s), a3 = agoOf(s, 3);
+    return {
+      items: [
+        W('주택가격전망 100 위에서 상승', '오를 거라는 가구가 많아지고 그 수가 늘고 있습니다. 실제 가격에 몇 달 앞서는 경우가 많습니다.', l && a3 ? l.value >= 100 && l.value > a3.value : null, now(l, '', 0)),
+        W('주택가격전망 100 아래로', '내릴 거라는 가구가 더 많습니다.', when(l, (v) => v < 100), now(l, '', 0)),
+      ],
+    };
+  },
+  'kospi-erp': (d) => ({ items: valuation(col(d, 'erp'), '%p', 2, '위험프리미엄이 높음 (주식이 상대적으로 쌈)', '위험프리미엄이 낮음 (주식이 상대적으로 비쌈)') }),
+  'us-buffett': (d) => ({ items: valuation(col(d, 'r'), '%', 0, '시가총액/GDP가 역사적으로 높음 (고평가)', '시가총액/GDP가 역사적으로 낮음 (저평가)') }),
+  'risk-appetite': (d) => {
+    const hy = lastOf(col(d, 'hy')), vix = lastOf(col(d, 'vix'));
+    return {
+      items: [
+        W('하이일드 스프레드 5%p 이상', '신용 시장이 부도 위험을 크게 반영하는 스트레스 구간입니다(2008·2020년 급등).', when(hy, (v) => v >= 5), now(hy, '%p')),
+        W('VIX 30 이상', '공포 구간입니다. 역사적으로는 이런 때가 장기 투자자에게 매수 기회였던 경우가 많았습니다.', when(vix, (v) => v >= 30), now(vix, '', 1)),
+        W('과도한 낙관: VIX 15 미만 + 하이일드 3%p 미만', '위험을 거의 반영하지 않는 상태로, 작은 충격에도 변동성이 커질 수 있습니다.', hy && vix ? vix.value < 15 && hy.value < 3 : null, hy && vix ? `VIX ${num(vix.value, 1)}, 하이일드 ${num(hy.value)}%p` : undefined),
+      ],
+    };
+  },
+  'financial-conditions': (d) => {
+    const n = lastOf(col(d, 'n'));
+    return { items: [W('NFCI 0 위 (평균보다 긴축적)', '돈 빌리기가 평균보다 어려운 상태로, 이어지면 투자·고용이 둔화합니다.', when(n, (v) => v > 0), now(n, ''))] };
+  },
+
+  'kr-leading': (d) => {
+    const lead = col(d, 'lead'), l = lastOf(lead);
+    const down = streak(lead.map((p, i) => ({ date: p.date, value: i ? p.value - lead[i - 1].value : 0 })), (v) => v < 0);
+    return {
+      items: [
+        W('선행지수 6개월 연속 하락', '경기 고점을 지났다는 대표 신호입니다. 통계청은 몇 달 연속 방향을 보고 경기 전환점을 판단합니다.', l ? down >= 6 : null, l ? `${down}개월 연속 하락` : undefined),
+        W('선행지수 100 아래', '경기가 장기 추세보다 약해지는 쪽입니다. 100 아래에서 다시 오르기 시작하면 회복 신호입니다.', when(l, (v) => v < 100), now(l, '', 1)),
+      ],
+      bands: periodsWhere(lead, (v) => v < 100, '선행지수 100 아래'),
+    };
+  },
+  'us-recession': (d) => {
+    const sahm = col(d, 'sahm'), claims = col(d, 'claims');
+    const s = lastOf(sahm), c = lastOf(claims);
+    const low = claims.slice(-12).reduce((a, b) => Math.min(a, b.value), Infinity);
+    return {
+      items: [
+        W('샴 룰 0.5 이상 (침체 신호)', '1970년 이후 이 선을 넘으면 거의 언제나 경기침체 중이었습니다.', when(s, (v) => v >= 0.5), now(s, '%p')),
+        W('샴 룰 0.3 이상 (경계)', '아직 신호는 아니지만 실업률이 바닥에서 오르기 시작했습니다.', when(s, (v) => v >= 0.3 && v < 0.5), now(s, '%p')),
+        W('실업수당 청구가 1년 최저보다 20% 넘게 증가', '해고가 늘기 시작했다는 빠른 신호입니다.', c && Number.isFinite(low) ? c.value > low * 1.2 : null, c ? `${num(c.value, 1)}만 건, 1년 최저 ${num(low, 1)}만 건` : undefined),
+      ],
+      bands: periodsWhere(sahm, (v) => v >= 0.5, '샴 룰 발동'),
+    };
+  },
+  'kr-exports': (d) => {
+    const g = col(d, 'growth'), l = lastOf(g);
+    const neg = streak(g, (v) => v < 0);
+    return {
+      items: [
+        W('수출 증가율 3개월 연속 마이너스', '한국 경기 둔화와 기업 이익 감소로 이어지는 경우가 많습니다.', l ? neg >= 3 : null, l ? `${neg}개월 연속 마이너스, ${now(l, '%', 1)}` : undefined),
+        W('수출 증가율 플러스 전환', '마이너스에서 플러스로 돌아서는 달은 코스피 바닥과 겹치는 경우가 많았습니다.', g.length > 1 ? g.at(-1)!.value > 0 && g.at(-2)!.value <= 0 : null, now(l, '%', 1)),
+      ],
+    };
+  },
+  'lending-standards': (d) => {
+    const us = lastOf(col(d, 'us')), kr = lastOf(col(d, 'kr'));
+    return {
+      items: [
+        W('미국 은행 20% 이상이 대출 강화', '이 수준의 강화는 1990·2001·2008·2020년 침체 직전과 침체 중에 나타났습니다.', when(us, (v) => v >= 20), now(us, '', 1)),
+        W('한국 은행 대출태도 강화 쪽', '은행이 돈줄을 조이면 가계·기업 대출이 줄어 부동산과 투자에 부담입니다(그래프는 + 가 강화).', when(kr, (v) => v > 0), now(kr, '', 0)),
+      ],
+    };
+  },
+  'jeonse-growth': (d) => {
+    const js = lastOf(col(d, 'js')), ss = lastOf(col(d, 'ss'));
+    return {
+      items: [
+        W('서울 전세가 상승률이 매매가 상승률보다 높음', '전세가가 매매가를 따라붙어 갭이 줄고, 전세 대신 매수로 옮기는 수요가 생깁니다. 매매가 상승의 선행 신호로 많이 봅니다.', js && ss ? js.value > ss.value : null, js && ss ? `전세 ${num(js.value, 1)}% vs 매매 ${num(ss.value, 1)}%` : undefined),
+        W('서울 전세가 하락', '전세가가 떨어지면 역전세(보증금 반환 부담)와 매매가 하락 압력이 커집니다(2022~2023년).', when(js, (v) => v < 0), now(js, '%', 1)),
+      ],
+    };
+  },
+  'jeonse-ratio': (d) => {
+    const h = lastOf(col(d, 'here'));
+    return {
+      items: [
+        W('전세가율 70% 이상', '적은 돈으로 살 수 있어 갭투자 수요가 붙기 쉽고 가격 하락을 받쳐 줍니다. 다만 매매가가 내리면 보증금을 돌려주지 못하는 깡통전세 위험도 커집니다.', when(h, (v) => v >= 70), now(h, '%', 1)),
+        W('전세가율 50% 이하', '매매가가 실거주 가치(전세가)보다 많이 높다는 뜻으로, 상승 여력보다 조정 위험을 먼저 봅니다.', when(h, (v) => v <= 50), now(h, '%', 1)),
+      ],
+    };
+  },
+  'rone-demand': (d) => {
+    const buy = col(d, 'buy'), l = lastOf(buy), a3 = agoOf(buy, 3), rent = lastOf(col(d, 'rent'));
+    return {
+      items: [
+        W('매매수급 100 상향 돌파', '팔려는 사람보다 사려는 사람이 많아졌습니다. 가격보다 먼저 돌아서는 경우가 많습니다.', l && a3 ? l.value >= 100 && a3.value < 100 : null, l && a3 ? `${num(l.value, 1)} (3개월 전 ${num(a3.value, 1)})` : undefined),
+        W('매매수급 100 위', '매수 우위 시장입니다.', when(l, (v) => v >= 100), now(l, '', 1)),
+        W('전세수급 110 이상', '전세 물건이 부족합니다. 전세가가 오르고 매매로 넘어오는 수요가 생깁니다.', when(rent, (v) => v >= 110), now(rent, '', 1)),
+      ],
+    };
+  },
+  'trade-cycle': (d, _get, p) => {
+    const r = regionOf(p.region);
+    const vol = col(d, 'volume').map((x) => ({ ...x, value: x.value * 10 }));
+    const lv = lastOf(vol);
+    return {
+      items: [
+        W('거래량 급증 (6개월 +30% 이상)', '가격이 아직 오르지 않았어도 거래가 먼저 크게 늘면 바닥을 지나는 신호로 봅니다(벌집순환 6→1국면).', when(lv, (v) => v >= 30), lv ? `${r.name} 거래량 6개월 변화 ${num(lv.value, 0)}%` : undefined),
+        W('거래량 급감 (6개월 −30% 이하)', '가격이 버티더라도 거래가 말라 가면 고점을 지나는 신호로 봅니다(2→3국면).', when(lv, (v) => v <= -30), lv ? `${r.name} 거래량 6개월 변화 ${num(lv.value, 0)}%` : undefined),
+      ],
+    };
+  },
+  'starts-pipeline': (d) => {
+    const s = col(d, 'starts'), l = lastOf(s), a36 = agoOf(s, 36);
+    return {
+      items: [
+        W('착공이 3년 전보다 30% 넘게 줄어듦', '2~3년 뒤 입주 물량이 크게 줄어 전세 부족과 가격 상승 압력이 생길 수 있습니다.', l && a36 ? l.value < a36.value * 0.7 : null, l && a36 ? `${num(l.value, 0)}만 ㎡, 3년 전 ${num(a36.value, 0)}만 ㎡` : undefined),
+      ],
+    };
+  },
+  affordability: (d) => {
+    const h = col(d, 'hai'), l = lastOf(h);
+    return {
+      items: [
+        W('부담지수 100 이상', '평균 가구가 소득의 25% 넘게 원리금으로 내야 합니다. 이 수준이 이어지면 실수요가 줄어 가격 상승이 이어지기 어렵습니다.', when(l, (v) => v >= 100), now(l, '', 0)),
+        ...valuation(h, '', 0, '부담이 역사적으로 높음', '부담이 역사적으로 낮음 (사기 쉬운 때)'),
+      ],
+    };
+  },
+
+  'us-net-liquidity': (d) => {
+    const net = col(d, 'net'), l = lastOf(net), a3 = agoOf(net, 3), rrp = lastOf(col(d, 'rrp')), tga = col(d, 'tga'), t = lastOf(tga), t3 = agoOf(tga, 3);
+    return {
+      items: [
+        W('순유동성 3개월 새 2% 넘게 감소', '시장에 도는 돈이 뚜렷하게 줄고 있습니다. 2022년처럼 주식·코인 같은 위험자산에 역풍이 되는 경우가 많습니다.', l && a3 ? l.value < a3.value * 0.98 : null, l && a3 ? `3개월 변화 ${num(l.value - a3.value)}조 달러` : undefined),
+        W('역레포 거의 소진 (1,000억 달러 미만)', '그동안 양적긴축과 TGA 증가를 받아 주던 완충 자금이 바닥났습니다. 이제 돈이 빠지면 은행 지급준비금이 바로 줄어 자금시장이 흔들릴 수 있습니다(2019년 레포 사태).', when(rrp, (v) => v < 0.1), now(rrp, '조 달러')),
+        W('TGA 3개월 새 3,000억 달러 넘게 증가', '재무부가 국채를 많이 찍어 시장 돈을 계좌로 빨아들이는 중입니다(부채한도 해소 직후에 흔함).', t && t3 ? t.value - t3.value > 0.3 : null, t && t3 ? `3개월 변화 ${num(t.value - t3.value)}조 달러` : undefined),
+      ],
+    };
+  },
+  'us-cash': (d) => {
+    const t = col(d, 'total'), l = lastOf(t), max = t.reduce((a, b) => Math.max(a, b.value), -Infinity);
+    return {
+      items: [
+        W('MMF 사상 최대', '대기자금이 역대 가장 많습니다. 금리가 내려가면 일부가 주식·채권으로 옮겨 갈 여력입니다.', l ? l.value >= max : null, now(l, '조 달러')),
+        W('MMF 감소 전환 (분기)', '대기자금이 빠져나가 다른 자산으로 이동하는 중일 수 있습니다.', t.length > 1 ? t.at(-1)!.value < t.at(-2)!.value : null, t.length > 1 ? `직전 분기 대비 ${num(t.at(-1)!.value - t.at(-2)!.value)}조 달러` : undefined),
+      ],
+    };
+  },
+  'us-margin': (d) => {
+    const b = col(d, 'bn'), l = lastOf(b), a4 = b.length > 4 ? b.at(-5) : undefined;
+    return {
+      items: [
+        W('고객 신용 1년 새 30% 넘게 증가', '빚투가 빠르게 늘어 과열 신호로 봅니다(2000·2007·2021년 고점 무렵).', l && a4 ? l.value > a4.value * 1.3 : null, l && a4 ? `1년 변화 ${num((l.value / a4.value - 1) * 100, 0)}%` : undefined),
+      ],
+    };
+  },
+  'kr-idle-money': (d) => {
+    const dep = col(d, 'deposit'), l = lastOf(dep), a12 = agoOf(dep, 12);
+    const time = col(d, 'time'), dem = col(d, 'demand'), t = lastOf(time), t6 = agoOf(time, 6), m = lastOf(dem), m6 = agoOf(dem, 6);
+    return {
+      items: [
+        W('투자자예탁금 1년 새 20% 넘게 증가', '주식을 사려고 증권 계좌에 들어온 돈이 크게 늘었습니다. 증시 대기자금 유입으로 봅니다.', l && a12 ? l.value > a12.value * 1.2 : null, l && a12 ? `${num(l.value, 1)}조원, 1년 전 ${num(a12.value, 1)}조원` : undefined),
+        W('정기예금 감소 + 요구불·수시입출식 증가 (머니무브)', '금리가 내려 정기예금을 깨고 언제든 쓸 수 있는 돈으로 옮기는 흐름입니다. 투자로 옮겨 갈 준비 단계로 읽습니다.', t && t6 && m && m6 ? t.value < t6.value && m.value > m6.value : null, t && t6 && m && m6 ? `6개월: 정기예금 ${num(t.value - t6.value, 0)}조원, 요구불·수시입출식 ${num(m.value - m6.value, 0)}조원` : undefined),
+      ],
+    };
+  },
+  'kr-market-leverage': (d) => ({ items: valuation(col(d, 'ratio'), '%', 0, '신용융자/예탁금이 역사적으로 높음 (빚투 과열)', '신용융자/예탁금이 역사적으로 낮음') }),
+  'kr-investor-flows': (_d, get) => {
+    const f = get('IND:ECOS:901Y055/M/S22CC/VA').map((p) => ({ ...p, value: p.value / 1e6 }));
+    const y = rollingSum(f, 12), ly = lastOf(y);
+    const sold = streak(f, (v) => v < 0);
+    return {
+      items: [
+        W('외국인 3개월 연속 순매도', '외국인 매도가 이어지면 코스피와 원화가 함께 약해지는 경우가 많습니다.', f.length ? sold >= 3 : null, f.length ? `${sold}개월 연속` : undefined),
+        W('외국인 12개월 누적 순매수', '1년 동안 외국인이 꾸준히 사 왔습니다. 코스피 상승장과 겹치는 경우가 많습니다.', when(ly, (v) => v > 0), now(ly, '조원', 1)),
+      ],
+    };
+  },
+  'dollar-index': (d) => {
+    const dxy = col(d, 'dxy'), l = lastOf(dxy), a6 = agoOf(dxy, 6);
+    return {
+      items: [
+        W('달러 인덱스 105 이상 (강달러)', '달러가 강하면 세계 돈이 미국으로 몰려 신흥국 통화·주식이 약해지고, 원/달러가 오릅니다. 원자재 가격에도 부담입니다.', when(l, (v) => v >= 105), now(l, '', 1)),
+        W('달러 인덱스 6개월 새 5% 넘게 급등', '달러가 짧은 기간에 크게 오르면 세계 금융 여건이 빠르게 조여집니다(2022년).', l && a6 ? (l.value / a6.value - 1) * 100 > 5 : null, l && a6 ? `6개월 변화 ${num((l.value / a6.value - 1) * 100, 1)}%` : undefined),
+        W('달러 인덱스 6개월 새 5% 넘게 급락', '약달러는 신흥국·원자재·비미국 주식에 우호적입니다.', l && a6 ? (l.value / a6.value - 1) * 100 < -5 : null, l && a6 ? `6개월 변화 ${num((l.value / a6.value - 1) * 100, 1)}%` : undefined),
+      ],
+      bands: periodsWhere(dxy, (v) => v >= 105, '강달러 (105 이상)'),
+    };
+  },
+};
+
+/** The watch points of an indicator for its built chart */
+export function watchFor(id: string, data: ChartData, get: (id: string) => Point[], p: AnalysisParams): WatchResult {
+  return WATCH[id]?.(data, get, p) ?? { items: [] };
+}
 
 // ---------------------------------------------------------------- preferences
 
@@ -1543,6 +2001,22 @@ export function parseKosis(body: unknown): { rows: { region: string; age: string
     return [{ region: String(r.C1 ?? ''), age: String(r.C2 ?? ''), date: `${prd.slice(0, 4)}-${prd.slice(4)}-01`, value: v }];
   });
   return { rows, error: null, code: null };
+}
+
+/** Yahoo Finance chart (interval=1mo) → the last close of each month, dated on the month's first day. */
+export function parseYahooMonthly(body: unknown): Point[] {
+  const r = (body as { chart?: { result?: unknown[] } } | null)?.chart?.result?.[0] as
+    | { meta?: { gmtoffset?: number }; timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }
+    | undefined;
+  const ts = r?.timestamp ?? [];
+  const closes = r?.indicators?.quote?.[0]?.close ?? [];
+  const offset = r?.meta?.gmtoffset ?? 0;
+  const out = new Map<string, number>();
+  ts.forEach((t, i) => {
+    const c = closes[i];
+    if (typeof c === 'number' && c > 0) out.set(`${new Date((t + offset) * 1000).toISOString().slice(0, 7)}-01`, Number(c.toPrecision(8)));
+  });
+  return [...out].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** 한국부동산원 R-ONE SttsApiTblData (json): rows with WRTTIME_IDTFR_ID "202607" and DTA_VAL. */

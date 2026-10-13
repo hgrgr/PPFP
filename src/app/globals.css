@@ -666,3 +666,11 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .ind-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; margin-top: 10px; }
 .ind-picker fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 10px; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .ind-picker legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+
+.watch { border-top: 1px solid var(--line-soft); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.watch ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.watch li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; font-size: 13px; line-height: 1.5; }
+.watch li .mark { color: var(--muted); }
+.watch li.on .mark { color: var(--danger); }
+.watch li.on .strong { color: var(--ink); }
+.watch li.off, .watch li.na { opacity: 0.85; }

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { updateAnalysisPrefs } from '@/app/analysis-actions';
-import type { AnalysisPrefs, ChartData, Group } from '@/domain/indicators';
+import type { AnalysisPrefs, ChartData, Group, WatchItem } from '@/domain/indicators';
 
 export interface IndicatorMeta {
   id: string;
@@ -62,6 +62,9 @@ export function IndicatorChart({ data }: { data: ChartData }) {
               labelFormatter={(l) => (yearly ? `${String(l).slice(0, 4)}년` : String(l).slice(0, 7))}
               contentStyle={{ borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 }}
             />
+            {(data.bands ?? []).map((b) => (
+              <ReferenceArea key={`${b.from}${b.label}`} yAxisId="l" x1={b.from} x2={b.to} fill="var(--danger, #e34948)" fillOpacity={0.08} stroke="none" ifOverflow="extendDomain" />
+            ))}
             {(data.refs ?? []).map((r) => (
               <ReferenceLine key={`${r.y}${r.label}`} yAxisId="l" y={r.y} stroke="var(--muted)" strokeDasharray="4 4" label={r.label ? { value: r.label, position: 'insideTopLeft', fontSize: 11, fill: 'var(--muted)' } : undefined} />
             ))}
@@ -96,6 +99,35 @@ export function IndicatorChart({ data }: { data: ChartData }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** What to watch on a card: each point with whether it holds now, the numbers, and why it matters */
+function WatchList({ items, bands }: { items: WatchItem[]; bands: { label: string }[] }) {
+  const on = items.filter((w) => w.active).length;
+  const labels = [...new Set(bands.map((b) => b.label))];
+  return (
+    <div className="watch" aria-label="주목할 점">
+      <div className="spread">
+        <span className="strong">주목할 점</span>
+        <span className="sub">{on ? `${on}개 해당` : '지금 해당 없음'}</span>
+      </div>
+      <ul>
+        {items.map((w) => (
+          <li key={w.title} className={w.active ? 'on' : w.active === false ? 'off' : 'na'}>
+            <span className="mark" aria-label={w.active ? '해당' : w.active === false ? '해당 없음' : '자료 부족'}>{w.active ? '●' : w.active === false ? '○' : '–'}</span>
+            <span className="stack" style={{ gap: 2 }}>
+              <span>
+                <span className="strong">{w.title}</span>
+                {w.detail && <span className="sub"> · {w.detail}</span>}
+              </span>
+              <span className="sub">{w.note}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {labels.length > 0 && <p className="sub">그래프의 붉은 음영: {labels.join(', ')} 구간</p>}
     </div>
   );
 }
@@ -151,6 +183,7 @@ function IndicatorCard({ meta, version, regionName }: { meta: IndicatorMeta; ver
       ))}
       {view && view.errors.length > 0 && <p className="sub">일부 자료를 새로 받지 못해 저장해 둔 값을 보여 줍니다: {view.errors.join(' · ')}</p>}
       {d?.note && <p className="sub">{d.note}</p>}
+      {d?.watch && d.watch.length > 0 && <WatchList items={d.watch} bands={d.bands ?? []} />}
       <details>
         <summary className="sub">읽는 법 · 출처</summary>
         <p>{meta.about}</p>
