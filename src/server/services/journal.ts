@@ -192,10 +192,18 @@ export async function journalsByTxn(userId: string, txnIds: string[]): Promise<M
   return m;
 }
 
-/** Assets the user can write about: everything they have recorded, held ones first. */
-export async function journalAssets(userId: string) {
+/**
+ * Assets the user can write about: those still in a portfolio (sold out included), held ones
+ * first. An asset taken out of every portfolio is gone from the list, except `include` (the
+ * asset of an entry being edited) and, with `withJournals`, assets that already have entries.
+ */
+export async function journalAssets(userId: string, opts: { include?: string[]; withJournals?: boolean } = {}) {
   const assets = await prisma.asset.findMany({
-    where: { userId, type: { notIn: ['CASH', 'LIABILITY'] } },
+    where: {
+      userId,
+      type: { notIn: ['CASH', 'LIABILITY'] },
+      OR: [{ holdings: { some: {} } }, ...(opts.include?.length ? [{ id: { in: opts.include } }] : []), ...(opts.withJournals ? [{ journals: { some: {} } }] : [])],
+    },
     include: { _count: { select: { holdings: true } }, traits: { include: { trait: { select: { name: true, color: true } } } } },
     orderBy: { name: 'asc' },
   });
@@ -252,8 +260,11 @@ export async function saveJournal(userId: string, input: JournalInput): Promise<
   return guard(async () => {
     const asset = await prisma.asset.findFirst({ where: { id: input.assetId, userId } });
     if (!asset) throw new UserError('종목을 고르세요.');
-    const existing = input.id ? await prisma.journalEntry.findFirst({ where: { id: input.id, userId }, select: { id: true } }) : null;
+    const existing = input.id ? await prisma.journalEntry.findFirst({ where: { id: input.id, userId }, select: { id: true, assetId: true } }) : null;
     if (input.id && !existing) throw new UserError('매매일지를 찾을 수 없습니다.');
+    // A new entry, or an entry moved to another asset, needs an asset still in some portfolio
+    if (existing?.assetId !== asset.id && !(await prisma.holding.count({ where: { assetId: asset.id } })))
+      throw new UserError(`${asset.name}은(는) 어느 포트폴리오에도 없습니다. 보유 자산에서 지운 종목에는 새 일지를 쓸 수 없습니다.`);
 
     const targetPrice = price(input.targetPrice, '목표 예상 가격', true)!;
     const basePrice = price(input.basePrice, '기준 가격', false);

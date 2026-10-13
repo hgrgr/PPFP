@@ -44,6 +44,8 @@ const yahoo = (symbol: string): SeriesReq => ({ id: `IND:YAHOO:${symbol}`, sourc
 const rone = (table: string, cls: string, item = '100001'): SeriesReq => ({ id: `IND:RONE:${table}/${cls}/${item}`, source: 'RONE', code: `${table}/${cls}/${item}`, freq: 'M' });
 /** New York Fed Laubach-Williams estimates (quarterly): one-sided r* or the output gap */
 const lw = (col: 'rstar' | 'gap'): SeriesReq => ({ id: `IND:LW:${col}`, source: 'LW', code: col, freq: 'Q' });
+/** 주민등록 세대수 of a region (KOSIS DT_1B040B3; every item fetched, the one named 세대수 kept) */
+const kosisHouse = (region: string): SeriesReq => ({ id: `IND:KOSIS:hh:${region}`, source: 'KOSIS', code: `101/DT_1B040B3/ALL/${region}/-`, freq: 'M' });
 const kosisPop = (region: string, age: string): SeriesReq => ({ id: `IND:KOSIS:pop:${region}:${age}`, source: 'KOSIS', code: `101/DT_1B04005N/T2/${region}/${age}`, freq: 'M' });
 
 // ---------------------------------------------------------------- regions
@@ -322,12 +324,20 @@ function latestOf(series: { label: string; pts: Point[]; unit: string; freq?: Fr
 
 const popReqs = (p: AnalysisParams) => {
   const codes = popCodes(p.region);
-  return codes.flatMap((r) => ['0', ...AGE_BANDS.flatMap((b) => b.codes)].map((age) => kosisPop(r, age)));
+  return codes.flatMap((r) => [...['0', ...AGE_BANDS.flatMap((b) => b.codes)].map((age) => kosisPop(r, age)), kosisHouse(r)]);
 };
 /** KOSIS codes for a picked region: a 시도's (with its old code as a fallback) or a 시군구's */
 export function popCodes(region: string): string[] {
   if (/^\d{5}$/.test(region)) return [region];
   return regionOf(region).kosis;
+}
+/** 세대수 of the first KOSIS code of the region that has it */
+function houseSeries(get: (id: string) => Point[], region: string): Point[] {
+  for (const r of popCodes(region)) {
+    const pts = get(kosisHouse(r).id);
+    if (pts.length) return pts;
+  }
+  return [];
 }
 /** The first KOSIS code of the region that has data */
 function popSeries(get: (id: string) => Point[], region: string, age: string): Point[] {
@@ -543,8 +553,8 @@ export const INDICATORS: Indicator[] = [
     group: 'realestate',
     title: '수요: 지역 인구와 연령대',
     about:
-      '지역 전체 인구와 0~50대를 10년 단위로 나눈 인구입니다. 집을 사는 주된 연령은 20~50대이고, 0~19세는 학군 수요와 10~20년 뒤의 수요를 보여 줍니다. 인구보다 가구 수가 주택 수요에 더 가깝지만, 주민등록 연령별 인구는 시군구까지 매달 나와 지역의 수요 흐름을 보기에 좋습니다. 30~40대가 줄어드는 지역은 매수 수요가 약해질 수 있고, 어린 연령대가 줄면 학군 수요와 장래 수요가 함께 줄어듭니다.',
-    source: '통계청 KOSIS 주민등록인구 (DT_1B04005N, 행정안전부)',
+      '지역 전체 인구와 0~50대를 10년 단위로 나눈 인구, 그리고 주민등록 세대수(점선)입니다. 집을 사는 주된 연령은 20~50대이고, 0~19세는 학군 수요와 10~20년 뒤의 수요를 보여 줍니다. 집은 사람이 아니라 세대(가구) 단위로 필요해서 주택 수요는 인구보다 세대수에 더 가깝습니다. 1인 가구가 늘면 인구가 줄어도 세대수는 늘 수 있고, 그러면 세대당 인구(인구 ÷ 세대수)가 줄어듭니다. 30~40대가 줄어드는 지역은 매수 수요가 약해질 수 있고, 어린 연령대가 줄면 학군 수요와 장래 수요가 함께 줄어듭니다.',
+    source: '통계청 KOSIS 주민등록인구 (DT_1B04005N), 주민등록세대수 (DT_1B040B3, 행정안전부)',
     defaultOn: true,
     usesRegion: 'any',
     needs: popReqs,
@@ -556,14 +566,23 @@ export const INDICATORS: Indicator[] = [
       // 20~50대 keep their colors; the younger bands take pink and violet, apart from the greens
       const colors = [C.e, C.g, C.a, C.b, C.c, C.d];
       const growth = yoy(total);
+      const house = houseSeries(get, p.region);
+      cols.hh = house.map((x) => ({ ...x, value: x.value / 10_000 }));
+      const perHouse = combine(total, house, (t, h) => (h > 0 ? t / h : null));
       return {
-        lines: [...bands.map((b, i) => ({ key: `a${b.key}`, label: b.label, color: colors[i], kind: 'area' as const, stack: 's' })), { key: 'total', label: '총인구', color: C.ink, axis: 'right' as const }],
+        lines: [
+          ...bands.map((b, i) => ({ key: `a${b.key}`, label: b.label, color: colors[i], kind: 'area' as const, stack: 's' })),
+          { key: 'total', label: '총인구', color: C.ink, axis: 'right' as const },
+          { key: 'hh', label: '세대수', color: C.ink, axis: 'right' as const, dash: true },
+        ],
         rows: joinSeries(cols),
         unit: '만 명',
-        rightUnit: '만 명',
+        rightUnit: '만 명 · 만 세대',
         latest: [
           ...latestOf([{ label: '총인구', pts: cols.total, unit: '만 명', digits: 1 }]),
           ...latestOf([{ label: '1년 증감', pts: growth, unit: '%', digits: 2 }]),
+          ...latestOf([{ label: '세대수', pts: cols.hh, unit: '만 세대', digits: 1 }]),
+          ...latestOf([{ label: '세대당 인구', pts: perHouse, unit: '명', digits: 2 }]),
           ...latestOf(bands.map((b) => ({ label: b.label, pts: cols[`a${b.key}`], unit: '만 명', digits: 1 }))),
         ],
       };
@@ -1705,9 +1724,11 @@ export const WATCH: Record<string, WatchFn> = {
       const pts = col(d, k), l = lastOf(pts), a = agoOf(pts, 12);
       return l && a ? l.value - a.value : null;
     };
-    const t = yo('total'), mid = [yo('a30'), yo('a40')];
+    const t = yo('total'), mid = [yo('a30'), yo('a40')], h = yo('hh');
     return {
       items: [
+        W('세대수는 늘고 인구는 줄어듦', '1인 가구가 늘어 인구가 줄어도 집이 필요한 세대는 늘고 있습니다. 소형 주택 수요는 받쳐 주지만, 넓은 평형 수요는 약해질 수 있습니다.', t === null || h === null ? null : h > 0 && t < 0, t === null || h === null ? undefined : `1년 변화 세대 ${num(h * 10_000, 0)}, 인구 ${num(t * 10_000, 0)}명`),
+        W('세대수가 1년 새 줄어듦', '집이 필요한 세대 자체가 줄고 있습니다. 인구 감소보다 주택 수요에 더 직접적인 약세 신호입니다.', h === null ? null : h < 0, h === null ? undefined : `1년 변화 ${num(h * 10_000, 0)}세대`),
         W('30~40대 인구가 1년 새 줄어듦', '집을 처음 사거나 넓혀 가는 주력 연령대입니다. 이 연령대가 줄어드는 지역은 매수 수요가 구조적으로 약해집니다.', mid.some((v) => v === null) ? null : (mid[0]! + mid[1]!) < 0, mid.every((v) => v !== null) ? `1년 변화 30대 ${num(mid[0]! * 10_000, 0)}명, 40대 ${num(mid[1]! * 10_000, 0)}명` : undefined),
         W('총인구 감소', '인구가 줄면 장기적으로 빈집이 늘고 외곽부터 가격이 약해집니다. 다만 가구 수는 1인 가구 증가로 한동안 더 늘 수 있습니다.', t === null ? null : t < 0, t === null ? undefined : `1년 변화 ${num(t * 10_000, 0)}명`),
       ],
@@ -1988,7 +2009,7 @@ export function parseEcosAny(body: unknown): { points: Point[]; error: string | 
 }
 
 /** KOSIS statisticsParameterData (json): rows with PRD_DE "202501", C1 region, C2 age, DT value. */
-export function parseKosis(body: unknown): { rows: { region: string; age: string; date: string; value: number }[]; error: string | null; code: string | null } {
+export function parseKosis(body: unknown): { rows: { region: string; age: string; item: string; date: string; value: number }[]; error: string | null; code: string | null } {
   if (!Array.isArray(body)) {
     const e = body as { err?: unknown; errMsg?: unknown } | null;
     const code = e?.err == null ? null : String(e.err);
@@ -1998,7 +2019,7 @@ export function parseKosis(body: unknown): { rows: { region: string; age: string
     const prd = String(r.PRD_DE ?? '');
     const v = Number(String(r.DT ?? '').replace(/,/g, ''));
     if (!/^\d{6}$/.test(prd) || !Number.isFinite(v)) return [];
-    return [{ region: String(r.C1 ?? ''), age: String(r.C2 ?? ''), date: `${prd.slice(0, 4)}-${prd.slice(4)}-01`, value: v }];
+    return [{ region: String(r.C1 ?? ''), age: String(r.C2 ?? ''), item: String(r.ITM_NM ?? ''), date: `${prd.slice(0, 4)}-${prd.slice(4)}-01`, value: v }];
   });
   return { rows, error: null, code: null };
 }

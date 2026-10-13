@@ -100,6 +100,13 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   const kosisRows = (url) => {
     const region = url.searchParams.get('objL1') ?? '00';
     if (region === '42' || region === '45') return { err: '30', errMsg: '데이터가 존재하지 않습니다.' };
+    if (url.searchParams.get('tblId') === 'DT_1B040B3') {
+      // 세대수 keeps rising while people per household fall (more one-person households)
+      const people = region === '00' ? 5_150_000 : region === '11' ? 940_000 : region.length === 5 ? 48_000 : 330_000;
+      const rows = [];
+      for (const [y, m, t] of monthsFrom(2011, 1)) rows.push({ C1: region, ITM_ID: 'T1', ITM_NM: '세대수', PRD_DE: `${y}${pad(m)}`, DT: String(Math.round(people * 4.3 * (1 + 0.0011 * (t - 132)))) });
+      return rows;
+    }
     const ages = (url.searchParams.get('objL2') ?? '0').split(/[ +]/).filter(Boolean);
     const scale = region === '00' ? 5_150_000 : region === '11' ? 940_000 : region.length === 5 ? 48_000 : 330_000;
     const rows = [];

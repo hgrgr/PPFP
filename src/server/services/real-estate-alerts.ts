@@ -80,9 +80,9 @@ export async function listReAlerts(userId: string): Promise<ReAlertView[]> {
   }));
 }
 
-/** Assets that can carry a rule: an apartment, villa or officetel linked to its building. */
+/** Assets that can carry a rule: an apartment, villa or officetel linked to its building, still in a portfolio. */
 export async function apartmentAssets(userId: string): Promise<{ id: string; name: string }[]> {
-  const rows = await prisma.asset.findMany({ where: { userId, type: 'REAL_ESTATE' }, select: { id: true, name: true, meta: true }, orderBy: { name: 'asc' } });
+  const rows = await prisma.asset.findMany({ where: { userId, type: 'REAL_ESTATE', holdings: { some: {} } }, select: { id: true, name: true, meta: true }, orderBy: { name: 'asc' } });
   return rows.filter((r) => readApartmentMeta(r.meta)).map((r) => ({ id: r.id, name: r.name }));
 }
 

@@ -137,7 +137,8 @@ export async function linkOptions(userId: string): Promise<KItem[]> {
     prisma.sage.findMany({ where: { userId }, select: { id: true } }),
     prisma.topic.findMany({ where: { userId }, select: { id: true } }),
     prisma.trait.findMany({ where: { group: { userId } }, select: { id: true } }),
-    prisma.asset.findMany({ where: { userId, type: { not: 'LIABILITY' } }, select: { id: true } }),
+    // Assets taken out of every portfolio are not offered for new links
+    prisma.asset.findMany({ where: { userId, type: { not: 'LIABILITY' }, holdings: { some: {} } }, select: { id: true } }),
   ]);
   const refs: KRef[] = [
     ...topics.map((x) => ({ type: 'topic' as const, id: x.id })),

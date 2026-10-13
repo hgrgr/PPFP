@@ -19,7 +19,7 @@ describe('indicator parsers', () => {
 
   it('reads KOSIS rows and its error answers', () => {
     const r = parseKosis([{ PRD_DE: '202508', C1: '11', C2: '30', DT: '712,345' }, { PRD_DE: '2025', C1: '11', C2: '30', DT: '1' }]);
-    assert.deepEqual(r.rows, [{ region: '11', age: '30', date: '2025-08-01', value: 712345 }]);
+    assert.deepEqual(r.rows, [{ region: '11', age: '30', item: '', date: '2025-08-01', value: 712345 }]);
     const e = parseKosis({ err: '30', errMsg: '데이터가 존재하지 않습니다.' });
     assert.equal(e.code, '30');
     assert.equal(e.error, '데이터가 존재하지 않습니다.');
@@ -130,10 +130,22 @@ describe('indicators', () => {
     const c = ind.build((id) => data[id] ?? [], { region: '42', incomeBase: 'region' });
     assert.equal(c.rows[0].total, 152);
     assert.equal(c.rows[0].a20, 15);
-    assert.deepEqual(c.lines.map((l) => l.label), ['0~9세', '10대', '20대', '30대', '40대', '50대', '총인구']);
+    assert.deepEqual(c.lines.map((l) => l.label), ['0~9세', '10대', '20대', '30대', '40대', '50대', '총인구', '세대수']);
     // Young bands are requested too: 0–4 … 15–19
     const ids = ind.needs({ region: '11', incomeBase: 'region' }).map((r) => r.id);
     for (const age of ['5', '10', '15', '20']) assert.ok(ids.includes(`IND:KOSIS:pop:11:${age}`), age);
+    assert.ok(ids.includes('IND:KOSIS:hh:11'));
+  });
+
+  it('sets households beside population, with people per household', () => {
+    const ind = indicatorById('population')!;
+    const data: Record<string, Point[]> = { 'IND:KOSIS:pop:11:0': pts(['2025-09-01', 9_400_000], ['2026-09-01', 9_300_000]), 'IND:KOSIS:hh:11': pts(['2025-09-01', 4_400_000], ['2026-09-01', 4_450_000]) };
+    const P = { region: '11', incomeBase: 'region' as const };
+    const c = ind.build((id) => data[id] ?? [], P);
+    assert.equal(c.rows.at(-1)!.hh, 445);
+    assert.equal(c.latest.find((l) => l.label === '세대당 인구')?.value, '2.09명');
+    const w = watchFor('population', c, (id) => data[id] ?? [], P);
+    assert.equal(w.items.find((x) => x.title === '세대수는 늘고 인구는 줄어듦')?.active, true);
   });
 
   it('every indicator builds from no data without throwing', () => {

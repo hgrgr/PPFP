@@ -9,6 +9,7 @@ import type { JournalDetail, JournalTxnView } from '@/server/services/journal';
 import type { JournalEditor } from './editor';
 import { FieldDefsEditor, FieldInput, LazyEditor, txnText } from './fields';
 import { AskAiButton } from '@/components/ai/launcher';
+import { IndicatorPanel, type IndicatorCapture } from './indicator-panel';
 
 export interface JournalAssetOption {
   id: string;
@@ -36,7 +37,20 @@ const LISTED = ['KR_STOCK', 'US_STOCK', 'CRYPTO'];
 
 
 /** Write or edit one journal entry: properties on top, linked trades, then the block body. Existing entries save themselves. */
-export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { entry: JournalDetail | null; assets: JournalAssetOption[]; formats: Format[]; prefill?: Prefill }) {
+export function JournalEntryForm({
+  entry,
+  assets,
+  formats,
+  prefill = {},
+  indicatorPrefs,
+}: {
+  entry: JournalDetail | null;
+  assets: JournalAssetOption[];
+  formats: Format[];
+  prefill?: Prefill;
+  /** Region, income basis and years of the user's 분석 지표 screen, for the side panel */
+  indicatorPrefs: { region: string; incomeBase: string; years: number };
+}) {
   const router = useRouter();
   const isNew = !entry;
   const firstFormat = useMemo(() => {
@@ -70,6 +84,31 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
   const [state, setState] = useState<{ saving?: boolean; error?: string; savedAt?: number }>({});
   const content = useRef<unknown[]>(entry?.content ?? firstFormat?.content ?? []);
   const editorRef = useRef<JournalEditor | null>(null);
+  const [panel, setPanel] = useState(false);
+
+  /** Puts an indicator's picture, its latest values and what holds now where the cursor is (else at the end). */
+  const insertIndicator = async (c: IndicatorCapture) => {
+    const ed = editorRef.current;
+    if (!ed) throw new Error('편집기가 아직 열리지 않았습니다.');
+    const body = new FormData();
+    body.set('file', new File([c.image], 'indicator.png', { type: 'image/png' }));
+    const res = await fetch('/api/journal/images', { method: 'POST', body });
+    const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (!res.ok || !json.url) throw new Error(json.error ?? '그림을 올리지 못했습니다.');
+    const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+    const blocks = [
+      { type: 'image', props: { url: json.url, caption: `${c.title} · ${today} 분석 지표`, previewWidth: 640 } },
+      { type: 'paragraph', content: c.latest.join(' · ') },
+      ...c.watch.map((w) => ({ type: 'bulletListItem', content: `주목: ${w}` })),
+    ] as Parameters<JournalEditor['insertBlocks']>[0];
+    let at: Parameters<JournalEditor['insertBlocks']>[1] | undefined;
+    try {
+      at = ed.getTextCursorPosition().block;
+    } catch {
+      at = undefined;
+    }
+    ed.insertBlocks(blocks, at ?? ed.document[ed.document.length - 1], 'after');
+  };
 
   const asset = assets.find((a) => a.id === assetId);
   const currency = asset?.currency ?? entry?.currency ?? 'KRW';
@@ -190,6 +229,7 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
   const statusText = state.saving ? '저장 중…' : state.error ? '' : dirty ? (isNew ? '저장하지 않음' : '변경됨') : state.savedAt ? '저장됨' : isNew ? '' : '저장됨';
 
   return (
+    <div className={panel ? 'journal-split' : undefined}>
     <article className="journal-doc">
       <div className="spread doc-bar">
         <nav className="crumbs" aria-label="경로">
@@ -197,6 +237,9 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
         </nav>
         <div className="inline">
           <span className="sub" role="status">{statusText}</span>
+          <button type="button" className={`btn small${panel ? ' primary' : ''}`} aria-pressed={panel} onClick={() => setPanel((v) => !v)} title="오른쪽에 분석 지표를 열고, 그래프를 일지에 넣습니다">
+            📈 분석 지표
+          </button>
           {isNew ? (
             <button type="button" className="btn primary" onClick={() => void save()} disabled={state.saving}>
               저장
@@ -376,6 +419,8 @@ export function JournalEntryForm({ entry, assets, formats, prefill = {} }: { ent
       </div>
       {isNew && <p className="sub">처음 저장한 뒤부터는 고칠 때마다 자동으로 저장됩니다. Ctrl+S(⌘S)로 바로 저장할 수도 있습니다.</p>}
     </article>
+    {panel && <IndicatorPanel prefs={indicatorPrefs} onCapture={insertIndicator} onClose={() => setPanel(false)} />}
+    </div>
   );
 }
 

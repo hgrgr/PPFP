@@ -1,3 +1,4 @@
+import { readPrefs } from '@/domain/indicators';
 import { JournalEntryForm, type Prefill } from '@/components/journal/entry-form';
 import { requireUser } from '@/server/auth';
 import { journalAssets, journalFormats, txnContext } from '@/server/services/journal';
@@ -24,5 +25,6 @@ export default async function NewJournalPage({ searchParams }: { searchParams: P
       </div>
     );
   }
-  return <JournalEntryForm entry={null} assets={assets} formats={formats} prefill={prefill} />;
+  const ap = readPrefs(user.analysisPrefs);
+  return <JournalEntryForm entry={null} assets={assets} formats={formats} prefill={prefill} indicatorPrefs={{ region: ap.region, incomeBase: ap.incomeBase, years: ap.years }} />;
 }

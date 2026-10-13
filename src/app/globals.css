@@ -674,3 +674,15 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .watch li.on .mark { color: var(--danger); }
 .watch li.on .strong { color: var(--ink); }
 .watch li.off, .watch li.na { opacity: 0.85; }
+
+/* 매매일지 + 분석 지표 side by side */
+.journal-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); gap: 16px; align-items: start; }
+.journal-split .journal-doc { max-width: none; }
+.indicator-panel { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.indicator-panel select { width: 100%; }
+.indicator-panel-body { display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+@media (max-width: 1100px) {
+  .journal-split { grid-template-columns: 1fr; }
+  /* Too narrow to sit beside the entry: the panel slides over it from the right */
+  .indicator-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); max-height: none; z-index: 60; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18); }
+}
