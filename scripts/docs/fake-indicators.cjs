@@ -129,7 +129,9 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
       const last = new Date(Date.UTC(y, m, 0));
       const serial = Math.round((last.getTime() - Date.UTC(1899, 11, 30)) / 86_400_000);
       const tp = wave('acmtp', t, 0.6, 0.9, -0.004) + (t > 300 ? (t - 300) * 0.008 : 0);
-      const rn = Math.max(0.3, wave('acmrn', t, 4.2, 1.3, -0.004));
+      // The parts explain the fake market 10-year (DGS10 above) up to a few bp, as the real model does
+      const [l10, a10, tr10] = FRED.DGS10;
+      const rn = wave('DGS10', t, l10, a10, tr10) - tp - 0.02 - 0.015 * Math.sin(t / 5);
       cells.push(number(r, 0, serial), number(r, 1, tp + rn), number(r, 2, tp), number(r, 3, rn));
       r++;
     }
