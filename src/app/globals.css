@@ -668,6 +668,24 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .ind-latest dd { margin: 0; }
 .ind-latest dd.strong { font-size: 16px; font-variant-numeric: tabular-nums; }
 .ind-latest dd.sub { font-size: 11.5px; }
+/* 분석 지표 목차 and the bar that stays at the top */
+.ind-toc { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 16px; }
+.ind-toc h2 { margin: 0; }
+.ind-toc-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px 20px; }
+.ind-toc-group > a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.ind-toc-group ol { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.ind-toc-group li { display: flex; justify-content: space-between; gap: 8px; }
+.ind-toc-group li a { color: var(--ink-2); }
+.ind-toc-group li a:hover { color: var(--ink); text-decoration: underline; }
+.ind-toc-hot { color: var(--danger); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ind-jump { position: sticky; top: 0; z-index: 5; display: flex; gap: 4px; overflow-x: auto; padding: 8px 0; background: var(--ground); border-bottom: 1px solid var(--line-soft); scrollbar-width: none; }
+.ind-jump a { flex: none; padding: 4px 10px; border-radius: 999px; font-size: 13px; color: var(--ink-2); border: 1px solid transparent; }
+.ind-jump a:hover { border-color: var(--line); }
+.ind-jump a[aria-current='true'] { background: var(--ink); color: var(--ground); }
+.ind-group, .indicator { scroll-margin-top: 56px; }
+.indicator.flash { animation: ind-flash 1.6s ease-out; }
+@keyframes ind-flash { from { box-shadow: 0 0 0 3px var(--ink); } to { box-shadow: 0 0 0 3px transparent; } }
+@media (prefers-reduced-motion: reduce) { .indicator.flash { animation: none; outline: 2px solid var(--ink); } }
 .ind-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; margin-top: 10px; }
 .ind-picker fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 10px; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .ind-picker legend { font-size: 13px; font-weight: 600; padding: 0 4px; }

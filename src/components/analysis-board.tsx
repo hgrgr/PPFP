@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { updateAnalysisPrefs } from '@/app/analysis-actions';
 import type { AnalysisPrefs, ChartData, Group, WatchItem } from '@/domain/indicators';
@@ -132,9 +132,100 @@ function WatchList({ items, bands }: { items: WatchItem[]; bands: { label: strin
   );
 }
 
-function IndicatorCard({ meta, version, regionName }: { meta: IndicatorMeta; version: string; regionName: string }) {
+/** Scrolls to a card or section and marks it for a moment, keeping the address in step */
+function jump(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  e.preventDefault();
+  el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  history.replaceState(null, '', `#${id}`);
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1700);
+}
+
+/**
+ * The board's table of contents: every indicator shown, by group, with how many of its watch
+ * points hold now, and a bar that stays at the top to jump between groups and back here.
+ */
+function IndicatorToc({ groups, states }: { groups: { key: Group; label: string; list: IndicatorMeta[] }[]; states: Record<string, CardState> }) {
+  const [current, setCurrent] = useState<string | null>(null);
+  useEffect(() => {
+    const els = groups.map((g) => document.getElementById(`grp-${g.key}`)).filter((x): x is HTMLElement => !!x);
+    const seen = new Map<string, boolean>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) seen.set(en.target.id, en.isIntersecting);
+        setCurrent(els.find((el) => seen.get(el.id))?.id ?? null);
+      },
+      { rootMargin: '-60px 0px -55% 0px' },
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [groups]);
+  const flagged = Object.values(states).filter((s) => s.active.length).length;
+  return (
+    <>
+      <nav className="card ind-toc" id="ind-toc" aria-label="지표 목차">
+        <div className="spread">
+          <h2>목차</h2>
+          <span className="sub">{groups.reduce((t, g) => t + g.list.length, 0)}개 지표 · 지금 주목할 점이 있는 지표 {flagged}개</span>
+        </div>
+        <div className="ind-toc-groups">
+          {groups.map((g) => {
+            const hot = g.list.filter((m) => states[m.id]?.active.length).length;
+            return (
+              <div key={g.key} className="ind-toc-group">
+                <a className="strong" href={`#grp-${g.key}`} onClick={(e) => jump(e, `grp-${g.key}`)}>
+                  {g.label} <span className="sub">{g.list.length}</span>
+                  {hot > 0 && <span className="badge warn">주목 {hot}</span>}
+                </a>
+                <ol>
+                  {g.list.map((m) => {
+                    const st = states[m.id];
+                    return (
+                      <li key={m.id}>
+                        <a href={`#ind-${m.id}`} onClick={(e) => jump(e, `ind-${m.id}`)} title={st?.active.length ? `지금 해당: ${st.active.join(' · ')}` : undefined}>
+                          {m.title}
+                        </a>
+                        {st?.active.length ? <span className="ind-toc-hot" aria-label={`주목할 점 ${st.active.length}개`}>● {st.active.length}</span> : st?.missing ? <span className="sub">키 필요</span> : null}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            );
+          })}
+        </div>
+        <p className="sub">● 숫자는 지금 해당하는 <i>주목할 점</i> 개수입니다. 이름에 마우스를 올리면 무엇인지 보입니다.</p>
+      </nav>
+      <nav className="ind-jump" aria-label="지표 그룹으로 이동">
+        <a href="#ind-toc" onClick={(e) => jump(e, 'ind-toc')}>목차 ↑</a>
+        {groups.map((g) => (
+          <a key={g.key} href={`#grp-${g.key}`} aria-current={current === `grp-${g.key}` ? 'true' : undefined} onClick={(e) => jump(e, `grp-${g.key}`)}>
+            {g.label}
+          </a>
+        ))}
+      </nav>
+    </>
+  );
+}
+
+/** What the table of contents shows for a card once it has loaded */
+interface CardState {
+  /** Watch points that hold now */
+  active: string[];
+  /** Needs a key the user has not put in */
+  missing: boolean;
+}
+
+function IndicatorCard({ meta, version, regionName, onState }: { meta: IndicatorMeta; version: string; regionName: string; onState: (id: string, s: CardState) => void }) {
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (view) onState(meta.id, { active: (view.data?.watch ?? []).filter((w) => w.active).map((w) => w.title), missing: view.missing.length > 0 });
+  }, [view, meta.id, onState]);
   useEffect(() => {
     let live = true;
     setError(null);
@@ -219,6 +310,9 @@ export function AnalysisBoard({
   const regionName = [...regions, ...districts].find((r) => r.code === prefs.region)?.name ?? prefs.region;
   const sidoName = /^\d{5}$/.test(prefs.region) ? (regions.find((r) => r.code === (prefs.region.slice(0, 2) === '51' ? '42' : prefs.region.slice(0, 2) === '52' ? '45' : prefs.region.slice(0, 2)))?.name ?? '') : regionName;
   const shownCount = indicators.filter(on).length;
+  const [states, setStates] = useState<Record<string, CardState>>({});
+  const onState = useCallback((id: string, st: CardState) => setStates((m) => ({ ...m, [id]: st })), []);
+  const shownGroups = groups.map((g) => ({ ...g, list: indicators.filter((m) => m.group === g.key && on(m)) })).filter((g) => g.list.length);
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="card stack" style={{ gap: 12 }} aria-label="지표 설정">
@@ -286,20 +380,18 @@ export function AnalysisBoard({
         </details>
       </section>
 
-      {groups.map((g) => {
-        const list = indicators.filter((m) => m.group === g.key && on(m));
-        if (!list.length) return null;
-        return (
-          <section key={g.key} className="stack" style={{ gap: 12 }} aria-label={g.label}>
-            <h2>{g.label}</h2>
-            <div className="ind-grid">
-              {list.map((m) => (
-                <IndicatorCard key={m.id} meta={m} version={version} regionName={m.usesRegion === 'sido' ? sidoName : regionName} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {shownGroups.length > 0 && <IndicatorToc groups={shownGroups} states={states} />}
+
+      {shownGroups.map((g) => (
+        <section key={g.key} id={`grp-${g.key}`} className="stack ind-group" style={{ gap: 12 }} aria-label={g.label}>
+          <h2>{g.label}</h2>
+          <div className="ind-grid">
+            {g.list.map((m) => (
+              <IndicatorCard key={m.id} meta={m} version={version} regionName={m.usesRegion === 'sido' ? sidoName : regionName} onState={onState} />
+            ))}
+          </div>
+        </section>
+      ))}
       {!shownCount && <p className="empty">켜 둔 지표가 없습니다. 위 *지표 고르기*에서 고르세요.</p>}
     </div>
   );
