@@ -447,6 +447,58 @@ function librarianScript(turn) {
   return { blocks: [text('확인 카드의 **실행**을 누르면 독서 노트의 읽을 책에 추가됩니다. 다른 두 권도 원하시면 말씀해 주세요.')], stop: 'end_turn', usage: { input: 400, cached: 15000, output: 40 } };
 }
 
+/** Each guideline line judged from the numbers, by what it asks about */
+function judge(line, r) {
+  const t = line.replace(/^-\s*/, '');
+  if (/싸|안전마진|PER|내재가치/.test(t)) return [t, '미흡', '기대가 주가에 많이 반영됨(웹 확인 필요)'];
+  if (/ROE|자기자본|부채|빚/.test(t)) return [t, '충족', `순이익률 ${p1(r.margins.net[0])}`];
+  if (/해자|가격 결정력|마진|이익률/.test(t)) return [t, '충족', `매출총이익률 ${p1(r.margins.gross[0])}`];
+  if (/성장|매출/.test(t)) return [t, '충족', `매출 ${p1(r.rows[0].yoy[0])} 증가`];
+  if (/현금/.test(t)) return [t, '판단 불가', '10-Q 현금흐름표 확인 필요'];
+  if (/이해/.test(t)) return [t, '충족', 'GPU·데이터센터 중심'];
+  return [t, '판단 불가', '공시만으로는 어려움'];
+}
+
+function earningsScript(turn, results, first) {
+  const done = turn.filter((m) => m.role === 'assistant').length;
+  if (done === 0) {
+    return { blocks: [text('엔비디아의 최근 공시와 재무 수치를 SEC에서 확인할게요.'), call('sec_company_filings', { ticker: 'NVDA', earnings_only: true, limit: 4 }), call('sec_financials', { ticker: 'NVDA' })], stop: 'tool_use', usage: { input: 11200, cached: 0, output: 120 } };
+  }
+  if (done === 1) {
+    return { blocks: [text('최근 10-Q의 경영진 분석(MD&A)을 읽겠습니다.'), call('sec_read_filing', { ticker: 'NVDA', form: '10-Q', section: 'mda' })], stop: 'tool_use', usage: { input: 2400, cached: 11200, output: 80 } };
+  }
+  if (done === 2) {
+    const r = results.sec_financials ?? { periods: [], rows: [], margins: { gross: [], operating: [], net: [] } };
+    const mda = results.sec_read_filing ?? {};
+    const B = (v) => (v === null || v === undefined ? '—' : `$${(v / 1e9).toFixed(1)}B`);
+    const rows = r.rows.filter((x) => x.values[0] !== null).map((x) => `| ${x.label} | ${x.key === 'epsDiluted' ? `$${x.values[0]}` : B(x.values[0])} | ${x.key === 'epsDiluted' ? `$${x.values[1]}` : B(x.values[1])} | ${x.yoy[0] === null ? '—' : `${x.yoy[0] > 0 ? '+' : ''}${x.yoy[0]}%`} |`);
+    const ctx = first.content.find((b) => b.type === 'text' && b.text.startsWith('<page-context>'))?.text ?? '';
+    const guide = (ctx.split('분석 관점 — 사용자가 정한 가이드라인:\n')[1] ?? '').split('\n').filter((l) => l.startsWith('- '));
+    const sage = ctx.match(/분석 관점 — 투자 거장[^\n]*\n\{"name":"([^"]+)"/)?.[1];
+    const lines = [
+      '## 한 줄 결론',
+      `데이터센터가 이끌어 매출이 1년 전보다 **${p1(r.rows[0]?.yoy[0])}** 늘었고 이익률도 올라갔습니다. 다만 성장 속도에 대한 기대가 높아, 다음 분기 가이던스가 관건입니다.`,
+      '',
+      `## 핵심 숫자 (${r.periods[0]?.label ?? ''}, 회계연도 2027년 2분기)`,
+      `| 항목 | ${r.periods[0]?.label ?? ''} | ${r.periods[1]?.label ?? ''} | 전년 대비 |`,
+      '| --- | ---: | ---: | ---: |',
+      ...rows,
+      '',
+      '## 경영진 설명 (10-Q MD&A)',
+      `- 데이터센터가 성장을 이끌었고, 매출총이익률은 1년 전 72.4%에서 75.0%로 올랐습니다(${mda.form ?? '10-Q'}, ${mda.filed ?? ''} 제출).`,
+      '- 연구개발 인력과 컴퓨팅 비용으로 영업비용이 늘었습니다.',
+      '',
+      ...(guide.length
+        ? ['## 내 가이드라인으로 본 평가', '| 기준 | 평가 | 근거 |', '| --- | --- | --- |', ...guide.map((l) => judge(l, r)).map(([t, v, why]) => `| ${t} | ${v} | ${why} |`), '']
+        : []),
+      ...(sage ? [`${sage}의 관점에서 보면, 숫자는 강하지만 "좋은 회사를 적당한 가격에"라는 기준의 뒷부분은 공시만으로 답할 수 없습니다.`, ''] : []),
+      '요약을 투자 노트 메모로 남기길 제안합니다.',
+    ];
+    return { blocks: [text(lines.join('\n')), call('propose_note', { body: `NVDA ${r.periods[0]?.label ?? ''} 실적: 매출 ${B(r.rows[0]?.values[0])} (${p1(r.rows[0]?.yoy[0])}), 매출총이익률 ${p1(r.margins.gross[0])} #실적`, assets: [] })], stop: 'tool_use', usage: { input: 6800, cached: 13600, output: 1200 } };
+  }
+  return { blocks: [text('확인 카드에서 **실행**을 누르면 메모가 투자 노트에 저장됩니다.')], stop: 'end_turn', usage: { input: 400, cached: 20000, output: 30 } };
+}
+
 /** The scripted next step for a conversation (Messages API shape), picked by the agent's system prompt. */
 function scriptFor(system, msgs) {
   // The research analyst reads its first skill before its usual run
@@ -461,7 +513,9 @@ function scriptFor(system, msgs) {
   }
   const turn = lastTurn(msgs);
   const results = toolResults(turn);
-  return system.includes('리서치 애널리스트')
+  return system.includes('실적·공시 분석가')
+    ? earningsScript(turn, results, msgs[0])
+    : system.includes('리서치 애널리스트')
     ? researchScript(turn, results)
     : system.includes('매매일지 코치')
       ? coachScript(turn, results)
