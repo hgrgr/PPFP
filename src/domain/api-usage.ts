@@ -56,6 +56,8 @@ export function serviceInfo(service: string): ServiceInfo {
       return { name: '통계청 KOSIS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 인구 통계를 12시간 저장해 두고 씁니다.', console: 'https://kosis.kr/openapi/' };
     case 'rone':
       return { name: '한국부동산원 R-ONE', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 통계를 12시간 저장해 두고 씁니다.', console: 'https://www.reb.or.kr/r-one/portal/openapi/openApiIntroPage.do' };
+    case 'yahoo':
+      return { name: 'Yahoo Finance (지수 시세)', group: 'data', billing: '무료, 키 없음', limit: '공개 시세라 키가 필요 없습니다. 앱은 받은 시세를 12시간 저장해 두고 씁니다.', console: 'https://finance.yahoo.com' };
     case 'fred':
       return { name: 'FRED (세인트루이스 연준)', group: 'data', billing: '무료, 키 없음', limit: '공개 다운로드라 키가 필요 없습니다. 앱은 받은 시리즈를 12시간 저장해 두고 씁니다.', console: 'https://fred.stlouisfed.org' };
     case 'nyfed':

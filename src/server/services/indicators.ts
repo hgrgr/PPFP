@@ -4,7 +4,7 @@
  * PriceDaily under their series id. A series is fetched again after FRESH_MS; when a source
  * fails, the stored copy is used.
  */
-import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
+import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, parseYahooMonthly, popCodes, watchFor, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
 import { parseFredCsv } from '@/domain/benchmark';
 import ExcelJS from 'exceljs';
 import { excelDate, readXls } from '@/domain/xls';
@@ -133,6 +133,15 @@ async function loadAcm(userId: string) {
   await markFetched(['IND:ACM:ACMY10', 'IND:ACM:ACMTP10', 'IND:ACM:ACMRNY10']);
 }
 
+/** A Yahoo Finance symbol's month-end closes since 1970. */
+async function loadYahoo(userId: string, r: SeriesReq) {
+  const now = Math.floor(Date.now() / 1000) + 86_400;
+  const body = JSON.parse(await getText(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(r.code)}?period1=0&period2=${now}&interval=1mo`, userId, 'yahoo'));
+  const pts = parseYahooMonthly(body);
+  if (!pts.length) throw new Error('Yahoo: 받은 자료가 없습니다');
+  await store(r.id, 'YAHOO', pts);
+}
+
 /** One R-ONE table, region and item, every month since 2003, a thousand rows a page. */
 async function loadRone(userId: string, r: SeriesReq, key: string) {
   const [table, cls, item] = r.code.split('/');
@@ -197,7 +206,8 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
       errors.push(`${label}: ${e instanceof Error ? e.message : '받지 못했습니다'}`);
     });
   for (const r of stale) {
-    if (r.source === 'FRED') tasks.push(guard(r.code, () => once(r.id, async () => { await loadFred(userId, r); await markFetched([r.id]); })));
+    if (r.source === 'YAHOO') tasks.push(guard(r.code, () => once(r.id, async () => { await loadYahoo(userId, r); await markFetched([r.id]); })));
+    else if (r.source === 'FRED') tasks.push(guard(r.code, () => once(r.id, async () => { await loadFred(userId, r); await markFetched([r.id]); })));
     else if (r.source === 'ECOS') {
       if (!ecosKey) missing.add('ECOS');
       else tasks.push(guard(`ECOS ${r.code}`, () => once(r.id, async () => { await loadEcos(userId, r, ecosKey.key); await markFetched([r.id]); })));
@@ -239,9 +249,16 @@ export async function indicatorView(userId: string, id: string, params: Analysis
   const reqs = ind.needs(params);
   const { missing, errors } = await refreshSeries(userId, reqs);
   const series = await readSeries(reqs.map((r) => r.id));
-  const data = ind.build((sid) => series.get(sid) ?? [], params);
+  const get = (sid: string) => series.get(sid) ?? [];
+  const data = ind.build(get, params);
   const empty = !data.rows.some((r) => Object.entries(r).some(([k, v]) => k !== 'date' && v !== null));
-  return { id, data: empty ? null : { ...data, rows: clip(data.rows, years, kstDate()) }, missing, errors };
+  if (empty) return { id, data: null, missing, errors };
+  // Watch points read the whole history; bands are cut to the period shown
+  const watch = watchFor(id, data, get, params);
+  const rows = clip(data.rows, years, kstDate());
+  const first = String(rows[0]?.date ?? '');
+  const bands = (watch.bands ?? []).filter((b) => b.to >= first).map((b) => ({ ...b, from: b.from < first ? first : b.from }));
+  return { id, data: { ...data, rows, watch: watch.items, bands }, missing, errors };
 }
 
 /** Population regions offered besides the 시도: the 시군구 of the user's linked real estate */

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addMonths, affordability, changeOver, clip, combine, cyclePhase, honeycombPhase, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, readPrefs, regionOf, rollingSum, shiftMonths, shiftYears, splice, toggled, yearlyMean, yoy, type Point } from '../indicators';
+import { addMonths, affordability, changeOver, clip, combine, cyclePhase, honeycombPhase, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, readPrefs, regionOf, rollingSum, shiftMonths, shiftYears, splice, toggled, watchFor, WATCH, parseYahooMonthly, yearlyMean, yoy, type Point } from '../indicators';
 import { excelDate } from '../xls';
 
 const pts = (...v: [string, number][]): Point[] => v.map(([date, value]) => ({ date, value }));
@@ -258,5 +258,53 @@ describe('new indicators', () => {
     };
     const c = indicatorById('us-net-liquidity')!.build((id) => data[id] ?? [], P);
     assert.equal(c.latest[0].value, '5.87조 달러');
+  });
+});
+
+describe('watch points', () => {
+  const P = { region: '11', incomeBase: 'region' as const };
+  const build = (id: string, data: Record<string, Point[]>) => {
+    const get = (k: string) => data[k] ?? [];
+    const c = indicatorById(id)!.build(get, P);
+    return watchFor(id, c, get, P);
+  };
+
+  it('marks the curve inversion now and shades every inverted stretch', () => {
+    const a = pts(['2026-05-01', 0.3], ['2026-06-01', -0.1], ['2026-07-01', -0.2], ['2026-08-01', 0.1], ['2026-09-01', -0.05]);
+    const w = build('us-curve', { 'IND:FRED:T10Y3M': a, 'IND:FRED:T10Y2Y': pts(['2026-09-01', 0.2]) });
+    assert.equal(w.items[0].active, true);
+    assert.match(w.items[0].detail ?? '', /1개월째/);
+    assert.equal(w.items[1].active, false);
+    assert.equal(w.items[2].active, false);
+    assert.deepEqual(w.bands?.map((b) => [b.from, b.to]), [['2026-06-01', '2026-07-01'], ['2026-09-01', '2026-09-01']]);
+  });
+
+  it('flags the Sahm rule at 0.5', () => {
+    const w = build('us-recession', { 'IND:FRED:SAHMREALTIME': pts(['2026-08-01', 0.2], ['2026-09-01', 0.53]), 'IND:FRED:IC4WSA': pts(['2026-09-01', 230000]) });
+    assert.equal(w.items[0].active, true);
+    assert.equal(w.items[1].active, false);
+  });
+
+  it('judges valuations against the series’ own history', () => {
+    const erp = Array.from({ length: 12 }, (_, i) => ({ date: `2025-${String(i + 1).padStart(2, '0')}-01`, value: 5 + (i % 2) * 0.2 }));
+    const per = erp.map((p) => ({ date: p.date, value: 100 / (p.value + 3) }));
+    per[per.length - 1].value = 100 / (9 + 3); // latest premium 9%p, far above the rest
+    const w = build('kospi-erp', { 'IND:ECOS:901Y014/M/1110000': per, 'IND:ECOS:721Y001/M/5050000': per.map((p) => ({ date: p.date, value: 3 })) });
+    assert.equal(w.items[0].active, true);
+    assert.equal(w.items[1].active, false);
+  });
+
+  it('reports no data rather than a verdict', () => {
+    for (const ind of INDICATORS) {
+      const c = ind.build(() => [], P);
+      for (const item of watchFor(ind.id, c, () => [], P).items) assert.notEqual(item.active, true, `${ind.id}: ${item.title}`);
+    }
+    assert.ok(INDICATORS.every((i) => i.id in WATCH), INDICATORS.filter((i) => !(i.id in WATCH)).map((i) => i.id).join(','));
+  });
+
+  it('reads Yahoo monthly bars, keeping the latest close of each month', () => {
+    const t = (iso: string) => Date.parse(iso) / 1000;
+    const body = { chart: { result: [{ meta: { gmtoffset: -14400 }, timestamp: [t('2026-09-01T04:00:00Z'), t('2026-10-01T04:00:00Z'), t('2026-10-13T20:00:00Z')], indicators: { quote: [{ close: [101.45, 102.21, 102.26] }] } }] } };
+    assert.deepEqual(parseYahooMonthly(body), pts(['2026-09-01', 101.45], ['2026-10-01', 102.26]));
   });
 });
