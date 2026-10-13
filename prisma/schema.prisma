@@ -94,6 +94,8 @@ model User {
   dashboardPortfolioId String?
   /// Benchmark keys picked on 성과 분석 (domain/benchmark BENCHMARK_CATALOG); empty: the defaults
   benchmarks           String[]  @default([])
+  /// 분석 지표 screen: indicators switched on/off, region, income basis, years (domain/indicators readPrefs)
+  analysisPrefs        Json      @default("{}")
 
   sessions         Session[]
   brokers          BrokerConnection[]

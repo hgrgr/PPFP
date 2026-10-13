@@ -586,3 +586,4 @@ require('./fake-claude.cjs');
 require('./fake-books.cjs');
 require('./fake-realestate.cjs');
 require('./fake-skills.cjs');
+require('./fake-indicators.cjs');

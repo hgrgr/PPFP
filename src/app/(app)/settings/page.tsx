@@ -3,6 +3,7 @@ import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
 import { propertyKindShort, rtmsPortalUrl, TRADE_KINDS } from '@/domain/real-estate';
+import { saveKosisKeyAction } from '@/app/analysis-actions';
 import { saveEcosKeyAction } from '@/app/benchmark-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { NAV_ITEMS } from '@/domain/nav';
@@ -49,6 +50,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const vworldServer = !vworldHint && !!process.env.VWORLD_API_KEY;
   const ecosHint = hints.get('ecos');
   const ecosServer = !ecosHint && !!process.env.ECOS_API_KEY;
+  const kosisHint = hints.get('kosis');
+  const kosisServer = !kosisHint && !!process.env.KOSIS_API_KEY;
 
   return (
     <>
@@ -288,12 +291,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </ActionForm>
         <ActionForm action={saveEcosKeyAction} className="grid" aria-label="한국은행 ECOS 인증키">
           <label className="field" id="ecos">
-            한국은행 ECOS 인증키 (성과 분석의 한국 물가·통화량·주택가격)
+            한국은행 ECOS 인증키 (성과 분석·분석 지표의 한국 통계)
             <input name="ecosKey" type="password" autoComplete="off" placeholder={ecosHint ? `저장됨 ${ecosHint}` : ecosServer ? '서버 기본 키 사용 중' : '인증키'} />
             <span className="sub">
               {ecosHint ? '바꾸려면 새 키를 넣으세요.' : (
                 <>
-                  <a href="https://ecos.bok.or.kr/api/#/AuthKeyApply" target="_blank" rel="noreferrer">한국은행 경제통계시스템(ECOS) Open API</a>에서 인증키를 신청해 넣으세요(무료). <a href="/performance#benchmarks">성과 분석</a>의 한국 소비자물가·M2 통화량·아파트 가격지수 벤치마크에 씁니다.
+                  <a href="https://ecos.bok.or.kr/api/#/AuthKeyApply" target="_blank" rel="noreferrer">한국은행 경제통계시스템(ECOS) Open API</a>에서 인증키를 신청해 넣으세요(무료). <a href="/performance#benchmarks">성과 분석</a>의 한국 소비자물가·M2 통화량·아파트 가격지수 벤치마크와 <a href="/analysis">분석 지표</a>의 한국 금리·가계부채·PIR·공급 지표에 씁니다.
                 </>
               )}
             </span>
@@ -301,6 +304,27 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {ecosHint && (
             <label className="check">
               <input type="checkbox" name="clearEcos" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+        <ActionForm action={saveKosisKeyAction} className="grid" aria-label="통계청 KOSIS 인증키">
+          <label className="field" id="kosis">
+            통계청 KOSIS 인증키 (분석 지표의 지역 인구)
+            <input name="kosisKey" type="password" autoComplete="off" placeholder={kosisHint ? `저장됨 ${kosisHint}` : kosisServer ? '서버 기본 키 사용 중' : '인증키'} />
+            <span className="sub">
+              {kosisHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://kosis.kr/openapi/index/index.jsp" target="_blank" rel="noreferrer">KOSIS 공유서비스(Open API)</a>에서 회원가입 후 인증키를 발급받아 넣으세요(무료). <a href="/analysis">분석 지표</a>의 지역·연령별 인구에 씁니다.
+                </>
+              )}
+            </span>
+          </label>
+          {kosisHint && (
+            <label className="check">
+              <input type="checkbox" name="clearKosis" /> 저장한 키 지우기
             </label>
           )}
           <div className="full">
