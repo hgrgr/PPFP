@@ -1591,7 +1591,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-13 | [`fd50fda`](https://github.com/hgrgr/PPFP/commit/fd50fda04f93353bb817a292f97bc237c38bc7bd) | [#36](https://github.com/hgrgr/PPFP/pull/36) | 분석 지표: 미국 10년 금리 분해(ACM 기대 단기금리 + 기간 프리미엄, 실질금리 + 기대인플레이션), 5y5y 기대인플레이션, 장단기 금리차, 한국 기준금리·국고채, 지역·연령별 인구, PIR(지역·연령대 소득 기준), 민간 부채, M2와 집값, 인허가·미분양, KOSPI 위험프리미엄, 버핏 지표, 하이일드·VIX 등. 지표 켜고 끄기, 선 숨기기, 기간·지역 고르기. 연동 · 설정의 통계청 KOSIS 키 | 키 백업에 KOSIS 키 포함. ECOS 키를 분석 지표에도 씀 |
 | 2026-10-13 | [`05114f2`](https://github.com/hgrgr/PPFP/commit/05114f2029396b3b2e9777ed4551fdf5c4f2e63b) | [#37](https://github.com/hgrgr/PPFP/pull/37) | — | 분석 지표 금리 분해 ①이 모형 적합값 대신 시장 10년 금리(DGS10)를 기준으로 그리고 *모형 잔차*를 보여 줌. ②의 기대인플레이션을 같은 종가로 계산해 합이 정확히 맞음. 미국 금리를 월평균 대신 월말 값으로 |
 | 2026-10-13 | [`b035dab`](https://github.com/hgrgr/PPFP/commit/b035dabc8b90566720fb188078578174e2032c9e) | [#38](https://github.com/hgrgr/PPFP/pull/38) | — | 분석 지표 인구 카드에 0~9세·10대를 더하고 제목을 *수요: 지역 인구와 연령대*로 |
-| 2026-10-13 | [`49dcb11`](https://github.com/hgrgr/PPFP/commit/49dcb11759f4aebc2b877967115d895224a9ea95) | — | — | 분석 지표 금리 분해 ①의 기대 단기금리를 지금의 단기금리(3개월 국채)와 앞으로의 변화 기대로 나누고, 최근 값을 한 줄 덧셈으로 |
+| 2026-10-13 | [`49dcb11`](https://github.com/hgrgr/PPFP/commit/49dcb11759f4aebc2b877967115d895224a9ea95) | [#39](https://github.com/hgrgr/PPFP/pull/39) | — | 분석 지표 금리 분해 ①의 기대 단기금리를 지금의 단기금리(3개월 국채)와 앞으로의 변화 기대로 나누고, 최근 값을 한 줄 덧셈으로 |
 
 ## 사라진 기능
 
