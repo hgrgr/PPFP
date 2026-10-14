@@ -7,6 +7,7 @@ VM과 개발하던 Mac이 한꺼번에 사라져도 **GitHub**, **Google Drive**
 | GitHub `hgrgr/PPFP` | 코드, 문서, 이 절차서와 스크립트 | 커밋·푸시 |
 | Drive `ppfp-backups/` | DB 덤프 `ppfp-….dump.gpg` (`BACKUP_GPG_PASSPHRASE`로 잠금) | VM의 `offsite` 서비스, 6시간마다 ([deploy-cloud.md 8](deploy-cloud.md#8-google-drive로-백업-복사-권장)) |
 | Drive `ppfp-recovery/` | 복구 묶음 `ppfp-recovery-….tar.gz.enc` (복구 암호로 잠금) | Mac에서 `deploy/recovery/backup.sh` |
+| Drive `ppfp-recovery/` | VM 개발 환경 묶음 `ppfp-vm-….tar.gz.enc` (같은 복구 암호) | VM의 cron이 매일 03:30 KST에 `deploy/recovery/backup-vm.sh` ([아래](#vm에서-하는-대화도-백업하기)) |
 | 비밀번호 관리자나 종이 | **복구 암호** | 사람 |
 
 복구 묶음에 들어가는 것:
@@ -75,6 +76,36 @@ bash ~/ppfp/deploy/recovery/restore-vm.sh      # Drive의 가장 새 DB 덤프�
 ### C. 둘 다
 
 A를 먼저 하고(복구 묶음이 VM 비밀값을 갖고 있음) B를 합니다. 휴대폰 앱과 가족 기기는 같은 Tailscale 주소를 쓰면 다시 설정할 것이 없습니다.
+
+## VM에서 하는 대화도 백업하기
+
+VM을 개발 기계로 쓰면([remote-dev.md](remote-dev.md)) 거기서 한 Claude Code 대화는 VM의 `~/.claude`에만 남습니다. `deploy/recovery/backup-vm.sh`가 이것을 Mac 묶음과 같은 모양으로 묶어 같은 Drive 폴더에 `ppfp-vm-<시각>.tar.gz.enc`로 올립니다.
+
+- **들어가는 것**: `~/.claude`(대화, 메모리, 설정. 앱이 깐 Claude Code 사본 `remote/`는 뺌), `~/.claude.json`, `~/.local/bin/ppfp-claude`, `~/dev/PPFP`의 `.env`·`.claude/`, `~/dev/PPFP`의 모든 브랜치(`repo.bundle`), 운영 폴더의 `~/ppfp/.env`와 `rclone.conf`
+- **암호**: Mac과 같은 복구 암호. VM에서는 `~/.config/ppfp-recovery/passphrase`(권한 600)에서 읽습니다.
+- **올리는 길**: 따로 rclone을 깔지 않고 `offsite` 서비스가 쓰는 rclone 이미지와 `~/ppfp/rclone/rclone.conf`를 그대로 씁니다.
+- Drive에는 60일치가 남고(`PPFP_RECOVERY_KEEP_DAYS`), 기록은 `~/.local/state/ppfp-recovery.log`에 쌓입니다.
+
+한 번만, VM 터미널에서:
+
+```bash
+mkdir -p ~/.config/ppfp-recovery && (umask 077; read -rsp 'passphrase: ' p && printf %s "$p" > ~/.config/ppfp-recovery/passphrase); echo
+bash ~/dev/PPFP/deploy/recovery/backup-vm.sh            # 첫 묶음을 바로 올려 봄
+bash ~/dev/PPFP/deploy/recovery/backup-vm.sh --install  # 매일 03:30 KST cron 등록
+```
+
+되살릴 때는 묶음을 풀어 `home/files.tar`를 새 VM의 홈에 풀고, 저장소는 GitHub에서 받은 뒤 `repo.bundle`에서 안 올린 브랜치를 가져옵니다.
+
+```bash
+mkdir -m 700 ~/vm-restore && cd ~/vm-restore
+read -rsp 'passphrase: ' PASS; export PASS; echo
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -pass env:PASS -in ~/ppfp-vm-….tar.gz.enc | tar -xzf -
+tar -xpkf home/files.tar -C ~                          # 이미 있는 파일은 그대로 둠
+git clone https://github.com/hgrgr/PPFP.git ~/dev/PPFP 2>/dev/null || true
+git -C ~/dev/PPFP fetch ~/vm-restore/repo.bundle 'refs/heads/*:refs/remotes/vm-bundle/*'
+```
+
+개발 DB와 도구는 `deploy/remote-dev/setup-vm.sh`로 다시 만들고, 끝나면 `~/vm-restore`를 지웁니다(비밀값이 풀린 채로 들어 있음). 운영 VM까지 새로 만드는 경우 `vm/env`·`vm/rclone.conf`는 B에서 Mac 묶음 대신 써도 됩니다.
 
 ## 묶음에 없는 것
 
