@@ -50,6 +50,8 @@ export function serviceInfo(service: string): ServiceInfo {
       return { name: '브이월드 토지이용계획', group: 'data', billing: '무료 (공간정보 오픈플랫폼)', limit: '인증키마다 하루 호출 한도가 있습니다. 부동산 알림이 몇 시간에 한 번 아파트마다 한 번 부릅니다.', console: 'https://www.vworld.kr/dev/v4dv_2ddataguide_s001.do' };
     case 'molit':
       return { name: '국토교통부 실거래가', group: 'data', billing: '무료 (공공데이터포털)', limit: '활용신청한 서비스(아파트·연립다세대·오피스텔·단독/다가구·토지·상업업무용)마다 개발계정은 하루 10,000회입니다. 앱은 넉 달이 지난 자료를 7일, 최근 넉 달은 6시간 저장해 두고 씁니다.', console: 'https://www.data.go.kr/data/15126468/openapi.do' };
+    case 'applyhome':
+      return { name: '청약홈 분양정보 · 경쟁률', group: 'data', billing: '무료 (공공데이터포털)', limit: '분양정보와 경쟁률 두 서비스를 각각 활용신청해야 합니다. 개발계정은 서비스마다 하루 40,000회 안팎입니다. 앱은 공고 목록을 6시간, 결과가 나온 공고의 경쟁률은 계속 저장해 두고 씁니다.', console: 'https://www.data.go.kr/data/15098905/openapi.do' };
     case 'ecos':
       return { name: '한국은행 ECOS', group: 'data', billing: '무료', limit: '인증키마다 호출 한도가 있습니다. 앱은 받은 통계를 12시간 저장해 두고 씁니다.', console: 'https://ecos.bok.or.kr/api/#/' };
     case 'kosis':

@@ -215,8 +215,44 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     }
     return { SttsApiTblData: [{ head: [{ list_total_count: row.length }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상 처리되었습니다.' } }] }, { row }] };
   };
+  /** Region ids per table from src/domain/rone-regions.ts, for whole-table requests (the 지역 분석 map) */
+  let regionIds = null;
+  const idsOf = (table) => {
+    if (!regionIds) {
+      const text = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../src/domain/rone-regions.ts'), 'utf8');
+      const rows = [...text.matchAll(/^  \['[^']+', ([0-9, ]+), '[0-9,]*'\],$/gm)].map((m) => m[1].split(',').map((x) => Number(x.trim())));
+      const col = (i) => [...new Set(rows.map((r) => r[i]).filter(Boolean))];
+      regionIds = { A_2024_00045: col(0), A_2024_00073: col(3), A_2024_00554: col(7), A_2024_00609: col(8) };
+    }
+    return regionIds[table] ?? [];
+  };
+  /** Rows from START_WRTTIME, one page of pSize */
+  const paged = (url, row) => {
+    const start = url.searchParams.get('START_WRTTIME') ?? '000000';
+    const all = row.filter((r) => r.WRTTIME_IDTFR_ID >= start);
+    const size = Number(url.searchParams.get('pSize') ?? 1000), page = Number(url.searchParams.get('pIndex') ?? 1);
+    return { SttsApiTblData: [{ head: [{ list_total_count: all.length }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상 처리되었습니다.' } }] }, { row: all.slice((page - 1) * size, page * size) }] };
+  };
+  const wholeTable = (url, table) => {
+    const rows = [];
+    if (table === 'A_2024_00609') {
+      for (const grp of idsOf(table)) {
+        const u = new URL(url);
+        u.searchParams.set('GRP_ID', String(grp));
+        for (const r of buyerRows(u, table).SttsApiTblData[1].row) rows.push({ ...r, GRP_ID: grp });
+      }
+    } else {
+      for (const cls of idsOf(table)) {
+        const u = new URL(url);
+        u.searchParams.set('CLS_ID', String(cls));
+        rows.push(...roneRows(u).SttsApiTblData[1].row);
+      }
+    }
+    return paged(url, rows);
+  };
   const roneRows = (url) => {
     const table = url.searchParams.get('STATBL_ID') ?? '';
+    if (!url.searchParams.get('CLS_ID') && !url.searchParams.get('GRP_ID') && idsOf(table).length) return wholeTable(url, table);
     if (BUYER_SHARES[table] && !url.searchParams.get('CLS_ID')) return buyerRows(url, table);
     const cls = url.searchParams.get('CLS_ID') ?? '500001';
     const seoul = cls === '500008' || (table === 'A_2024_00549' && cls === '500002');

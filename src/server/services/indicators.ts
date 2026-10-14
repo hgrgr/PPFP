@@ -206,6 +206,27 @@ async function loadRoneClasses(userId: string, table: string, item: string, grp:
   for (const [cls, pts] of byClass) await store(`IND:RONE:${table}/${cls}/${item}${grp ? `/${grp}` : ''}`, 'RONE', pts.sort((a, b) => a.date.localeCompare(b.date)));
 }
 
+/**
+ * A whole R-ONE table (every region and class) from `start` (YYYYMM), not stored: for views over
+ * every region at once, such as the map. Keys are "GRP/CLS" ("/CLS" for tables without groups).
+ */
+export async function roneTable(userId: string, table: string, start: string, item = '100001'): Promise<Map<string, Point[]>> {
+  const k = await serviceKey(userId, 'rone', 'RONE_API_KEY');
+  if (!k) throw new UserError('한국부동산원 R-ONE 인증키가 필요합니다. 연동 · 설정에서 넣으세요.');
+  return roneSlot(async () => {
+    const out = new Map<string, Point[]>();
+    for (let page = 1; page <= 60; page++) {
+      const q = new URLSearchParams({ KEY: k.key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', ITM_ID: item, START_WRTTIME: start });
+      const res = parseRoneByClass(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')), true);
+      if (res.error) throw new Error(`R-ONE: ${res.error}`);
+      for (const [key, pts] of res.byClass) out.set(key, [...(out.get(key) ?? []), ...pts]);
+      if (page * 1000 >= res.total) break;
+    }
+    for (const pts of out.values()) pts.sort((a, b) => a.date.localeCompare(b.date));
+    return out;
+  });
+}
+
 /** The New York Fed's Laubach-Williams estimates (.xlsx): one-sided r* and output gap, quarterly. */
 async function loadLw(userId: string) {
   let res: Response;
