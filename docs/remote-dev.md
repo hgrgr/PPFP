@@ -65,7 +65,7 @@ gh auth login
 
   를 연 채 `http://localhost:3200`을 엽니다.
 - **배포** — VM 안에서 `bash ~/ppfp/deploy/cloud/update.sh`를 바로 실행합니다(먼저 백업을 받음).
-- **백업** — 매일 만드는 복구 묶음([recovery.md](recovery.md))은 맥에서 돌아서 VM의 대화 기록은 들어가지 않습니다. 코드는 GitHub에 push해 두세요.
+- **백업** — VM의 대화 기록과 개발 폴더의 비밀값은 VM이 매일 03:30 KST에 따로 묶어 Drive에 올립니다([recovery.md의 VM 백업](recovery.md#vm에서-하는-대화도-백업하기), 한 번 설정 필요). 코드는 GitHub에 push해 두세요.
 - **스킬** — SSH 세션은 VM의 `~/.claude/skills/`에서 스킬을 읽습니다.
 
 ## 앱 없이 터미널로만 쓰기
