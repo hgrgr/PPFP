@@ -7,7 +7,7 @@ VM과 개발하던 Mac이 한꺼번에 사라져도 **GitHub**, **Google Drive**
 | GitHub `hgrgr/PPFP` | 코드, 문서, 이 절차서와 스크립트 | 커밋·푸시 |
 | Drive `ppfp-backups/` | DB 덤프 `ppfp-….dump.gpg` (`BACKUP_GPG_PASSPHRASE`로 잠금) | VM의 `offsite` 서비스, 6시간마다 ([deploy-cloud.md 8](deploy-cloud.md#8-google-drive로-백업-복사-권장)) |
 | Drive `ppfp-recovery/` | 복구 묶음 `ppfp-recovery-….tar.gz.enc` (복구 암호로 잠금) | Mac에서 `deploy/recovery/backup.sh` |
-| Drive `ppfp-recovery/` | VM 개발 환경 묶음 `ppfp-vm-….tar.gz.enc` (같은 복구 암호) | VM의 cron이 매일 03:30 KST에 `deploy/recovery/backup-vm.sh` ([아래](#vm에서-하는-대화도-백업하기)) |
+| Drive `ppfp-recovery/` | VM 개발 환경 묶음 `ppfp-vm-….tar.gz.enc` (VM 복구 암호) | VM의 cron이 매일 03:30 KST에 `deploy/recovery/backup-vm.sh` ([아래](#vm에서-하는-대화도-백업하기)) |
 | 비밀번호 관리자나 종이 | **복구 암호** | 사람 |
 
 복구 묶음에 들어가는 것:
@@ -82,11 +82,11 @@ A를 먼저 하고(복구 묶음이 VM 비밀값을 갖고 있음) B를 합니�
 VM을 개발 기계로 쓰면([remote-dev.md](remote-dev.md)) 거기서 한 Claude Code 대화는 VM의 `~/.claude`에만 남습니다. `deploy/recovery/backup-vm.sh`가 이것을 Mac 묶음과 같은 모양으로 묶어 같은 Drive 폴더에 `ppfp-vm-<시각>.tar.gz.enc`로 올립니다.
 
 - **들어가는 것**: `~/.claude`(대화, 메모리, 설정. 앱이 깐 Claude Code 사본 `remote/`는 뺌), `~/.claude.json`, `~/.local/bin/ppfp-claude`, `~/dev/PPFP`의 `.env`·`.claude/`, `~/dev/PPFP`의 모든 브랜치(`repo.bundle`), 운영 폴더의 `~/ppfp/.env`와 `rclone.conf`
-- **암호**: Mac과 같은 복구 암호. VM에서는 `~/.config/ppfp-recovery/passphrase`(권한 600)에서 읽습니다.
+- **암호**: `~/.config/ppfp-recovery/passphrase`(권한 600)에 든 VM 복구 암호. 2026-10-14에 새로 만들어 Mac 암호와 다릅니다(Mac 묶음 `ppfp-recovery-…`은 계속 Mac 암호로 엽니다). 이 암호도 VM 밖, 비밀번호 관리자에 적어 둡니다.
 - **올리는 길**: 따로 rclone을 깔지 않고 `offsite` 서비스가 쓰는 rclone 이미지와 `~/ppfp/rclone/rclone.conf`를 그대로 씁니다.
 - Drive에는 60일치가 남고(`PPFP_RECOVERY_KEEP_DAYS`), 기록은 `~/.local/state/ppfp-recovery.log`에 쌓입니다.
 
-한 번만, VM 터미널에서:
+처음 설정할 때는 VM 터미널에서(지금 VM에는 되어 있음):
 
 ```bash
 mkdir -p ~/.config/ppfp-recovery && (umask 077; read -rsp 'passphrase: ' p && printf %s "$p" > ~/.config/ppfp-recovery/passphrase); echo

@@ -11,7 +11,7 @@
 #   home/     ~/.claude (sessions, memory, settings; not the desktop app's own copy in remote/),
 #             the dev checkout's .env and .claude/
 #   repo.bundle  every branch of ~/dev/PPFP, pushed or not
-# encrypted with the same recovery passphrase, read from ~/.config/ppfp-recovery/passphrase
+# encrypted with a recovery passphrase (the VM has its own since 2026-10-14), read from ~/.config/ppfp-recovery/passphrase
 # (mode 600) or PPFP_RECOVERY_PASSPHRASE, and uploaded as ppfp-vm-<stamp>.tar.gz.enc next to
 # the Mac's bundles. Uploads go through the rclone image and config the offsite service uses.
 set -euo pipefail
@@ -48,7 +48,7 @@ if [ -z "$pass" ] && [ -f "$PASS_FILE" ]; then
   pass="$(cat "$PASS_FILE")"
 fi
 if [ -z "$pass" ]; then
-  echo "No recovery passphrase. Put the same one the Mac uses in $PASS_FILE once:" >&2
+  echo "No recovery passphrase. Put one (and a copy in a password manager) in $PASS_FILE once:" >&2
   echo "  mkdir -p $(dirname "$PASS_FILE") && (umask 077; read -rsp 'passphrase: ' p && printf %s \"\$p\" >$PASS_FILE)" >&2
   exit 2
 fi
