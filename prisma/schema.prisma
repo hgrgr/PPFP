@@ -97,40 +97,41 @@ model User {
   /// 분석 지표 screen: indicators switched on/off, region, income basis, years (domain/indicators readPrefs)
   analysisPrefs        Json      @default("{}")
 
-  sessions         Session[]
-  brokers          BrokerConnection[]
-  watchlist        WatchItem[]
-  portfolios       Portfolio[]
-  assets           Asset[]
-  auditLogs        AuditLog[]
-  journals         JournalEntry[]
-  journalTemplates JournalTemplate[]
-  journalImages    JournalImage[]
-  traitGroups      TraitGroup[]
-  priceAlerts      PriceAlert[]
-  realEstateAlerts RealEstateAlert[]
-  notifications    Notification[]
-  pushSubs         PushSubscription[]
-  notes            Note[]
-  books            Book[]
-  sages            Sage[]
-  topics           Topic[]
-  knowledgeLinks   KnowledgeLink[]
-  aiSettings       AiSettings?
-  apiKeys          ApiKey[]
-  aiSkills         AiSkill[]
-  aiConversations  AiConversation[]
-  aiMessages       AiMessage[]
-  aiActions        AiAction[]
-  goals            Goal[]
-  loans            Loan[]
-  financialProfile FinancialProfile?
-  autopilots       AutopilotPolicy[]
-  agentDecisions   AgentDecision[]
-  tradeOrders      TradeOrder[]
-  strategies       Strategy[]
-  strategyRuns     StrategyRun[]
-  invitesMade      Invite[]           @relation("inviteCreator")
+  sessions          Session[]
+  brokers           BrokerConnection[]
+  watchlist         WatchItem[]
+  portfolios        Portfolio[]
+  assets            Asset[]
+  auditLogs         AuditLog[]
+  journals          JournalEntry[]
+  journalTemplates  JournalTemplate[]
+  journalImages     JournalImage[]
+  traitGroups       TraitGroup[]
+  priceAlerts       PriceAlert[]
+  realEstateAlerts  RealEstateAlert[]
+  favoriteComplexes FavoriteComplex[]
+  notifications     Notification[]
+  pushSubs          PushSubscription[]
+  notes             Note[]
+  books             Book[]
+  sages             Sage[]
+  topics            Topic[]
+  knowledgeLinks    KnowledgeLink[]
+  aiSettings        AiSettings?
+  apiKeys           ApiKey[]
+  aiSkills          AiSkill[]
+  aiConversations   AiConversation[]
+  aiMessages        AiMessage[]
+  aiActions         AiAction[]
+  goals             Goal[]
+  loans             Loan[]
+  financialProfile  FinancialProfile?
+  autopilots        AutopilotPolicy[]
+  agentDecisions    AgentDecision[]
+  tradeOrders       TradeOrder[]
+  strategies        Strategy[]
+  strategyRuns      StrategyRun[]
+  invitesMade       Invite[]           @relation("inviteCreator")
 }
 
 model Session {
@@ -748,6 +749,53 @@ model Invite {
 model AppSetting {
   key   String @id
   value String
+}
+
+/// 국토부 실거래가 of one 시군구 and month, kept so 지역 분석's 단지 분석 reads years of deals
+/// without asking the API again. Refetched on the same schedule as the in-memory cache
+/// (recent months every few hours, older ones monthly).
+model RtmsMonth {
+  /// TradeKind: apartment, villa, ...
+  kind      String
+  /// 시군구 LAWD_CD (5 digits)
+  lawdCd    String
+  /// YYYYMM
+  ym        String
+  /// AptTrade[] as parsed (domain/real-estate.ts)
+  deals     Json
+  fetchedAt DateTime
+
+  @@id([kind, lawdCd, ym])
+}
+
+/// How many apartment sales of a 시군구's month had been reported by a day: the daily snapshot
+/// the 이달 거래량 예측 is built from (a month keeps filling for about 30 days after it ends).
+model DealSnapshot {
+  lawdCd String
+  /// YYYYMM
+  ym     String
+  /// KST day of the snapshot
+  day    DateTime @db.Date
+  count  Int
+
+  @@id([lawdCd, ym, day])
+}
+
+/// An apartment complex starred on 단지 분석 (관심 단지)
+model FavoriteComplex {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lawdCd     String
+  /// domain/real-estate complexKey: 단지 일련번호, or 법정동|지번|단지명
+  complexKey String
+  name       String
+  umdNm      String
+  /// 지역 분석 region key, to open the complex there again
+  region     String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, lawdCd, complexKey])
 }
 
 /// A quick note. `#키워드` in the body links the note to that topic.

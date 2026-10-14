@@ -179,6 +179,7 @@ async function main() {
   await seedTraits(uid);
   await seedAlerts(uid, { root: root.id, us: us.id });
   await seedKnowledge(uid);
+  await seedComplexes(uid);
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D), userAgent: MAC_CHROME, ip: '192.168.0.12', lastSeenAt: new Date() } });
@@ -187,6 +188,34 @@ async function main() {
   const cashLeft = await prisma.cashBalance.findMany({ where: { portfolio: { userId: uid } }, include: { portfolio: { select: { name: true } } } });
   console.error('[seed] cash', cashLeft.map((c) => `${c.portfolio.name} ${c.currency} ${c.amount}`).join(' | '));
   console.log(token);
+}
+
+// ---------------------------------------------------------------- 지역 분석: 단지
+
+/**
+ * Two starred complexes and two months of daily 신고 snapshots for 강남구, so 관심 단지 and the
+ * 이달 거래량 예측 have something to show. A month's deals are reported over about 45 days.
+ */
+async function seedComplexes(uid: string) {
+  const re = require('./fake-realestate.cjs') as { LAWD: string; monthDeals: (ym: string) => { cancelled: boolean; day: number }[] };
+  for (const [complexKey, name, umdNm] of [['11680-9001', '한빛마을래미안', '대치동'], ['11680-9102', '개포숲마을', '개포동']]) {
+    await prisma.favoriteComplex.create({ data: { userId: uid, lawdCd: re.LAWD, complexKey, name, umdNm, region: '서울>강남구' } });
+  }
+  const kst = new Date(Date.now() + 9 * 3_600_000);
+  const today = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
+  const share = (run: number) => Math.min(1, Math.pow(Math.max(0, run) / 45, 0.75));
+  for (let back = 3; back >= 0; back--) {
+    const first = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() - back, 1);
+    const ym = new Date(first).toISOString().slice(0, 7).replace('-', '');
+    const deals = re.monthDeals(ym).filter((d) => !d.cancelled);
+    for (let t = first; t <= today && t < first + 62 * D; t += D) {
+      const run = Math.round((t - first) / D) + 1;
+      // Only from about eleven weeks ago, as if the daily snapshot started then
+      if (today - t > 80 * D) continue;
+      const known = deals.filter((d) => d.day <= run).length;
+      await prisma.dealSnapshot.create({ data: { lawdCd: re.LAWD, ym, day: new Date(t), count: Math.round(known * share(run)) } });
+    }
+  }
 }
 
 // ---------------------------------------------------------------- strategies

@@ -37,11 +37,14 @@ export interface RoneRegion {
   depth: number;
   /** CLS_ID in each table, 0 when the table has none */
   ids: Record<RoneSet, number>;
+  /** 국토부 실거래가 시군구 codes (a 시 split into 구: every 구); empty for 시도 other than 세종 */
+  lawd: string[];
 }
 
-export const RONE_REGIONS: RoneRegion[] = RONE_REGION_ROWS.map(([key, ...ids]) => {
+export const RONE_REGIONS: RoneRegion[] = RONE_REGION_ROWS.map(([key, ...rest]) => {
   const parts = key.split('>');
-  return { key, label: parts.join(' '), sido: parts[0], depth: parts.length - 1, ids: Object.fromEntries(SET_ORDER.map((s, i) => [s, ids[i]])) as Record<RoneSet, number> };
+  const lawd = String(rest.pop());
+  return { key, label: parts.join(' '), sido: parts[0], depth: parts.length - 1, ids: Object.fromEntries(SET_ORDER.map((s, i) => [s, rest[i]])) as Record<RoneSet, number>, lawd: lawd ? lawd.split(',') : [] };
 });
 const BY_KEY = new Map(RONE_REGIONS.map((r) => [r.key, r]));
 
