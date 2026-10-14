@@ -196,8 +196,28 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   }
 
   // ------------------------------------------------------------ 한국부동산원 R-ONE
+  /** 아파트매매거래 detail tables asked for every class of one region (no CLS_ID): shares per class, the 합계 their sum */
+  const BUYER_SHARES = {
+    A_2024_00609: [0.5, 0.22, 0.13, 0.15],
+    A_2024_00610: [0.05, 0.3, 0.3, 0.18, 0.1, 0.05, 0.02],
+    A_2024_00611: [0.93, 0.01, 0.005, 0.03, 0.002, 0.003, 0.02, 0.0, 0.0],
+  };
+  const buyerRows = (url, table) => {
+    const grp = url.searchParams.get('GRP_ID') ?? '900001';
+    const big = Number(grp) < 910000 ? 1 : 0.1;
+    const shares = BUYER_SHARES[table];
+    const row = [];
+    for (const [y, m, t] of monthsFrom(table === 'A_2024_00610' ? 2019 : 2012, 1)) {
+      const total = Math.max(50, wave(`deals${grp}`, t, 9000 * big, 4000 * big, 0));
+      const parts = shares.map((sh, i) => Math.round(total * sh * (0.4 + 1.2 * hash(`${table}${grp}${i}w`)) * (1 + 0.35 * Math.sin(t / 19 + hash(`${table}${grp}${i}`) * 6.28))));
+      const sum = parts.reduce((a, b) => a + b, 0);
+      for (const [i, v] of [sum, ...parts].entries()) row.push({ STATBL_ID: table, WRTTIME_IDTFR_ID: `${y}${pad(m)}`, CLS_ID: 500001 + i, ITM_ID: 100001, DTA_VAL: v });
+    }
+    return { SttsApiTblData: [{ head: [{ list_total_count: row.length }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상 처리되었습니다.' } }] }, { row }] };
+  };
   const roneRows = (url) => {
     const table = url.searchParams.get('STATBL_ID') ?? '';
+    if (BUYER_SHARES[table] && !url.searchParams.get('CLS_ID')) return buyerRows(url, table);
     const cls = url.searchParams.get('CLS_ID') ?? '500001';
     const seoul = cls === '500008' || (table === 'A_2024_00549' && cls === '500002');
     // 지역 분석 asks for any region: below 시도 level, a region-specific size and pace

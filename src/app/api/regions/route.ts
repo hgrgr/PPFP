@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/server/auth';
 import { complexDetailView, complexView, favoritesView } from '@/server/services/complex-analysis';
-import { compareView, corrView, cycleView, oneView } from '@/server/services/region-analysis';
+import { buyersView, compareView, corrView, cycleView, oneView } from '@/server/services/region-analysis';
 import { UserError } from '@/server/services/portfolios';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * 지역 분석 views: ?view=one&r=&years= · compare&r=&r=&years= · cycle[&r=...]&window=6|12&real=1 ·
- * corr&r=&macro=&years= · complex&r=&years=3|5|10 · complex-detail&r=&lawd=&k=&years= · favorites
+ * corr&r=&macro=&years= · complex&r=&years=3|5|10 · complex-detail&r=&lawd=&k=&years= · favorites · buyers&r=&years=
  */
 export async function GET(req: Request) {
   const user = await currentUser();
@@ -33,7 +33,9 @@ export async function GET(req: Request) {
                   ? await complexDetailView(user.id, regions[0] ?? '', sp.get('lawd') ?? '', sp.get('k') ?? '', years)
                   : view === 'favorites'
                     ? await favoritesView(user.id)
-                    : null;
+                    : view === 'buyers'
+                      ? await buyersView(user.id, regions[0] ?? '', years)
+                      : null;
     if (!body) return NextResponse.json({ error: '없는 화면입니다.' }, { status: 400 });
     return NextResponse.json(body, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
