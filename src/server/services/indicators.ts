@@ -157,12 +157,30 @@ async function loadYahoo(userId: string, r: SeriesReq) {
   await store(r.id, 'YAHOO', pts);
 }
 
-/** One R-ONE table, region and item, every month since 2003, a thousand rows a page. */
+/** R-ONE calls in flight at once (the 지역 분석 board asks for dozens of series together) */
+const RONE_PARALLEL = 4;
+let roneRunning = 0;
+const roneQueue: (() => void)[] = [];
+async function roneSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (roneRunning >= RONE_PARALLEL) await new Promise<void>((go) => roneQueue.push(go));
+  roneRunning++;
+  try {
+    return await job();
+  } finally {
+    roneRunning--;
+    roneQueue.shift()?.();
+  }
+}
+
+/** One R-ONE table, region (and group, for tables split by one) and item, every month since 2003, a thousand rows a page. */
 async function loadRone(userId: string, r: SeriesReq, key: string) {
-  const [table, cls, item] = r.code.split('/');
+  await roneSlot(() => loadRoneNow(userId, r, key));
+}
+async function loadRoneNow(userId: string, r: SeriesReq, key: string) {
+  const [table, cls, item, grp] = r.code.split('/');
   const points: Point[] = [];
   for (let page = 1; page <= 20; page++) {
-    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301' });
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
     const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
     if (res.error) throw new Error(`R-ONE: ${res.error}`);
     points.push(...res.points);
@@ -243,7 +261,7 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
   return { missing: [...missing], errors };
 }
 
-async function readSeries(ids: string[]): Promise<Map<string, Point[]>> {
+export async function readSeries(ids: string[]): Promise<Map<string, Point[]>> {
   const rows = await prisma.priceDaily.findMany({ where: { symbol: { in: ids } }, orderBy: { date: 'asc' }, select: { symbol: true, date: true, close: true } });
   const out = new Map<string, Point[]>(ids.map((id) => [id, []]));
   for (const r of rows) out.get(r.symbol)!.push({ date: r.date.toISOString().slice(0, 10), value: Number(r.close) });

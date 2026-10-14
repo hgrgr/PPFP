@@ -54,7 +54,7 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   // ------------------------------------------------------------ ECOS
   const ECOS = {
     '722Y001/0101000': [2.2, 1.0, 0.0], '721Y001/5020000': [2.6, 1.0, 0], '721Y001/5050000': [3.0, 1.0, 0], '511Y003/FMB': [2.8, 0.6, 0],
-    '121Y006/BECBLA0302': [3.9, 1.0, 0], '161Y005/BBHS00': [1000000, 40000, 13000], '901Y062/P63AC': [60, 4, 0.22], '901Y062/P63ACA': [55, 5, 0.27],
+    '121Y006/BECBLA0302': [3.9, 1.0, 0], '901Y009/0': [92, 1.2, 0.17], '161Y005/BBHS00': [1000000, 40000, 13000], '901Y062/P63AC': [60, 4, 0.22], '901Y062/P63ACA': [55, 5, 0.27],
     '901Y067/I16E': [100.5, 2.5, 0], '901Y067/I16D': [99.8, 2, 0], '901Y118/T002': [50000000, 6000000, 90000], '514Y001/AA': [0, 12, 0], '514Y001/AA04': [-2, 15, 0],
     '901Y063/P64AC': [60, 4, 0.2], '901Y063/P64ACA': [55, 5, 0.25], '721Y001/7020000': [3.4, 1.0, 0], '721Y001/7030000': [9.5, 1.2, 0], '721Y001/4020000': [2.9, 1.0, 0], '721Y001/2010000': [2.6, 1.0, 0],
     '901Y103/1': [4000000, 1200000, 0], '161Y008/BBGA04': [110000, 40000, 450], '161Y008/BBGA02': [250000, 30000, 1200], '161Y008/BBGA03': [600000, 60000, 2500], '104Y015/BDAA31': [700000, 80000, 2800],
@@ -200,15 +200,22 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     const table = url.searchParams.get('STATBL_ID') ?? '';
     const cls = url.searchParams.get('CLS_ID') ?? '500001';
     const seoul = cls === '500008' || (table === 'A_2024_00549' && cls === '500002');
+    // 지역 분석 asks for any region: below 시도 level, a region-specific size and pace
+    const k = 0.6 + hash(`size${cls}`) * 0.8;
+    const big = Number(cls) < 510000 ? 1 : 0.12;
     const [level, amp, trend] = {
       A_2024_00076: seoul ? [102, 22, 0] : [96, 18, 0],
       A_2024_00077: seoul ? [112, 14, 0] : [103, 12, 0],
-      A_2024_00073: seoul ? [52, 4, -0.02] : [68, 3, -0.01],
-      A_2024_00045: seoul ? [80, 4, 0.18] : [88, 3, 0.1],
+      A_2024_00073: seoul ? [52, 4, -0.02] : [68 * Math.min(1.2, k), 3, -0.01],
+      A_2024_00045: seoul ? [80, 4, 0.18] : [88 * k, 3 * k, 0.1 * k],
+      A_2024_00050: seoul ? [84, 3, 0.12] : [90 * k, 3 * k, 0.07 * k],
+      A_2024_00062: seoul ? [700000, 60000, 2200] : [260000 * k, 30000, 900 * k],
+      A_2024_00156: [5.2, 0.4, -0.004],
       A_2024_00549: seoul ? [5500, 2500, 0] : [45000, 15000, 0],
+      A_2024_00554: seoul ? [4200, 1900, 0] : [32000 * big * k, 11000 * big * k, 0],
     }[table] ?? [100, 5, 0];
     const row = [];
-    for (const [y, m, t] of monthsFrom(2012, 1)) row.push({ STATBL_ID: table, WRTTIME_IDTFR_ID: `${y}${pad(m)}`, CLS_ID: Number(cls), ITM_ID: 100001, DTA_VAL: Number(wave(`${table}${cls}`, t, level, amp, trend).toFixed(2)) });
+    for (const [y, m, t] of monthsFrom(2012, 1)) row.push({ STATBL_ID: table, WRTTIME_IDTFR_ID: `${y}${pad(m)}`, CLS_ID: Number(cls), ITM_ID: 100001, DTA_VAL: Number(Math.max(0, wave(`${table}${cls}`, t, level, amp, trend)).toFixed(2)) });
     return { SttsApiTblData: [{ head: [{ list_total_count: row.length }, { RESULT: { CODE: 'INFO-000', MESSAGE: '정상 처리되었습니다.' } }] }, { row }] };
   };
 
