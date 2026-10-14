@@ -8,7 +8,7 @@
  * that both trend up correlate on levels whatever their relation.
  */
 import { addMonths, changeOver, honeycombPhase, joinSeries, REGIONS, rollingSum, type ChartData, type Point, type SeriesReq } from './indicators';
-import { RONE_REGION_ROWS } from './rone-regions';
+import { RONE_REGION_ROWS, RTPI_IDS } from './rone-regions';
 
 // ---------------------------------------------------------------- regions and series
 
@@ -53,7 +53,10 @@ const BY_KEY = new Map(RONE_REGIONS.map((r) => [r.key, r]));
 
 export const roneRegion = (key: string | null | undefined): RoneRegion | undefined => (key ? BY_KEY.get(key) : undefined);
 
-const SIDO_ALIASES: Record<string, string> = { 서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주', 대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원도: '강원', 강원특별자치도: '강원', 충청북도: '충북', 충청남도: '충남', 전라북도: '전북', 전북특별자치도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주' };
+export const SIDO_ALIASES: Record<string, string> = { 서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주', 대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원도: '강원', 강원특별자치도: '강원', 충청북도: '충북', 충청남도: '충남', 전라북도: '전북', 전북특별자치도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주' };
+
+/** "서울특별시" → "서울", "강원특별자치도" → "강원"; short names stay */
+export const shortSido = (name: string) => SIDO_ALIASES[name.trim()] ?? name.trim();
 
 /**
  * The most specific region an address falls in: "경기 성남시 분당구 구미동 187-3" → 경기>성남시>분당구,
@@ -103,6 +106,18 @@ export function regionReqs(r: RoneRegion, sets: RoneSet[]): SeriesReq[] {
     const src = sourceOf(r, s);
     return src ? [src.req] : [];
   });
+}
+
+/**
+ * 공동주택 실거래가격지수 of a region: its own quarterly 시군구 series, else the monthly one of the
+ * region or of its 시도 (with where it came from).
+ */
+export function rtpiSource(r: RoneRegion): { req: SeriesReq; from: RoneRegion; quarterly: boolean } | null {
+  const [m, q] = RTPI_IDS[r.key] ?? [0, 0];
+  if (m) return { req: { id: roneId('A_2024_00178', m), source: 'RONE', code: `A_2024_00178/${m}/100001`, freq: 'M' }, from: r, quarterly: false };
+  if (q) return { req: { id: `${roneId('A_2024_00180', q)}/Q`, source: 'RONE', code: `A_2024_00180/${q}/100001`, freq: 'Q' }, from: r, quarterly: true };
+  const sido = BY_KEY.get(r.sido);
+  return sido && sido !== r ? rtpiSource(sido) : null;
 }
 
 /** 소비자물가지수 총지수 (ECOS 901Y009), to turn prices into real prices */
@@ -459,6 +474,22 @@ export function priceChart(s: Partial<Record<RoneSet, Point[]>>): ChartData {
     rightUnit: '%',
     latest: [...latest('매매지수', price, ''), ...latest('매매 월간', dp, '%'), ...latest('전세지수', jeonse, ''), ...latest('전세 월간', dj, '%')],
     note: '지수는 한국부동산원 기준시점(현재 2026년 6월 = 100) 기준입니다.',
+  };
+}
+
+/** 실거래가격지수 (actual sales) against the 매매가격지수 (the survey) */
+export function rtpiChart(price: Point[], rtpi: Point[], src: { from: RoneRegion; quarterly: boolean } | null, region: RoneRegion): ChartData {
+  const own = src?.from.key === region.key;
+  const gap = joinSeries({ price, rtpi }).flatMap((r) => (typeof r.price === 'number' && typeof r.rtpi === 'number' ? [{ date: String(r.date), value: r.rtpi - r.price }] : []));
+  return {
+    lines: [
+      { key: 'rtpi', label: `실거래가격지수${src?.quarterly ? ' (분기)' : ''}${own || !src ? '' : ` · ${src.from.label}`}`, color: C.d },
+      { key: 'price', label: '매매가격지수 (표본 조사)', color: C.a },
+    ],
+    rows: joinSeries({ rtpi, price }),
+    unit: '',
+    latest: [...latest('실거래가격지수', rtpi, ''), ...latest('매매가격지수', price, ''), ...latest('차이', gap, 'p')],
+    note: `실거래가격지수는 실제 신고된 거래 가격으로, 매매가격지수는 표본 아파트를 조사해 만듭니다. 실거래지수가 먼저 움직이고 조사지수가 뒤따르는 경우가 많아, 둘이 벌어지면 조사지수가 곧 따라갈 방향을 미리 보여 줍니다. 실거래지수는 두세 달 늦게 나옵니다.${src?.quarterly ? ' 시군구는 분기 자료만 있습니다.' : ''}${src && !own ? ` 이 지역은 자료가 없어 ${src.from.label} 값을 보여 줍니다.` : ''}`,
   };
 }
 

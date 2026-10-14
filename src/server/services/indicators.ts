@@ -181,8 +181,9 @@ async function loadRoneNow(userId: string, r: SeriesReq, key: string) {
   if (cls === '*') return loadRoneClasses(userId, table, item, grp, key);
   const points: Point[] = [];
   for (let page = 1; page <= 20; page++) {
-    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
-    const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
+    const quarterly = r.freq === 'Q';
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: quarterly ? 'QY' : 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
+    const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')), quarterly);
     if (res.error) throw new Error(`R-ONE: ${res.error}`);
     points.push(...res.points);
     if (page * 1000 >= res.total) break;
@@ -225,6 +226,19 @@ export async function roneTable(userId: string, table: string, start: string, it
     for (const pts of out.values()) pts.sort((a, b) => a.date.localeCompare(b.date));
     return out;
   });
+}
+
+/** A whole KOSIS table query (statisticsParameterData) as its rows, with the user's key */
+export async function kosisTable(userId: string, params: Record<string, string>): Promise<Record<string, string>[]> {
+  const k = await serviceKey(userId, 'kosis', 'KOSIS_API_KEY');
+  if (!k) throw new UserError('통계청 KOSIS 인증키가 필요합니다. 연동 · 설정에서 넣으세요.');
+  const q = new URLSearchParams({ method: 'getList', apiKey: k.key, format: 'json', jsonVD: 'Y', ...params });
+  const body = JSON.parse(await getText(`https://kosis.kr/openapi/Param/statisticsParameterData.do?${q}`, userId, 'kosis')) as unknown;
+  if (!Array.isArray(body)) {
+    const e = body as { err?: unknown; errMsg?: unknown } | null;
+    throw new Error(`KOSIS ${params.tblId}: ${typeof e?.errMsg === 'string' ? e.errMsg : (e?.err ?? '응답을 읽지 못했습니다')}`);
+  }
+  return body as Record<string, string>[];
 }
 
 /** The New York Fed's Laubach-Williams estimates (.xlsx): one-sided r* and output gap, quarterly. */
@@ -274,7 +288,9 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
   const guard = (label: string, job: () => Promise<void>) =>
     job().catch((e) => {
       console.error('[indicators]', label, e instanceof Error ? e.message : e);
-      errors.push(`${label}: ${e instanceof Error ? e.message : '받지 못했습니다'}`);
+      // Database errors can quote whole rows: keep the screen's note short
+      const msg = e instanceof Error ? e.message.replace(/\s+/g, ' ') : '받지 못했습니다';
+      errors.push(`${label}: ${msg.length > 160 ? `${msg.slice(0, 160)}…` : msg}`);
     });
   for (const r of stale) {
     if (r.source === 'YAHOO') tasks.push(guard(r.code, () => once(r.id, async () => { await loadYahoo(userId, r); await markFetched([r.id]); })));

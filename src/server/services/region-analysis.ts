@@ -20,6 +20,8 @@ import {
   regionReqs,
   regionSeries,
   roneRegion,
+  rtpiChart,
+  rtpiSource,
   seasonality,
   SIDO_KEYS,
   strongestLag,
@@ -36,9 +38,10 @@ import {
 } from '@/domain/region-analysis';
 import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
 import { mapValues, type RegionValues } from '@/domain/region-map';
+import { LOCATION_TABLES, locationValues, rankLocations, type KosisRow, type LocationRow, type LocationTable, type LocationValues } from '@/domain/location';
 import { addMonths } from '@/domain/indicators';
 import { kstDate, prisma } from '../db';
-import { readSeries, refreshSeries, roneTable, type Missing } from './indicators';
+import { kosisTable, readSeries, refreshSeries, roneTable, type Missing } from './indicators';
 import { UserError } from './portfolios';
 
 interface Loaded {
@@ -76,7 +79,7 @@ const ALL_SETS: RoneSet[] = ['price', 'jeonse', 'median', 'ratio', 'demand', 'jd
 export interface OneView {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: { price: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
+  charts: { price: ChartData; rtpi: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
   quadrant: (PathPoint & { q: Quadrant })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: ReturnType<typeof seasonality>;
@@ -88,7 +91,8 @@ export interface OneView {
 export async function oneView(userId: string, key: string, years: number): Promise<OneView> {
   const r = regionOrThrow(key);
   const unsold = unsoldReq(r);
-  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold]);
+  const rtpi = rtpiSource(r);
+  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold, rtpi?.req ?? null]);
   const { s, ids } = setsOf(r, ALL_SETS, get);
   const demandFrom = ids.demand && ids.demand.from.key !== r.key ? ids.demand.from.label : '';
   return {
@@ -96,6 +100,7 @@ export async function oneView(userId: string, key: string, years: number): Promi
     summary: summarize(r, s),
     charts: {
       price: cut(priceChart(s), years),
+      rtpi: cut(rtpiChart(s.price ?? [], rtpi ? get(rtpi.req.id) : [], rtpi, r), years),
       ratio: cut(ratioChart(s), years),
       demand: cut(demandChart(s, demandFrom), years),
       trade: cut(tradeChart(s, unsold ? get(unsold.id) : [], r.sido), years),
@@ -273,5 +278,35 @@ export async function mapView(userId: string): Promise<MapView> {
   const view: MapView = { values, date: dates[Math.floor(dates.length / 2)] ?? null, at: new Date().toISOString() };
   const value = JSON.stringify(view);
   await prisma.appSetting.upsert({ where: { key: MAP_KEY }, create: { key: MAP_KEY, value }, update: { value } });
+  return view;
+}
+
+export interface LocationView {
+  rows: LocationRow[];
+  years: LocationValues['years'];
+  at: string;
+}
+
+const LOCATION_KEY = 'regions:location';
+const LOCATION_FRESH_MS = 24 * 3_600_000;
+
+/** Every 시군구's 입지 numbers and score, from five whole KOSIS tables, kept for a day */
+export async function locationView(userId: string): Promise<LocationView> {
+  const row = await prisma.appSetting.findUnique({ where: { key: LOCATION_KEY } });
+  if (row) {
+    const cached = JSON.parse(row.value) as LocationView;
+    if (Date.now() - Date.parse(cached.at) < LOCATION_FRESH_MS) return cached;
+  }
+  const tables = await Promise.all(
+    (Object.entries(LOCATION_TABLES) as [LocationTable, (typeof LOCATION_TABLES)[LocationTable]][]).map(async ([k, t]) => {
+      const params: Record<string, string> = { orgId: t.org, tblId: t.tbl, itmId: t.itm, objL1: 'ALL', prdSe: 'Y', newEstPrdCnt: String(t.years) };
+      if ('objL2' in t) params.objL2 = t.objL2;
+      return [k, (await kosisTable(userId, params)) as unknown as KosisRow[]] as const;
+    }),
+  );
+  const v = locationValues(Object.fromEntries(tables) as Record<LocationTable, KosisRow[]>);
+  const view: LocationView = { rows: rankLocations(v), years: v.years, at: new Date().toISOString() };
+  const value = JSON.stringify(view);
+  await prisma.appSetting.upsert({ where: { key: LOCATION_KEY }, create: { key: LOCATION_KEY, value }, update: { value } });
   return view;
 }

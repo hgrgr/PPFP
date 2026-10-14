@@ -238,6 +238,23 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '[aria-label="공고 기간"]' }],
   },
   {
+    file: 'regions-location',
+    path: () => `/regions?tab=location&r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="입지 요약"]' }, { sel: 'section[aria-label="입지 순위"]' }],
+    marks: [{ sel: 'select[aria-label="입지 시도"]', closest: 'label' }, { sel: 'button', text: '종합' }],
+  },
+  {
+    file: 'regions-rtpi',
+    path: () => `/regions?r=${encodeURIComponent('서울')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="실거래가격지수 vs 매매가격지수"]' }],
+  },
+  {
     file: 'regions-complex',
     path: () => `/regions?tab=complex&r=${encodeURIComponent('서울>강남구')}&cy=10`,
     width: 1440,
