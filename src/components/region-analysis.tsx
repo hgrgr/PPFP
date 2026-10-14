@@ -7,6 +7,7 @@ import { IndicatorChart, KEY_HELP } from '@/components/analysis-board';
 import { ComplexPanel, FavoritesPanel, type ComplexViewData, type FavoriteData } from '@/components/complex-analysis';
 import { RegionMap, type MapViewData } from '@/components/region-map';
 import { ApplyPanel, type ApplyViewData } from '@/components/subscriptions';
+import { LocationPanel, type LocationViewData } from '@/components/location';
 import type { ChartData } from '@/domain/indicators';
 import type { PathPoint, RegionSummary } from '@/domain/region-analysis';
 
@@ -24,7 +25,7 @@ interface Common {
 interface OneView extends Common {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: Record<'price' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
+  charts: Record<'price' | 'rtpi' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
   quadrant: (PathPoint & { q: { n: number; name: string; about: string } })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: { rows: Record<string, number | string | null>[]; years: string[]; share: { month: number; pct: number }[] };
@@ -76,6 +77,7 @@ const TABS = [
   { key: 'map', label: '지도' },
   { key: 'corr', label: '상관 · 시차' },
   { key: 'buyers', label: '투자자 동향' },
+  { key: 'location', label: '입지' },
   { key: 'apply', label: '청약' },
   { key: 'complex', label: '단지 분석' },
   { key: 'fav', label: '관심 단지' },
@@ -86,6 +88,9 @@ const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--
 const axis = { fontSize: 11.5, fill: 'var(--muted)' };
 const tipStyle = { borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 13 };
 const pct = (v: number | null | undefined, digits = 1, sign = true) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `${sign && v > 0 ? '+' : ''}${v.toLocaleString('ko-KR', { maximumFractionDigits: digits, minimumFractionDigits: digits })}%`);
+/** Axis ticks as %, without floating-point tails (0.30000000000000004) */
+const pctTick = (v: number) => `${Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}%`;
+
 /** An axis range that always shows 0, a little wider than the data */
 const withZero: [(min: number) => number, (max: number) => number] = [(min) => niceDown(Math.min(min, 0)), (max) => niceUp(Math.max(max, 0))];
 const step = (v: number) => (Math.abs(v) <= 1 ? 0.2 : Math.abs(v) <= 5 ? 1 : Math.abs(v) <= 20 ? 5 : 10);
@@ -172,8 +177,8 @@ function PathChart({ points, xLabel, yLabel, guides }: { points: PathPoint[]; xL
       <ResponsiveContainer>
         <ScatterChart margin={{ top: 12, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid stroke="var(--line-soft)" />
-          <XAxis type="number" dataKey="x" name={xLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} label={{ value: xLabel, position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
-          <YAxis type="number" dataKey="y" name={yLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${v}%`} label={{ value: yLabel, angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
+          <XAxis type="number" dataKey="x" name={xLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: xLabel, position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
+          <YAxis type="number" dataKey="y" name={yLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: yLabel, angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
           <ZAxis range={[28, 28]} />
           {guides}
           <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="4 4" />
@@ -263,7 +268,7 @@ function SeasonCard({ season }: { season: OneView['season'] }) {
             <ResponsiveContainer>
               <BarChart data={season.share.map((s) => ({ ...s, m: `${s.month}월` }))} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <XAxis dataKey="m" tick={axis} tickLine={false} axisLine={false} />
-                <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${v}%`} />
+                <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} />
                 <ReferenceLine y={100 / 12} stroke="var(--muted)" strokeDasharray="4 4" />
                 <Tooltip contentStyle={tipStyle} formatter={(v) => [`${Number(v).toFixed(1)}%`, '한 해 거래 중 비중']} />
                 <Bar dataKey="pct" fill="var(--series-1)" fillOpacity={0.6} isAnimationActive={false} />
@@ -317,6 +322,7 @@ function OnePanel({ view }: { view: OneView }) {
       </section>
       <div className="ind-grid">
         <ChartCard title="매매 · 전세 가격" data={view.charts.price} />
+        <ChartCard title="실거래가격지수 vs 매매가격지수" data={view.charts.rtpi} />
         <Card
           title="매매 · 전세 4분면"
           sub="최근 3년, 매달 그 전 3개월 동안의 매매·전세 변동률"
@@ -466,8 +472,8 @@ function CyclePanel({ view, onPick }: { view: CycleView; onPick: (key: string) =
             <ResponsiveContainer>
               <ScatterChart margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
                 <CartesianGrid stroke="var(--line-soft)" />
-                <XAxis type="number" dataKey="x" tick={axis} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} label={{ value: '거래량 변화', position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis type="number" dataKey="y" tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${v}%`} label={{ value: '가격 변화', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
+                <XAxis type="number" dataKey="x" tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: '거래량 변화', position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis type="number" dataKey="y" tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: '가격 변화', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
                 <ZAxis range={[40, 40]} />
                 {flatBand}
                 <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="4 4" />
@@ -725,13 +731,14 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
     }
     if (tab === 'fav') return '/api/regions?view=favorites';
     if (tab === 'map') return '/api/regions?view=map';
+    if (tab === 'location') return '/api/regions?view=location';
     if (tab === 'apply') {
       q.append('r', one);
       q.set('years', String(ay));
     }
     return `/api/regions?${q.toString()}`;
   })();
-  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | BuyersView | ComplexViewData | FavoriteData[] | MapViewData | ApplyViewData>(url);
+  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | BuyersView | ComplexViewData | FavoriteData[] | MapViewData | ApplyViewData | LocationViewData>(url);
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -762,7 +769,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
               ))}
             </div>
           )}
-          {!['cycle', 'complex', 'fav', 'map', 'apply'].includes(tab) && (
+          {!['cycle', 'complex', 'fav', 'map', 'apply', 'location'].includes(tab) && (
             <div className="seg" role="group" aria-label="기간">
               {[5, 10, 20, 0].map((y) => (
                 <button key={y} type="button" aria-current={years === y ? 'true' : undefined} onClick={() => set({ years: String(y) })}>
@@ -772,7 +779,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
             </div>
           )}
         </div>
-        {(tab === 'one' || tab === 'corr' || tab === 'complex' || tab === 'buyers' || tab === 'apply') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
+        {(tab === 'one' || tab === 'corr' || tab === 'complex' || tab === 'buyers' || tab === 'apply' || tab === 'location') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
         {tab === 'corr' && (
           <label className="inline" style={{ gap: 6, alignSelf: 'flex-start' }}>
             <span className="sub">비교할 지표</span>
@@ -828,6 +835,8 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
         <p className="msg err">{error}</p>
       ) : loading || !data ? (
         <p className="empty">{tab === 'apply' ? '불러오는 중… 처음에는 공고마다 경쟁률을 받느라 몇십 초 걸릴 수 있습니다.' : tab === 'map' ? '불러오는 중… 지도는 전국 자료를 한꺼번에 받느라 처음에 10~20초 걸리고, 그 뒤 12시간은 바로 열립니다.' : tab === 'complex' ? '불러오는 중… 처음 여는 시군구는 국토부 실거래가를 달마다 받느라 10~30초 걸립니다. 다음부터는 바로 열립니다.' : '불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.'}</p>
+      ) : tab === 'location' ? (
+        <LocationPanel key={one} view={data as LocationViewData} focus={one} onPick={(k) => set({ tab: 'one', r: k })} />
       ) : tab === 'apply' ? (
         <ApplyPanel view={data as ApplyViewData} />
       ) : tab === 'map' ? (

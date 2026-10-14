@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { MAP_METRICS, shapeValue, type MapMetric, type RegionValues } from '@/domain/region-map';
+import { MAP_METRICS, regionOfShape, shapeValue, type MapMetric, type RegionValues } from '@/domain/region-map';
+import { LOCATION_METRICS, locationOf, splitJeonnam, type LocationMetric, type LocationRow } from '@/domain/location';
+import { roneRegion, type RoneRegion } from '@/domain/region-analysis';
 
 interface Shape {
   /** 시군구 code */
@@ -21,6 +23,13 @@ export interface MapViewData {
   date: string | null;
   at: string;
 }
+
+type AnyMetric = MapMetric | `loc:${LocationMetric | 'score'}`;
+const ALL_METRICS: { key: AnyMetric; label: string; unit: string; kind: 'change' | 'level' | 'phase'; about: string }[] = [
+  ...MAP_METRICS.map((m) => ({ ...m, kind: m.kind as 'change' | 'level' | 'phase' })),
+  { key: 'loc:score', label: '입지 종합', unit: '점', kind: 'level', about: '입지 지표 여섯 가지의 전국 백분위 평균 (입지 탭)' },
+  ...LOCATION_METRICS.filter((m) => m.key !== 'fiscal').map((m) => ({ key: `loc:${m.key}` as AnyMetric, label: `입지: ${m.label}`, unit: m.key === 'growth' ? '%' : ` ${m.unit}`, kind: (m.key === 'growth' ? 'change' : 'level') as 'change' | 'level', about: m.about })),
+];
 
 const PHASE_COLORS = ['var(--series-1)', 'var(--series-3)', 'var(--series-5)', 'var(--series-4)', 'var(--series-6)', 'var(--series-2)'];
 const PHASE_NAMES = ['회복기', '활황기', '침체 진입기', '침체기', '불황기', '회복 진입기'];
@@ -46,12 +55,42 @@ function useShapes(): Shapes | null {
   return shapes;
 }
 
+function useLocationRows(on: boolean): Map<string, LocationRow> | null {
+  const [rows, setRows] = useState<Map<string, LocationRow> | null>(null);
+  useEffect(() => {
+    if (!on || rows) return;
+    let live = true;
+    fetch('/api/regions?view=location', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j: { rows?: LocationRow[] }) => live && setRows(new Map((j.rows ?? []).map((x) => [x.key, x]))))
+      .catch(() => live && setRows(new Map()));
+    return () => {
+      live = false;
+    };
+  }, [on, rows]);
+  return rows;
+}
+
+/** A shape's 입지 row: its region's (a 구 falls back to its 시), else by 시도 and name (군 without 부동산원 data) */
+function shapeLocation(f: Shape, rows: Map<string, LocationRow>): { row: LocationRow; region: RoneRegion | null } | null {
+  const { own, parent } = regionOfShape(f.c);
+  for (const r of [own, parent]) {
+    const row = r ? locationOf(rows, r.key) : null;
+    if (row && r) return { row, region: r };
+  }
+  const key = `${splitJeonnam(f.s, f.n)}>${f.n}`;
+  const row = rows.get(key);
+  return row ? { row, region: roneRegion(key) ?? null } : null;
+}
+
 export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: string) => void }) {
   const shapes = useShapes();
-  const [metric, setMetric] = useState<MapMetric>('y1');
+  const [metric, setMetric] = useState<AnyMetric>('y1');
+  const isLoc = metric.startsWith('loc:');
+  const locRows = useLocationRows(isLoc);
   const [sido, setSido] = useState('all');
   const [hover, setHover] = useState<{ shape: Shape; x: number; y: number } | null>(null);
-  const def = MAP_METRICS.find((m) => m.key === metric)!;
+  const def = ALL_METRICS.find((m) => m.key === metric)!;
   const sidos = useMemo(() => [...new Set((shapes?.features ?? []).map((f) => f.s))], [shapes]);
   const shown = useMemo(() => (shapes?.features ?? []).filter((f) => sido === 'all' || f.s === sido), [shapes, sido]);
 
@@ -64,7 +103,19 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
   }, [shown]);
   const paths = useMemo(() => new Map(shown.map((f) => [f.c, f.r.map((ring) => `M${ring.map(([x, y]) => `${(x * KX - box.x0).toFixed(1)},${(-y - box.y0).toFixed(1)}`).join('L')}Z`).join('')])), [shown, box]);
 
-  const vals = useMemo(() => new Map(shown.map((f) => [f.c, shapeValue(f.c, metric, view.values)])), [shown, metric, view.values]);
+  const vals = useMemo(
+    () =>
+      new Map(
+        shown.map((f) => {
+          if (!isLoc) return [f.c, shapeValue(f.c, metric as MapMetric, view.values)] as const;
+          const hit = locRows ? shapeLocation(f, locRows) : null;
+          const m = metric.slice(4) as LocationMetric | 'score';
+          const v = hit ? (m === 'score' ? hit.row.score : hit.row.values[m]) : undefined;
+          return [f.c, hit && v !== undefined && v !== null ? { value: v, region: hit.region ?? ({ key: '', label: hit.row.label, lawd: [] } as unknown as RoneRegion) } : null] as const;
+        }),
+      ),
+    [shown, metric, view.values, isLoc, locRows],
+  );
   const numbers = [...vals.values()].flatMap((v) => (v ? [v.value] : []));
   const scale = useMemo(() => {
     if (def.kind === 'change') {
@@ -88,12 +139,12 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
   const ranked = shown
     .flatMap((f) => {
       const v = vals.get(f.c);
-      return v && v.region.key !== undefined ? [{ code: f.c, name: `${f.s.replace(/(특별|광역|특별자치)?(시|도)$/, '')} ${f.n}`, ...v }] : [];
+      return v ? [{ code: f.c, name: `${f.s.replace(/(특별|광역|특별자치)?(시|도)$/, '')} ${f.n}`, ...v }] : [];
     })
-    .filter((x, i, a) => a.findIndex((y) => y.region.key === x.region.key) === i);
+    .filter((x, i, a) => !x.region.key || a.findIndex((y) => y.region.key === x.region.key) === i);
   const top = def.kind === 'phase' ? [] : [...ranked].sort((a, b) => b.value - a.value);
 
-  if (!shapes) return <p className="empty">지도를 불러오는 중…</p>;
+  if (!shapes || (isLoc && !locRows)) return <p className="empty">지도를 불러오는 중…</p>;
   const W = 640;
   const H = box.w > 0 ? Math.min(900, (W * box.h) / box.w) : 600;
   const k = box.w > 0 ? Math.min(W / box.w, H / box.h) : 1;
@@ -102,7 +153,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
       <section className="card indicator" aria-label="지역 지도">
         <div className="inline" style={{ gap: 10, flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="지도 지표" style={{ flexWrap: 'wrap' }}>
-            {MAP_METRICS.map((m) => (
+            {ALL_METRICS.map((m) => (
               <button key={m.key} type="button" aria-current={metric === m.key ? 'true' : undefined} onClick={() => setMetric(m.key)}>
                 {m.label}
               </button>
@@ -118,7 +169,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
             </select>
           </label>
         </div>
-        <span className="sub">{def.about}. 기준 {view.date?.slice(0, 7).replace('-', '.') ?? '—'} · 한국부동산원. 회색은 자료가 없는 곳(주로 군 지역)입니다. 시군구를 누르면 그 지역을 자세히 봅니다.</span>
+        <span className="sub">{def.about}. {isLoc ? '통계청 KOSIS · 국세청 연간 자료.' : `기준 ${view.date?.slice(0, 7).replace('-', '.') ?? '—'} · 한국부동산원.`} 회색은 자료가 없는 곳(주로 군 지역)입니다. 시군구를 누르면 그 지역을 자세히 봅니다.</span>
         <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
           <svg viewBox={`0 0 ${(box.w * k).toFixed(0)} ${(box.h * k).toFixed(0)}`} style={{ width: '100%', height: 'auto', maxHeight: 720 }} role="img" aria-label={`${def.label} 지도`}>
             <g transform={`scale(${k})`}>
@@ -131,12 +182,12 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
                     fill={color(v?.value)}
                     stroke="var(--surface)"
                     strokeWidth={0.6 / k}
-                    style={{ cursor: v ? 'pointer' : 'default' }}
+                    style={{ cursor: v?.region.key ? 'pointer' : 'default' }}
                     onMouseMove={(e) => {
                       const r = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
                       setHover({ shape: f, x: e.clientX - r.left, y: e.clientY - r.top });
                     }}
-                    onClick={() => v && onPick(v.region.key)}
+                    onClick={() => v?.region.key && onPick(v.region.key)}
                   />
                 );
               })}
@@ -213,10 +264,14 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
               </thead>
               <tbody>
                 {top.map((x, i) => (
-                  <tr key={x.region.key}>
+                  <tr key={x.region.key || x.code}>
                     <td className="num sub">{i + 1}</td>
                     <th scope="row" className="l">
-                      <button type="button" className="linklike" style={{ textDecoration: 'none' }} onClick={() => onPick(x.region.key)}>{x.region.label}</button>
+                      {x.region.key ? (
+                        <button type="button" className="linklike" style={{ textDecoration: 'none' }} onClick={() => onPick(x.region.key)}>{x.region.label}</button>
+                      ) : (
+                        x.name
+                      )}
                     </th>
                     <td className="num">
                       <span className="dot" style={{ background: color(x.value), marginRight: 6 }} />

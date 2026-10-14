@@ -2041,7 +2041,10 @@ export function parseYahooMonthly(body: unknown): Point[] {
 }
 
 /** 한국부동산원 R-ONE SttsApiTblData (json): rows with WRTTIME_IDTFR_ID "202607" and DTA_VAL. */
-export function parseRone(body: unknown): { points: Point[]; total: number; error: string | null; code: string | null } {
+/** R-ONE period id to the period's first day: monthly "202608" → 2026-08-01, quarterly "202603" (3rd quarter) → 2026-07-01 */
+export const roneDate = (t: string, quarterly = false) => (quarterly ? `${t.slice(0, 4)}-${String((Number(t.slice(4)) - 1) * 3 + 1).padStart(2, '0')}-01` : `${t.slice(0, 4)}-${t.slice(4)}-01`);
+
+export function parseRone(body: unknown, quarterly = false): { points: Point[]; total: number; error: string | null; code: string | null } {
   const b = body as { SttsApiTblData?: [{ head?: [{ list_total_count?: number }, { RESULT?: { CODE?: string; MESSAGE?: string } }] }, { row?: Record<string, unknown>[] }?]; RESULT?: { CODE?: string; MESSAGE?: string } } | null;
   const result = b?.SttsApiTblData?.[0]?.head?.[1]?.RESULT ?? b?.RESULT;
   const code = result?.CODE ?? null;
@@ -2051,7 +2054,9 @@ export function parseRone(body: unknown): { points: Point[]; total: number; erro
     const t = String(r.WRTTIME_IDTFR_ID ?? '');
     const v = r.DTA_VAL;
     if (!/^\d{6}$/.test(t) || v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) return [];
-    return [{ date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }];
+    // A quarter is "YYYY0Q"
+    if (quarterly && !/^\d{4}0[1-4]$/.test(t)) return [];
+    return [{ date: roneDate(t, quarterly), value: Number(v) }];
   });
   return { points: points.sort((a, b2) => a.date.localeCompare(b2.date)), total, error: null, code };
 }
