@@ -39,12 +39,15 @@ export interface RoneRegion {
   ids: Record<RoneSet, number>;
   /** 국토부 실거래가 시군구 codes (a 시 split into 구: every 구); empty for 시도 other than 세종 */
   lawd: string[];
+  /** GRP_ID in the 아파트매매거래 detail tables (매입자거주지별, 매입자연령대별, 거래주체별), 0 when none */
+  groups: { residence: number; age: number; owner: number };
 }
 
 export const RONE_REGIONS: RoneRegion[] = RONE_REGION_ROWS.map(([key, ...rest]) => {
   const parts = key.split('>');
   const lawd = String(rest.pop());
-  return { key, label: parts.join(' '), sido: parts[0], depth: parts.length - 1, ids: Object.fromEntries(SET_ORDER.map((s, i) => [s, rest[i]])) as Record<RoneSet, number>, lawd: lawd ? lawd.split(',') : [] };
+  const [residence, age, owner] = rest.slice(SET_ORDER.length) as number[];
+  return { key, label: parts.join(' '), sido: parts[0], depth: parts.length - 1, ids: Object.fromEntries(SET_ORDER.map((s, i) => [s, rest[i]])) as Record<RoneSet, number>, lawd: lawd ? lawd.split(',') : [], groups: { residence, age, owner } };
 });
 const BY_KEY = new Map(RONE_REGIONS.map((r) => [r.key, r]));
 

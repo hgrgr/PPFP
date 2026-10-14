@@ -39,6 +39,25 @@ interface CycleView extends Common {
   real: boolean;
   rows: { key: string; label: string; date: string | null; x: number | null; y: number | null; phase: number | null; name: string | null; path: PathPoint[] }[];
 }
+interface RankRow {
+  key: string;
+  label: string;
+  deals: number;
+  outside: number | null;
+  otherSido: number | null;
+  seoul: number | null;
+  change: number | null;
+  months: { date: string; value: number | null }[];
+  date: string | null;
+}
+interface BuyersView extends Common {
+  region: { key: string; label: string };
+  residence: ChartData;
+  age: ChartData;
+  owner: ChartData;
+  ranking: RankRow[];
+  rankBy: 'outside' | 'otherSido';
+}
 interface CorrView extends Common {
   region: { key: string; label: string };
   macro: { key: string; label: string; about: string; unit: string };
@@ -53,6 +72,7 @@ const TABS = [
   { key: 'compare', label: '지역 비교' },
   { key: 'cycle', label: '순환 국면' },
   { key: 'corr', label: '상관 · 시차' },
+  { key: 'buyers', label: '투자자 동향' },
   { key: 'complex', label: '단지 분석' },
   { key: 'fav', label: '관심 단지' },
 ] as const;
@@ -555,6 +575,69 @@ function CorrPanel({ view }: { view: CorrView }) {
   );
 }
 
+const heat = (v: number | null) => (v === null ? 'transparent' : `color-mix(in srgb, var(--series-4) ${Math.round(Math.min(100, Math.max(0, v)) * 0.8)}%, transparent)`);
+
+function BuyersPanel({ view, onPick }: { view: BuyersView; onPick: (key: string) => void }) {
+  const bySido = view.rankBy === 'otherSido';
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <Notices view={view} />
+      <div className="ind-grid">
+        <ChartCard
+          title="매수자 거주지 · 외지인 비율"
+          data={view.residence}
+          sub={`${view.region.label} 아파트를 산 사람이 어디 사는지`}
+          about={<p>한국부동산원 *매입자거주지별 아파트매매거래*입니다. 외지인(그 시군구 밖에 사는 매수자) 비율이 오르면 투자 수요가 들어오는 것이고, 특히 서울 거주자 비율이 오르는 지방·경기 지역은 갭투자 자금이 몰리는 경우가 많습니다. 반대로 같은 시군구 사람이 대부분이면 실수요 위주입니다.</p>}
+        />
+        <ChartCard title="매수자 연령대" data={view.age} about={<p>한국부동산원 *매입자연령대별 아파트매매거래*(2019년부터)입니다. 기타는 법인 등 나이가 없는 매수자입니다.</p>} />
+        <ChartCard title="법인 매수 · 매도" data={view.owner} about={<p>한국부동산원 *거래주체별 아파트매매거래*에서 매수자나 매도자가 법인인 거래의 비율입니다. 법인 매도가 많으면 보유세·규제로 법인이 물량을 내놓는 것입니다.</p>} />
+        <Card
+          title={bySido ? '시도별 외지인 매수' : '이웃 지역 외지인 매수'}
+          sub={`최근 12개월, ${bySido ? '다른 시도 거주자' : '외지인(시군구 밖 거주자)'} 비율 순. 칸은 최근 12개월 달마다의 외지인 비율(진할수록 높음)`}
+        >
+          <div className="table-wrap">
+            <table className="rank">
+              <thead>
+                <tr>
+                  <th className="l">지역</th>
+                  <th className="num">외지인</th>
+                  <th className="num">다른 시도</th>
+                  <th className="num">서울</th>
+                  <th className="num">1년 전 대비</th>
+                  <th className="num">거래</th>
+                  <th className="l">최근 12개월</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.ranking.map((r) => (
+                  <tr key={r.key} style={{ background: r.key === view.region.key ? 'var(--surface-2)' : undefined }}>
+                    <th scope="row" className="l">
+                      <button type="button" className="linklike" style={{ textDecoration: 'none' }} onClick={() => onPick(r.key)}>{r.label}</button>
+                    </th>
+                    <td className="num">{pct(r.outside, 1, false)}</td>
+                    <td className="num">{pct(r.otherSido, 1, false)}</td>
+                    <td className="num">{pct(r.seoul, 1, false)}</td>
+                    <td className="num">{r.change === null ? '—' : `${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}%p`}</td>
+                    <td className="num">{r.deals.toLocaleString('ko-KR')}</td>
+                    <td className="l">
+                      <span className="inline" style={{ gap: 2, flexWrap: 'nowrap' }} aria-label="최근 12개월 외지인 비율">
+                        {r.months.map((m) => (
+                          <span key={m.date} title={`${ym(m.date)} ${pct(m.value, 1, false)}`} style={{ width: 10, height: 16, flex: 'none', borderRadius: 2, background: heat(m.value), border: '1px solid var(--line-soft)' }} />
+                        ))}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="sub">지역 이름을 누르면 그 지역의 투자자 동향을 봅니다. 기준 {ym(view.ranking[0]?.date)}.</p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 /** One region picker: typed search over every region, plus quick picks */
 function RegionPicker({ regions, value, onPick, label, quick }: { regions: RegionOption[]; value?: string; onPick: (key: string) => void; label: string; quick: RegionOption[] }) {
   const [text, setText] = useState('');
@@ -630,6 +713,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
       q.append('r', one);
       q.set('macro', macro);
     }
+    if (tab === 'buyers') q.append('r', one);
     if (tab === 'complex') {
       q.append('r', one);
       q.set('years', String(cy));
@@ -637,7 +721,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
     if (tab === 'fav') return '/api/regions?view=favorites';
     return `/api/regions?${q.toString()}`;
   })();
-  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | ComplexViewData | FavoriteData[]>(url);
+  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | BuyersView | ComplexViewData | FavoriteData[]>(url);
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -669,7 +753,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
             </div>
           )}
         </div>
-        {(tab === 'one' || tab === 'corr' || tab === 'complex') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
+        {(tab === 'one' || tab === 'corr' || tab === 'complex' || tab === 'buyers') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
         {tab === 'corr' && (
           <label className="inline" style={{ gap: 6, alignSelf: 'flex-start' }}>
             <span className="sub">비교할 지표</span>
@@ -725,6 +809,8 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
         <p className="msg err">{error}</p>
       ) : loading || !data ? (
         <p className="empty">{tab === 'complex' ? '불러오는 중… 처음 여는 시군구는 국토부 실거래가를 달마다 받느라 10~30초 걸립니다. 다음부터는 바로 열립니다.' : '불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.'}</p>
+      ) : tab === 'buyers' ? (
+        <BuyersPanel view={data as BuyersView} onPick={(k) => set({ r: k })} />
       ) : tab === 'complex' ? (
         <ComplexPanel view={data as ComplexViewData} onError={setNote} />
       ) : tab === 'fav' ? (

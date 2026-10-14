@@ -27,7 +27,7 @@ export interface Point {
 export interface SeriesReq {
   id: string;
   source: IndicatorSource;
-  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID[/GRP_ID]" · LW: column (rstar, gap) */
+  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID[/GRP_ID]", CLS_ID * for every class at once (stored as one series per class) · LW: column (rstar, gap) */
   code: string;
   freq: Freq;
 }
@@ -2054,6 +2054,23 @@ export function parseRone(body: unknown): { points: Point[]; total: number; erro
     return [{ date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }];
   });
   return { points: points.sort((a, b2) => a.date.localeCompare(b2.date)), total, error: null, code };
+}
+
+/** An R-ONE answer asked for every class of a table at once (no CLS_ID): the points of each class */
+export function parseRoneByClass(body: unknown): { byClass: Map<string, Point[]>; total: number; error: string | null } {
+  const b = body as { SttsApiTblData?: [{ head?: [{ list_total_count?: number }, { RESULT?: { CODE?: string; MESSAGE?: string } }] }, { row?: Record<string, unknown>[] }?]; RESULT?: { CODE?: string; MESSAGE?: string } } | null;
+  const result = b?.SttsApiTblData?.[0]?.head?.[1]?.RESULT ?? b?.RESULT;
+  if (!b?.SttsApiTblData) return { byClass: new Map(), total: 0, error: result?.CODE === 'INFO-200' ? null : (result?.MESSAGE ?? 'R-ONE 응답을 읽지 못했습니다') };
+  const byClass = new Map<string, Point[]>();
+  for (const r of b.SttsApiTblData[1]?.row ?? []) {
+    const t = String(r.WRTTIME_IDTFR_ID ?? '');
+    const v = r.DTA_VAL;
+    if (!/^\d{6}$/.test(t) || v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) continue;
+    const cls = String(r.CLS_ID ?? '');
+    byClass.set(cls, [...(byClass.get(cls) ?? []), { date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }]);
+  }
+  for (const pts of byClass.values()) pts.sort((a, b2) => a.date.localeCompare(b2.date));
+  return { byClass, total: Number(b.SttsApiTblData[0]?.head?.[0]?.list_total_count ?? 0), error: null };
 }
 
 /**

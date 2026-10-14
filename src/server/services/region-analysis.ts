@@ -34,6 +34,7 @@ import {
   type RoneRegion,
   type RoneSet,
 } from '@/domain/region-analysis';
+import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
 import { kstDate } from '../db';
 import { readSeries, refreshSeries, type Missing } from './indicators';
 import { UserError } from './portfolios';
@@ -200,6 +201,41 @@ export async function corrView(userId: string, key: string, macroKey: string, ye
     best: strongestLag(lags),
     now: lags.find((l) => l.lag === 0)?.r ?? null,
     chart: cut(corrChart(price, macro, m.label, unit), years),
+    missing,
+    errors,
+  };
+}
+
+export interface BuyersView {
+  region: { key: string; label: string };
+  residence: ChartData;
+  age: ChartData;
+  owner: ChartData;
+  ranking: RankRow[];
+  rankBy: 'outside' | 'otherSido';
+  missing: Missing[];
+  errors: string[];
+}
+
+/** Who buys the region's apartments, and the region beside its peers on outsider buying */
+export async function buyersView(userId: string, key: string, years: number): Promise<BuyersView> {
+  const r = regionOrThrow(key);
+  if (!r.groups.residence) throw new UserError('이 지역은 매입자 통계가 없습니다. 시도나 시군구를 고르세요.');
+  const peers = peersOf(r);
+  const reqs = [buyerReq(r, 'residence'), buyerReq(r, 'age'), buyerReq(r, 'owner'), ...peers.map((p) => buyerReq(p, 'residence'))].filter((x): x is SeriesReq => !!x);
+  const { missing, errors } = await refreshSeries(userId, [...new Map(reqs.map((x) => [x.id, x])).values()]);
+  // A request loads every class; read each class's own series
+  const ids = [...BUYER_CLASSES.residence.flatMap((c) => [r, ...peers].map((p) => classId(p, 'residence', c))), ...BUYER_CLASSES.age.map((c) => classId(r, 'age', c)), ...BUYER_CLASSES.owner.map((c) => classId(r, 'owner', c))];
+  const series = await readSeries([...new Set(ids)]);
+  const get = (id: string) => series.get(id) ?? [];
+  return {
+    region: { key: r.key, label: r.label },
+    residence: cut(residenceChart(r, get), years),
+    age: cut(ageChart(r, get), years),
+    owner: cut(ownerChart(r, get), years),
+    // 시도 side by side: by buyers from other 시도; 시군구: by buyers from outside the 시군구
+    ranking: peers.map((p) => rankRow(p, get)).sort((a, b) => (peers[0]?.depth === 0 ? (b.otherSido ?? -1) - (a.otherSido ?? -1) : (b.outside ?? -1) - (a.outside ?? -1))),
+    rankBy: peers[0]?.depth === 0 ? 'otherSido' : 'outside',
     missing,
     errors,
   };

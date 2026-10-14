@@ -4,7 +4,7 @@
  * PriceDaily under their series id. A series is fetched again after FRESH_MS; when a source
  * fails, the stored copy is used.
  */
-import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, parseYahooMonthly, popCodes, watchFor, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
+import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, parseRoneByClass, parseYahooMonthly, popCodes, watchFor, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
 import { parseFredCsv } from '@/domain/benchmark';
 import ExcelJS from 'exceljs';
 import { excelDate, readXls } from '@/domain/xls';
@@ -178,6 +178,7 @@ async function loadRone(userId: string, r: SeriesReq, key: string) {
 }
 async function loadRoneNow(userId: string, r: SeriesReq, key: string) {
   const [table, cls, item, grp] = r.code.split('/');
+  if (cls === '*') return loadRoneClasses(userId, table, item, grp, key);
   const points: Point[] = [];
   for (let page = 1; page <= 20; page++) {
     const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
@@ -187,6 +188,22 @@ async function loadRoneNow(userId: string, r: SeriesReq, key: string) {
     if (page * 1000 >= res.total) break;
   }
   await store(r.id, 'RONE', points.sort((a, b) => a.date.localeCompare(b.date)));
+}
+
+/**
+ * Every class of an R-ONE table for one group (e.g. each buyer's residence of one region's
+ * apartment sales), in one run of pages; each class is stored as `table/cls/item/grp`.
+ */
+async function loadRoneClasses(userId: string, table: string, item: string, grp: string, key: string) {
+  const byClass = new Map<string, Point[]>();
+  for (let page = 1; page <= 20; page++) {
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
+    const res = parseRoneByClass(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
+    if (res.error) throw new Error(`R-ONE: ${res.error}`);
+    for (const [cls, pts] of res.byClass) byClass.set(cls, [...(byClass.get(cls) ?? []), ...pts]);
+    if (page * 1000 >= res.total) break;
+  }
+  for (const [cls, pts] of byClass) await store(`IND:RONE:${table}/${cls}/${item}${grp ? `/${grp}` : ''}`, 'RONE', pts.sort((a, b) => a.date.localeCompare(b.date)));
 }
 
 /** The New York Fed's Laubach-Williams estimates (.xlsx): one-sided r* and output gap, quarterly. */

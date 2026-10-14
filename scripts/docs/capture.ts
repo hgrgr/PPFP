@@ -212,6 +212,14 @@ const SHOTS: Shot[] = [
     clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="시차별 상관계수"]' }, { sel: 'section[aria-label="두 변화 겹쳐 보기"]' }],
   },
   {
+    file: 'regions-buyers',
+    path: () => `/regions?tab=buyers&r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
+  },
+  {
     file: 'regions-complex',
     path: () => `/regions?tab=complex&r=${encodeURIComponent('서울>강남구')}&cy=10`,
     width: 1440,

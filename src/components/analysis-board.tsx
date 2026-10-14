@@ -71,7 +71,7 @@ export function IndicatorChart({ data }: { data: ChartData }) {
             {shown.map((l) => {
               const y = l.axis === 'right' ? 'r' : 'l';
               if (l.kind === 'area') return <Area key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stackId={l.stack} stroke={l.color} fill={l.color} fillOpacity={0.35} strokeWidth={1.2} connectNulls isAnimationActive={false} />;
-              if (l.kind === 'bar') return <Bar key={l.key} yAxisId={y} dataKey={l.key} fill={l.color} fillOpacity={0.55} isAnimationActive={false} />;
+              if (l.kind === 'bar') return <Bar key={l.key} yAxisId={y} dataKey={l.key} stackId={l.stack} fill={l.color} fillOpacity={0.55} isAnimationActive={false} />;
               return <Line key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stroke={l.color} strokeWidth={l.color === 'var(--ink)' ? 2 : 1.6} strokeDasharray={l.dash ? '5 4' : undefined} dot={false} connectNulls isAnimationActive={false} />;
             })}
           </ComposedChart>
