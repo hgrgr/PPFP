@@ -1801,7 +1801,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-13 | [`c349e6c`](https://github.com/hgrgr/PPFP/commit/c349e6c23c584a0ace2e1ac7b4ced01602ffd309) | [#42](https://github.com/hgrgr/PPFP/pull/42) | 매매일지 *📈 분석 지표* 패널: 일지 옆에서 지표를 보고 그래프 그림·최근 값·주목할 점을 본문에 넣기 | — |
 | 2026-10-13 | [`f436619`](https://github.com/hgrgr/PPFP/commit/f436619cc8d3a72e6e5b96353360c833e151001e) | [#43](https://github.com/hgrgr/PPFP/pull/43) | AI 어드바이저 *실적·공시 분석가*: SEC EDGAR의 10-K·10-Q·20-F·8-K 실적 발표를 읽고 요약(공시 목록, 본문·부분 읽기, XBRL 분기·연간 재무 수치). 분석 관점으로 내 가이드라인(예시: 성장주·배당·버핏·린치·피셔·그레이엄)과 투자 노트의 거장 | 사용량 · 비용에 SEC EDGAR |
 | 2026-10-13 | [`deafdcf`](https://github.com/hgrgr/PPFP/commit/deafdcf27be1e68531ec34829bd7396c11b0a28d) | [#43](https://github.com/hgrgr/PPFP/pull/43) | 분석 지표 목차(그룹별 지표, 지금 주목할 점 개수)와 맨 위에 붙는 그룹 이동 막대 | — |
-| 2026-10-14 | [`efd647d`](https://github.com/hgrgr/PPFP/commit/efd647d5459b7165a7232a51a3b9970e39e202fd) | — | 지역 분석 화면: 시도·시군구 212곳의 매매·전세·전세가율·수급·거래량, 4분면·벌집순환 궤적, 기술적 보조지표(이동평균·스토캐스틱·MFI·RSI·CCI), 거래 성수기, 지역 비교와 상관계수, 시도별 순환 국면, 금리·통화량 등과 집값의 시차 상관 | — |
+| 2026-10-14 | [`efd647d`](https://github.com/hgrgr/PPFP/commit/efd647d5459b7165a7232a51a3b9970e39e202fd) | [#47](https://github.com/hgrgr/PPFP/pull/47) | 지역 분석 화면: 시도·시군구 212곳의 매매·전세·전세가율·수급·거래량, 4분면·벌집순환 궤적, 기술적 보조지표(이동평균·스토캐스틱·MFI·RSI·CCI), 거래 성수기, 지역 비교와 상관계수, 시도별 순환 국면, 금리·통화량 등과 집값의 시차 상관 | — |
 
 ## 사라진 기능
 
