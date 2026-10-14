@@ -38,6 +38,7 @@ import {
   type PlaceHit,
   type TradeKind,
 } from '@/domain/real-estate';
+import type { Prisma } from '@prisma/client';
 import { kstDate, prisma } from '../db';
 import { clearServiceKey, serviceKey, setServiceKey } from './api-keys';
 import { noteCall, outcomeOf } from './api-usage';
@@ -53,7 +54,7 @@ async function kakaoKey(userId: string) {
   return k.key;
 }
 
-async function molitKey(userId: string) {
+export async function molitKey(userId: string) {
   const k = await serviceKey(userId, 'molit', 'DATA_GO_KR_API_KEY');
   if (!k) throw new UserError('실거래가를 보려면 연동 · 설정의 부동산 실거래가 칸에 공공데이터포털 인증키를 넣으세요.');
   return k.key;
@@ -105,6 +106,11 @@ const cache = new Map<string, { at: number; trades: AptTrade[] }>();
 const inflight = new Map<string, Promise<AptTrade[]>>();
 const CACHE_MAX = 600;
 
+function remember(ck: string, at: number, trades: AptTrade[]) {
+  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
+  cache.set(ck, { at, trades });
+}
+
 function fresh(ym: string, at: number, today: string) {
   const months = recentMonths(today, 4);
   const yearAgo = recentMonths(today, 13).at(-1)!;
@@ -112,7 +118,7 @@ function fresh(ym: string, at: number, today: string) {
   return Date.now() - at < ttl;
 }
 
-async function monthTrades(userId: string, key: string, kind: TradeKind, lawdCd: string, ym: string, today: string): Promise<AptTrade[]> {
+export async function monthTrades(userId: string, key: string, kind: TradeKind, lawdCd: string, ym: string, today: string): Promise<AptTrade[]> {
   const ck = `${kind}:${lawdCd}:${ym}`;
   const hit = cache.get(ck);
   if (hit && fresh(ym, hit.at, today)) {
@@ -123,6 +129,13 @@ async function monthTrades(userId: string, key: string, kind: TradeKind, lawdCd:
   const running = inflight.get(ck);
   if (running) return running;
   const job = (async () => {
+    // Kept in the database too, so years of a district survive restarts and are not asked again
+    const stored = await prisma.rtmsMonth.findUnique({ where: { kind_lawdCd_ym: { kind, lawdCd, ym } } });
+    if (stored && fresh(ym, stored.fetchedAt.getTime(), today)) {
+      const trades = stored.deals as unknown as AptTrade[];
+      remember(ck, stored.fetchedAt.getTime(), trades);
+      return trades;
+    }
     const all: AptTrade[] = [];
     for (let pageNo = 1, retry = 0; pageNo <= 10; pageNo++) {
       const params = new URLSearchParams({ serviceKey: key, LAWD_CD: lawdCd, DEAL_YMD: ym, pageNo: String(pageNo), numOfRows: '1000' });
@@ -152,8 +165,9 @@ async function monthTrades(userId: string, key: string, kind: TradeKind, lawdCd:
       all.push(...page.trades);
       if (pageNo * 1000 >= page.totalCount || !page.trades.length) break;
     }
-    if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
-    cache.set(ck, { at: Date.now(), trades: all });
+    remember(ck, Date.now(), all);
+    const row = { deals: all as unknown as Prisma.InputJsonValue, fetchedAt: new Date() };
+    await prisma.rtmsMonth.upsert({ where: { kind_lawdCd_ym: { kind, lawdCd, ym } }, create: { kind, lawdCd, ym, ...row }, update: row });
     return all;
   })().finally(() => inflight.delete(ck));
   inflight.set(ck, job);

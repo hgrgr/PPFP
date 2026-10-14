@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis, LabelList } from 'recharts';
 import { IndicatorChart, KEY_HELP } from '@/components/analysis-board';
+import { ComplexPanel, FavoritesPanel, type ComplexViewData, type FavoriteData } from '@/components/complex-analysis';
 import type { ChartData } from '@/domain/indicators';
 import type { PathPoint, RegionSummary } from '@/domain/region-analysis';
 
@@ -52,6 +53,8 @@ const TABS = [
   { key: 'compare', label: '지역 비교' },
   { key: 'cycle', label: '순환 국면' },
   { key: 'corr', label: '상관 · 시차' },
+  { key: 'complex', label: '단지 분석' },
+  { key: 'fav', label: '관심 단지' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -601,6 +604,8 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
   const macro = sp.get('m') ?? 'base';
   const window = sp.get('w') === '12' ? 12 : 6;
   const real = sp.get('real') !== '0';
+  const cy = [3, 5, 10].includes(Number(sp.get('cy'))) ? Number(sp.get('cy')) : 5;
+  const [note, setNote] = useState<string | null>(null);
   const set = (patch: Record<string, string | string[] | null>) => {
     const q = new URLSearchParams(sp.toString());
     for (const [k, v] of Object.entries(patch)) {
@@ -625,9 +630,14 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
       q.append('r', one);
       q.set('macro', macro);
     }
+    if (tab === 'complex') {
+      q.append('r', one);
+      q.set('years', String(cy));
+    }
+    if (tab === 'fav') return '/api/regions?view=favorites';
     return `/api/regions?${q.toString()}`;
   })();
-  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView>(url);
+  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | ComplexViewData | FavoriteData[]>(url);
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -640,7 +650,16 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
               </button>
             ))}
           </div>
-          {tab !== 'cycle' && (
+          {tab === 'complex' && (
+            <div className="seg" role="group" aria-label="거래 기간">
+              {[3, 5, 10].map((y) => (
+                <button key={y} type="button" aria-current={cy === y ? 'true' : undefined} onClick={() => set({ cy: String(y) })}>
+                  최근 {y}년
+                </button>
+              ))}
+            </div>
+          )}
+          {!['cycle', 'complex', 'fav'].includes(tab) && (
             <div className="seg" role="group" aria-label="기간">
               {[5, 10, 20, 0].map((y) => (
                 <button key={y} type="button" aria-current={years === y ? 'true' : undefined} onClick={() => set({ years: String(y) })}>
@@ -650,7 +669,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
             </div>
           )}
         </div>
-        {(tab === 'one' || tab === 'corr') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
+        {(tab === 'one' || tab === 'corr' || tab === 'complex') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
         {tab === 'corr' && (
           <label className="inline" style={{ gap: 6, alignSelf: 'flex-start' }}>
             <span className="sub">비교할 지표</span>
@@ -697,10 +716,19 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
         )}
       </section>
 
+      {note && (
+        <p className="msg err" role="alert">
+          {note} <button type="button" className="linklike" onClick={() => setNote(null)}>닫기</button>
+        </p>
+      )}
       {error ? (
         <p className="msg err">{error}</p>
       ) : loading || !data ? (
-        <p className="empty">불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.</p>
+        <p className="empty">{tab === 'complex' ? '불러오는 중… 처음 여는 시군구는 국토부 실거래가를 달마다 받느라 10~30초 걸립니다. 다음부터는 바로 열립니다.' : '불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.'}</p>
+      ) : tab === 'complex' ? (
+        <ComplexPanel view={data as ComplexViewData} onError={setNote} />
+      ) : tab === 'fav' ? (
+        <FavoritesPanel list={data as FavoriteData[]} onOpen={(r) => set({ tab: 'complex', r })} onError={setNote} />
       ) : tab === 'one' ? (
         <OnePanel view={data as OneView} />
       ) : tab === 'compare' ? (
