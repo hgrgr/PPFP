@@ -35,8 +35,10 @@ import {
   type RoneSet,
 } from '@/domain/region-analysis';
 import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
-import { kstDate } from '../db';
-import { readSeries, refreshSeries, type Missing } from './indicators';
+import { mapValues, type RegionValues } from '@/domain/region-map';
+import { addMonths } from '@/domain/indicators';
+import { kstDate, prisma } from '../db';
+import { readSeries, refreshSeries, roneTable, type Missing } from './indicators';
 import { UserError } from './portfolios';
 
 interface Loaded {
@@ -239,4 +241,37 @@ export async function buyersView(userId: string, key: string, years: number): Pr
     missing,
     errors,
   };
+}
+
+export interface MapView {
+  values: RegionValues;
+  /** The month most regions' prices are for */
+  date: string | null;
+  at: string;
+}
+
+const MAP_KEY = 'regions:map';
+const MAP_FRESH_MS = 12 * 3_600_000;
+
+/** Every region's map numbers, from whole R-ONE tables, kept for 12 hours */
+export async function mapView(userId: string): Promise<MapView> {
+  const row = await prisma.appSetting.findUnique({ where: { key: MAP_KEY } });
+  if (row) {
+    const cached = JSON.parse(row.value) as MapView;
+    if (Date.now() - Date.parse(cached.at) < MAP_FRESH_MS) return cached;
+  }
+  const today = kstDate();
+  const start = (months: number) => addMonths(`${today.slice(0, 7)}-01`, -months).slice(0, 7).replace('-', '');
+  const [price, ratio, trade, residence] = await Promise.all([
+    roneTable(userId, 'A_2024_00045', start(15)),
+    roneTable(userId, 'A_2024_00073', start(4)),
+    roneTable(userId, 'A_2024_00554', start(27)),
+    roneTable(userId, 'A_2024_00609', start(14)),
+  ]);
+  const values = mapValues({ price, ratio, trade, residence });
+  const dates = Object.values(values).flatMap((v) => (v.date ? [v.date] : [])).sort();
+  const view: MapView = { values, date: dates[Math.floor(dates.length / 2)] ?? null, at: new Date().toISOString() };
+  const value = JSON.stringify(view);
+  await prisma.appSetting.upsert({ where: { key: MAP_KEY }, create: { key: MAP_KEY, value }, update: { value } });
+  return view;
 }

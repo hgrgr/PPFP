@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis, LabelList } from 'recharts';
 import { IndicatorChart, KEY_HELP } from '@/components/analysis-board';
 import { ComplexPanel, FavoritesPanel, type ComplexViewData, type FavoriteData } from '@/components/complex-analysis';
+import { RegionMap, type MapViewData } from '@/components/region-map';
+import { ApplyPanel, type ApplyViewData } from '@/components/subscriptions';
 import type { ChartData } from '@/domain/indicators';
 import type { PathPoint, RegionSummary } from '@/domain/region-analysis';
 
@@ -71,8 +73,10 @@ const TABS = [
   { key: 'one', label: '지역 한눈에' },
   { key: 'compare', label: '지역 비교' },
   { key: 'cycle', label: '순환 국면' },
+  { key: 'map', label: '지도' },
   { key: 'corr', label: '상관 · 시차' },
   { key: 'buyers', label: '투자자 동향' },
+  { key: 'apply', label: '청약' },
   { key: 'complex', label: '단지 분석' },
   { key: 'fav', label: '관심 단지' },
 ] as const;
@@ -688,6 +692,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
   const window = sp.get('w') === '12' ? 12 : 6;
   const real = sp.get('real') !== '0';
   const cy = [3, 5, 10].includes(Number(sp.get('cy'))) ? Number(sp.get('cy')) : 5;
+  const ay = [1, 3, 5].includes(Number(sp.get('ay'))) ? Number(sp.get('ay')) : 3;
   const [note, setNote] = useState<string | null>(null);
   const set = (patch: Record<string, string | string[] | null>) => {
     const q = new URLSearchParams(sp.toString());
@@ -719,9 +724,14 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
       q.set('years', String(cy));
     }
     if (tab === 'fav') return '/api/regions?view=favorites';
+    if (tab === 'map') return '/api/regions?view=map';
+    if (tab === 'apply') {
+      q.append('r', one);
+      q.set('years', String(ay));
+    }
     return `/api/regions?${q.toString()}`;
   })();
-  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | BuyersView | ComplexViewData | FavoriteData[]>(url);
+  const { data, error, loading } = useView<OneView | CompareView | CycleView | CorrView | BuyersView | ComplexViewData | FavoriteData[] | MapViewData | ApplyViewData>(url);
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -743,7 +753,16 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
               ))}
             </div>
           )}
-          {!['cycle', 'complex', 'fav'].includes(tab) && (
+          {tab === 'apply' && (
+            <div className="seg" role="group" aria-label="공고 기간">
+              {[1, 3, 5].map((y) => (
+                <button key={y} type="button" aria-current={ay === y ? 'true' : undefined} onClick={() => set({ ay: String(y) })}>
+                  최근 {y}년
+                </button>
+              ))}
+            </div>
+          )}
+          {!['cycle', 'complex', 'fav', 'map', 'apply'].includes(tab) && (
             <div className="seg" role="group" aria-label="기간">
               {[5, 10, 20, 0].map((y) => (
                 <button key={y} type="button" aria-current={years === y ? 'true' : undefined} onClick={() => set({ years: String(y) })}>
@@ -753,7 +772,7 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
             </div>
           )}
         </div>
-        {(tab === 'one' || tab === 'corr' || tab === 'complex' || tab === 'buyers') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
+        {(tab === 'one' || tab === 'corr' || tab === 'complex' || tab === 'buyers' || tab === 'apply') && <RegionPicker regions={regions} value={one} label="지역" quick={quick} onPick={(k) => set({ r: k })} />}
         {tab === 'corr' && (
           <label className="inline" style={{ gap: 6, alignSelf: 'flex-start' }}>
             <span className="sub">비교할 지표</span>
@@ -808,7 +827,11 @@ export function RegionAnalysis({ regions, macros, mine }: { regions: RegionOptio
       {error ? (
         <p className="msg err">{error}</p>
       ) : loading || !data ? (
-        <p className="empty">{tab === 'complex' ? '불러오는 중… 처음 여는 시군구는 국토부 실거래가를 달마다 받느라 10~30초 걸립니다. 다음부터는 바로 열립니다.' : '불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.'}</p>
+        <p className="empty">{tab === 'apply' ? '불러오는 중… 처음에는 공고마다 경쟁률을 받느라 몇십 초 걸릴 수 있습니다.' : tab === 'map' ? '불러오는 중… 지도는 전국 자료를 한꺼번에 받느라 처음에 10~20초 걸리고, 그 뒤 12시간은 바로 열립니다.' : tab === 'complex' ? '불러오는 중… 처음 여는 시군구는 국토부 실거래가를 달마다 받느라 10~30초 걸립니다. 다음부터는 바로 열립니다.' : '불러오는 중… 처음 여는 지역은 한국부동산원에서 자료를 받느라 몇 초 걸립니다.'}</p>
+      ) : tab === 'apply' ? (
+        <ApplyPanel view={data as ApplyViewData} />
+      ) : tab === 'map' ? (
+        <RegionMap view={data as MapViewData} onPick={(k) => set({ tab: 'one', r: k })} />
       ) : tab === 'buyers' ? (
         <BuyersPanel view={data as BuyersView} onPick={(k) => set({ r: k })} />
       ) : tab === 'complex' ? (
