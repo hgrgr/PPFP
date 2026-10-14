@@ -14,7 +14,7 @@
  * or DOCS_ONLY=market,login to retake only some shots.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
@@ -24,9 +24,15 @@ const OUT = path.join(ROOT, 'docs/images');
 const PORT = Number(process.env.DOCS_PORT ?? 3100);
 const BASE = `http://localhost:${PORT}`;
 const ONLY = process.env.DOCS_ONLY?.split(',').filter(Boolean);
+/** Chromium that `npx playwright install chromium` puts in ~/.cache (Linux arm64 has no Google Chrome) */
+function playwrightChromium(): string[] {
+  const root = path.join(process.env.HOME ?? '', '.cache/ms-playwright');
+  if (!existsSync(root)) return [];
+  return readdirSync(root).filter((d) => d.startsWith('chromium-')).sort().reverse().map((d) => path.join(root, d, 'chrome-linux/chrome'));
+}
 const CHROME =
   process.env.CHROME_PATH ??
-  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => existsSync(p));
+  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', ...playwrightChromium()].find((p) => existsSync(p));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -163,6 +169,47 @@ const SHOTS: Shot[] = [
     height: 14000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
     clip: [{ sel: 'h2', text: '주식 · 위험', closest: 'section' }],
+  },
+  {
+    file: 'regions',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: '.page-head' }, { sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="요약"]' }, { sel: 'section[aria-label="매매 · 전세 4분면"]' }],
+    marks: [{ sel: '[aria-label="화면"]' }, { sel: '[aria-label="기간"]' }, { sel: 'input[list]', closest: 'label' }, { sel: 'section[aria-label="요약"] .ind-latest' }, { sel: 'section[aria-label="요약"] .badge' }],
+  },
+  {
+    file: 'regions-charts',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="벌집순환모형"]' }, { sel: 'section[aria-label="기술적 분석: 보조지표"]' }, { sel: 'section[aria-label="거래 성수기"]' }],
+  },
+  {
+    file: 'regions-compare',
+    path: () => `/regions?tab=compare&c=${encodeURIComponent('서울>강남구')}&c=${encodeURIComponent('경기>성남시>분당구')}&c=${encodeURIComponent('대구>수성구')}&c=${encodeURIComponent('전국')}`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역 비교표"]' }, { sel: 'section[aria-label="상관계수 (월간 매매 변동률)"]' }],
+  },
+  {
+    file: 'regions-cycle',
+    path: () => '/regions?tab=cycle',
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1000 }, { click: { sel: 'th[scope="row"]', text: '서울', closest: 'tr' } }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역별 현재 국면"]' }, { sel: 'section[aria-label="국면별 지역"]' }],
+  },
+  {
+    file: 'regions-corr',
+    path: () => `/regions?tab=corr&r=${encodeURIComponent('서울')}&m=mortgage&years=0`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="시차별 상관계수"]' }, { sel: 'section[aria-label="두 변화 겹쳐 보기"]' }],
   },
   {
     file: 'portfolios',
@@ -1092,10 +1139,14 @@ class Cdp {
   }
 }
 
+// Ubuntu blocks Chrome's user-namespace sandbox for binaries outside /opt (Playwright's Chromium on the VM);
+// the page is our own demo server, so run it unsandboxed there
+const LINUX_FLAGS = process.platform === 'linux' ? ['--no-sandbox'] : [];
+
 async function launchChrome(): Promise<{ proc: ChildProcess; cdp: Cdp; dir: string }> {
   if (!CHROME) throw new Error('Chrome not found: set CHROME_PATH.');
   const dir = mkdtempSync(path.join(tmpdir(), 'ppfp-docs-chrome-'));
-  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--force-color-profile=srgb', '--lang=ko-KR', 'about:blank'], { stdio: 'ignore' });
+  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--force-color-profile=srgb', '--lang=ko-KR', ...LINUX_FLAGS, 'about:blank'], { stdio: 'ignore' });
   const portFile = path.join(dir, 'DevToolsActivePort');
   for (let i = 0; i < 100 && !existsSync(portFile); i++) await sleep(100);
   const [port, wsPath] = readFileSync(portFile, 'utf8').trim().split('\n');

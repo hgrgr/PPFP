@@ -27,7 +27,7 @@ export interface Point {
 export interface SeriesReq {
   id: string;
   source: IndicatorSource;
-  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID" · LW: column (rstar, gap) */
+  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID[/GRP_ID]" · LW: column (rstar, gap) */
   code: string;
   freq: Freq;
 }
