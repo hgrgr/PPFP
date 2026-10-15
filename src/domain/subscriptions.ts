@@ -228,3 +228,65 @@ export function monthlyApply(list: { listing: Listing; summary: ListingSummary; 
     },
   };
 }
+
+// ---------------------------------------------------------------- 입주 예정 · 규제
+
+/** "2029.03" or "202903" → "2029-03-01" */
+const moveInDate = (v: string | null) => {
+  const m = v?.match(/^(\d{4})\.?(\d{2})$/);
+  return m ? `${m[1]}-${m[2]}-01` : null;
+};
+
+/**
+ * Homes due to be finished, month by month, from the 분양 공고' 입주예정월 and 공급 세대수: the
+ * coming supply a region's buyers and tenants will meet. Only homes sold through 청약홈 count
+ * (조합원 몫, 임대 and homes sold without a 공고 are not in it).
+ */
+export function moveInChart(list: Pick<Listing, 'moveIn' | 'households' | 'name'>[], today: string): { chart: ChartData; years: { year: string; households: number; when: 'past' | 'this' | 'future' }[] } {
+  const by = new Map<string, number>();
+  for (const l of list) {
+    const d = moveInDate(l.moveIn);
+    if (d && l.households) by.set(d, (by.get(d) ?? 0) + l.households);
+  }
+  const from = addMonths(`${today.slice(0, 7)}-01`, -24);
+  const months = [...by.keys()].filter((d) => d >= from).sort();
+  const rows: Record<string, number | string | null>[] = [];
+  const now = `${today.slice(0, 7)}-01`;
+  if (months.length) {
+    for (let d = months[0] < now ? months[0] : now; d <= months.at(-1)!; d = addMonths(d, 1)) {
+      const v = by.get(d) ?? 0;
+      rows.push({ date: d, past: d < now ? v : null, future: d >= now ? v : null });
+    }
+  }
+  const yearly = new Map<string, number>();
+  for (const [d, v] of by) if (d >= from) yearly.set(d.slice(0, 4), (yearly.get(d.slice(0, 4)) ?? 0) + v);
+  const years = [...yearly].sort().map(([year, households]) => ({ year, households, when: year < today.slice(0, 4) ? ('past' as const) : year === today.slice(0, 4) ? ('this' as const) : ('future' as const) }));
+  const next12 = [...by].filter(([d]) => d >= now && d < addMonths(now, 12)).reduce((a, [, v]) => a + v, 0);
+  return {
+    chart: {
+      lines: [
+        { key: 'past', label: '입주한 달 (지난 2년)', color: 'var(--muted)', kind: 'bar', stack: 'm' },
+        { key: 'future', label: '입주 예정', color: 'var(--series-1)', kind: 'bar', stack: 'm' },
+      ],
+      rows,
+      unit: '세대',
+      latest: [{ label: '앞으로 12개월 입주 예정', value: `${next12.toLocaleString('ko-KR')}세대`, date: `${today.slice(0, 7)}~` }],
+      note: '최근 6년 분양 공고의 입주예정월과 공급 세대수를 더했습니다. 청약홈을 거친 분양만 들어가 조합원 몫·임대·공고 없이 판 집은 빠지므로 실제 입주보다 적고, 입주가 미뤄지기도 합니다. 입주가 몰리는 달 앞뒤로는 전세가가 눌리기 쉽습니다.',
+    },
+    years,
+  };
+}
+
+export interface Regulation {
+  /** The newest 공고 that says something, and what */
+  date: string | null;
+  name: string | null;
+  flags: string[];
+}
+
+/** What the region's newest 분양 공고 says of its regulation (투기과열지구, 조정대상지역, 분양가상한제) */
+export function regulationOf(list: Pick<Listing, 'announced' | 'name' | 'flags'>[]): Regulation {
+  const newest = [...list].filter((l) => l.announced).sort((a, b) => String(b.announced).localeCompare(String(a.announced)))[0];
+  if (!newest) return { date: null, name: null, flags: [] };
+  return { date: newest.announced, name: newest.name, flags: newest.flags.filter((f) => ['투기과열지구', '조정대상지역', '분양가상한제'].includes(f)) };
+}

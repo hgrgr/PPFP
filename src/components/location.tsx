@@ -67,7 +67,7 @@ export function LocationPanel({ view, onPick, focus }: { view: LocationViewData;
                   {fmt(m, focusRow.values[m.key])}
                   <span className="sub" style={{ display: 'inline', marginLeft: 3 }}>{m.unit}</span>
                 </dd>
-                <dd className="sub">상위 {focusRow.pct[m.key] === undefined ? '—' : `${(100 - focusRow.pct[m.key]!).toFixed(0)}%`}</dd>
+                <dd className="sub">{'unscored' in m ? '참고' : `상위 ${focusRow.pct[m.key] === undefined ? '—' : `${(100 - focusRow.pct[m.key]!).toFixed(0)}%`}`}</dd>
               </div>
             ))}
           </dl>
@@ -77,7 +77,7 @@ export function LocationPanel({ view, onPick, focus }: { view: LocationViewData;
         <div className="inline spread" style={{ gap: 10, flexWrap: 'wrap' }}>
           <div className="stack" style={{ gap: 2 }}>
             <h3>시군구 입지 순위</h3>
-            <span className="sub">지표마다 전국 시군구 안의 백분위를 구해 평균한 점수(0~100)와 급지(상위 20%마다 1~5급지). 숫자 밑 막대가 백분위입니다.</span>
+            <span className="sub">지표마다 전국 시군구 안의 백분위를 구해 평균한 점수(0~100)와 급지(상위 20%마다 1~5급지). 숫자 밑 막대가 백분위입니다. 외국인·고령인구는 참고로만 보여 주고 점수에는 넣지 않습니다.</span>
           </div>
           <label className="inline" style={{ gap: 6 }}>
             <span className="sub">시도</span>
@@ -134,7 +134,7 @@ export function LocationPanel({ view, onPick, focus }: { view: LocationViewData;
             ))}
           </ul>
           <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-            출처: 통계청 KOSIS e-지방지표(사설학원, 의사, 재정자립도, 종사자, 주민등록인구)와 국세청 국세통계(근로소득 연말정산, 주소지 기준). 이 통계들은 시 단위까지만 나와 성남시 분당구 같은 구는 성남시 값을 씁니다. 지표마다 무게를 똑같이 두었으니 학군이 중요하면 사설학원, 직장이 중요하면 일자리 순으로 정렬해 보세요. 숫자는 해마다 한 번 바뀌며, 입지의 좋고 나쁨을 모두 담지는 못하는 참고 지표입니다.
+            출처: 통계청 KOSIS e-지방지표(사설학원, 의사, 재정자립도, 종사자, 주민등록인구, 등록외국인, 고령인구)와 국세청 국세통계(근로소득 연말정산, 주소지 기준). 이 통계들은 시 단위까지만 나와 성남시 분당구 같은 구는 성남시 값을 씁니다. 지표마다 무게를 똑같이 두었으니 학군이 중요하면 사설학원, 직장이 중요하면 일자리 순으로 정렬해 보세요. 숫자는 해마다 한 번 바뀌며, 입지의 좋고 나쁨을 모두 담지는 못하는 참고 지표입니다.
           </p>
         </details>
       </section>

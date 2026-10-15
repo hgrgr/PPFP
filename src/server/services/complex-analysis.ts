@@ -20,6 +20,9 @@ import {
 } from '@/domain/complex-analysis';
 import { complexKey, MolitApiError, monthsBefore, readApartmentMeta, recentMonths, type AptTrade } from '@/domain/real-estate';
 import { roneRegion, RONE_REGIONS, type RoneRegion } from '@/domain/region-analysis';
+import { addMonths } from '@/domain/indicators';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { dbDate, kstDate, prisma } from '../db';
 import { serviceKey } from './api-keys';
 import { UserError } from './portfolios';
@@ -249,4 +252,112 @@ export async function runDealSnapshots(force = false): Promise<number> {
   }
   await prisma.appSetting.upsert({ where: { key: SNAPSHOT_DAY }, create: { key: SNAPSHOT_DAY, value: today }, update: { value: today } });
   return counted.size;
+}
+
+// ---------------------------------------------------------------- nationwide drawdown map
+
+/** Months read for the map: from 2020, so the 2021 highs are in */
+const CRAWL_FROM = '202001';
+/** API calls a day the crawler may spend (the 공공데이터포털 개발계정 allows 10,000 per service) */
+const CRAWL_BUDGET = Number(process.env.PPFP_CRAWL_BUDGET) || 2500;
+const DRAWDOWN_KEY = 'regions:drawdown';
+
+export interface DistrictDrawdown {
+  /** Share of complex·평형 traded in the last year that set a new high, % */
+  newHigh: number;
+  /** Median distance of those from their high, % */
+  fromHigh: number;
+  /** How many complex·평형 that is */
+  rows: number;
+}
+export interface DrawdownView {
+  values: Record<string, DistrictDrawdown>;
+  /** Districts with every month since 2020 read, of all on the map */
+  done: number;
+  total: number;
+  at: string | null;
+}
+
+function mapCodes(): string[] {
+  const file = path.join(process.cwd(), 'public/maps/sigungu.json');
+  const doc = JSON.parse(readFileSync(file, 'utf8')) as { features: { c: string }[] };
+  return [...new Set(doc.features.map((f) => f.c))].sort();
+}
+
+function crawlMonths(today: string): string[] {
+  const out: string[] = [];
+  for (let d = `${CRAWL_FROM.slice(0, 4)}-${CRAWL_FROM.slice(4)}-01`; d <= `${today.slice(0, 7)}-01`; d = addMonths(d, 1)) out.push(d.slice(0, 7).replace('-', ''));
+  return out;
+}
+
+/**
+ * Once a day, a little more of every district's apartment sales since 2020 (district by district,
+ * at most CRAWL_BUDGET calls, with the first user's key that has one), then the map's 신고가 비율
+ * and 최고가 대비 for each district whose months are all read. Months already stored are not asked
+ * again; the latest two are refreshed daily.
+ */
+export async function crawlDrawdowns(): Promise<DrawdownView> {
+  const today = kstDate();
+  const users = await prisma.user.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } });
+  let owner: { id: string; key: string } | null = null;
+  for (const u of users) {
+    const k = await serviceKey(u.id, 'molit', 'DATA_GO_KR_API_KEY');
+    if (k) {
+      owner = { id: u.id, key: k.key };
+      break;
+    }
+  }
+  const codes = mapCodes();
+  const months = crawlMonths(today);
+  const recent = new Set(months.slice(-2));
+  if (owner) {
+    const have = await prisma.rtmsMonth.findMany({ where: { kind: 'apartment', ym: { gte: CRAWL_FROM } }, select: { lawdCd: true, ym: true, fetchedAt: true } });
+    const stored = new Map(have.map((h) => [`${h.lawdCd}|${h.ym}`, h.fetchedAt.getTime()]));
+    let calls = 0;
+    // District by district, so the map fills in place by place
+    outer: for (const code of codes) {
+      for (const ym of months) {
+        const at = stored.get(`${code}|${ym}`);
+        const stale = at === undefined || (recent.has(ym) && Date.now() - at > 20 * 3_600_000);
+        if (!stale) continue;
+        if (calls >= CRAWL_BUDGET) break outer;
+        calls++;
+        try {
+          await monthTrades(owner.id, owner.key, 'apartment', code, ym, today);
+        } catch (e) {
+          // The day's limit (22/23) or a broken service: stop and try again tomorrow
+          console.error('[drawdown] crawl stopped', code, ym, e instanceof Error ? e.message : e);
+          break outer;
+        }
+      }
+    }
+    console.log(`[drawdown] crawled ${calls} district-months`);
+  }
+  return computeDrawdowns(codes, months, today);
+}
+
+async function computeDrawdowns(codes: string[], months: string[], today: string): Promise<DrawdownView> {
+  const values: Record<string, DistrictDrawdown> = {};
+  let done = 0;
+  for (const code of codes) {
+    const rows = await prisma.rtmsMonth.findMany({ where: { kind: 'apartment', lawdCd: code, ym: { gte: CRAWL_FROM } }, select: { deals: true } });
+    if (rows.length < months.length) continue;
+    done++;
+    const trades = rows.flatMap((r) => r.deals as unknown as AptTrade[]);
+    const list = complexRows(trades, () => code, today).filter((x) => x.deals1y > 0);
+    if (list.length < 3) continue;
+    const hi = list.filter((x) => x.fromHigh >= -0.001).length;
+    const sorted = list.map((x) => x.fromHigh).sort((a, b) => a - b);
+    values[code] = { newHigh: (hi / list.length) * 100, fromHigh: sorted[Math.floor(sorted.length / 2)], rows: list.length };
+  }
+  const view: DrawdownView = { values, done, total: codes.length, at: new Date().toISOString() };
+  const value = JSON.stringify(view);
+  await prisma.appSetting.upsert({ where: { key: DRAWDOWN_KEY }, create: { key: DRAWDOWN_KEY, value }, update: { value } });
+  return view;
+}
+
+/** The map's drawdown numbers as last computed (the daily crawl fills them in over about a week) */
+export async function drawdownView(): Promise<DrawdownView> {
+  const row = await prisma.appSetting.findUnique({ where: { key: DRAWDOWN_KEY } });
+  return row ? (JSON.parse(row.value) as DrawdownView) : { values: {}, done: 0, total: mapCodes().length, at: null };
 }

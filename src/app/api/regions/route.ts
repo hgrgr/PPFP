@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/server/auth';
-import { complexDetailView, complexView, favoritesView } from '@/server/services/complex-analysis';
+import { complexDetailView, complexView, drawdownView, favoritesView } from '@/server/services/complex-analysis';
 import { applyView } from '@/server/services/subscriptions';
 import { buyersView, compareView, corrView, cycleView, locationView, mapView, oneView, timelineView } from '@/server/services/region-analysis';
 import { UserError } from '@/server/services/portfolios';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * 지역 분석 views: ?view=one&r=&years= · compare&r=&r=&years= · cycle[&r=...]&window=6|12&real=1 ·
- * corr&r=&macro=&years= · complex&r=&years=3|5|10 · complex-detail&r=&lawd=&k=&years= · favorites · buyers&r=&years= · map · timeline · location · apply&r=&years=1|3|5
+ * corr&r=&macro=&years= · complex&r=&years=3|5|10 · complex-detail&r=&lawd=&k=&years= · favorites · buyers&r=&years= · map · timeline · drawdown · location · apply&r=&years=1|3|5
  */
 export async function GET(req: Request) {
   const user = await currentUser();
@@ -38,6 +38,8 @@ export async function GET(req: Request) {
                       ? await buyersView(user.id, regions[0] ?? '', years)
                       : view === 'map'
                         ? await mapView(user.id)
+                        : view === 'drawdown'
+                          ? await drawdownView()
                         : view === 'timeline'
                           ? await timelineView(user.id)
                         : view === 'location'

@@ -25,9 +25,11 @@ export interface MapViewData {
   at: string;
 }
 
-type AnyMetric = MapMetric | `loc:${LocationMetric | 'score'}`;
+type AnyMetric = MapMetric | `loc:${LocationMetric | 'score'}` | 'dd:newHigh' | 'dd:fromHigh';
 const ALL_METRICS: { key: AnyMetric; label: string; unit: string; kind: 'change' | 'level' | 'phase'; about: string }[] = [
   ...MAP_METRICS.map((m) => ({ ...m, kind: m.kind as 'change' | 'level' | 'phase' })),
+  { key: 'dd:newHigh', label: '신고가 비율', unit: '%', kind: 'level', about: '최근 1년 거래된 단지·평형 중 2020년 이후 최고가를 새로 쓴 비율 (국토부 실거래가)' },
+  { key: 'dd:fromHigh', label: '최고가 대비', unit: '%', kind: 'change', about: '최근 1년 거래된 단지·평형의 최근가가 2020년 이후 최고가보다 낮은 정도의 중앙값 (국토부 실거래가)' },
   { key: 'loc:score', label: '입지 종합', unit: '점', kind: 'level', about: '입지 지표 여섯 가지의 전국 백분위 평균 (입지 탭)' },
   ...LOCATION_METRICS.filter((m) => m.key !== 'fiscal').map((m) => ({ key: `loc:${m.key}` as AnyMetric, label: `입지: ${m.label}`, unit: m.key === 'growth' ? '%' : ` ${m.unit}`, kind: (m.key === 'growth' ? 'change' : 'level') as 'change' | 'level', about: m.about })),
 ];
@@ -54,6 +56,28 @@ function useShapes(): Shapes | null {
     };
   }, []);
   return shapes;
+}
+
+interface DrawdownData {
+  values: Record<string, { newHigh: number; fromHigh: number; rows: number }>;
+  done: number;
+  total: number;
+  at: string | null;
+}
+function useDrawdown(on: boolean): DrawdownData | null {
+  const [d, setD] = useState<DrawdownData | null>(null);
+  useEffect(() => {
+    if (!on || d) return;
+    let live = true;
+    fetch('/api/regions?view=drawdown', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j: DrawdownData) => live && setD(j))
+      .catch(() => live && setD({ values: {}, done: 0, total: 0, at: null }));
+    return () => {
+      live = false;
+    };
+  }, [on, d]);
+  return d;
 }
 
 function useLocationRows(on: boolean): Map<string, LocationRow> | null {
@@ -204,6 +228,8 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
   const t = useTimeline(frames?.dates.length ?? 0);
   const isLoc = metric.startsWith('loc:');
   const locRows = useLocationRows(isLoc);
+  const isDd = metric.startsWith('dd:');
+  const dd = useDrawdown(isDd);
   useEffect(() => {
     if (timeMode && !(TIMELINE_METRICS as readonly string[]).includes(metric)) setMetric('y1');
   }, [timeMode, metric]);
@@ -227,6 +253,11 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
       new Map(
         shown.map((f) => {
           if (timeMode) return [f.c, frames && (TIMELINE_METRICS as readonly string[]).includes(metric) ? shapeFrame(f.c, metric as TimelineMetric, frames, t.i) : null] as const;
+          if (isDd) {
+            const v = dd?.values[f.c]?.[metric === 'dd:newHigh' ? 'newHigh' : 'fromHigh'];
+            const { own, parent } = regionOfShape(f.c);
+            return [f.c, v === undefined ? null : { value: v, region: own ?? parent ?? ({ key: '', label: `${f.s} ${f.n}`, lawd: [] } as unknown as RoneRegion) }] as const;
+          }
           if (!isLoc) return [f.c, shapeValue(f.c, metric as MapMetric, view.values)] as const;
           const hit = locRows ? shapeLocation(f, locRows) : null;
           const m = metric.slice(4) as LocationMetric | 'score';
@@ -234,7 +265,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
           return [f.c, hit && v !== undefined && v !== null ? { value: v, region: hit.region ?? ({ key: '', label: hit.row.label, lawd: [] } as unknown as RoneRegion) } : null] as const;
         }),
       ),
-    [shown, metric, view.values, isLoc, locRows, timeMode, frames, t.i],
+    [shown, metric, view.values, isLoc, locRows, timeMode, frames, t.i, isDd, dd],
   );
   // In a time-lapse the colors keep one scale over every frame, so a change of color is a change
   const numbers = useMemo(() => {
@@ -271,7 +302,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
     .filter((x, i, a) => !x.region.key || a.findIndex((y) => y.region.key === x.region.key) === i);
   const top = def.kind === 'phase' ? [] : [...ranked].sort((a, b) => b.value - a.value);
 
-  if (!shapes || (isLoc && !locRows)) return <p className="empty">지도를 불러오는 중…</p>;
+  if (!shapes || (isLoc && !locRows) || (isDd && !dd)) return <p className="empty">지도를 불러오는 중…</p>;
   if (timeMode && !frames && !framesError) return <p className="empty">6년치 지도를 준비하는 중… 처음에는 전국 자료를 받느라 20~30초 걸리고, 그 뒤 12시간은 바로 열립니다.</p>;
   const W = 640;
   const H = box.w > 0 ? Math.min(900, (W * box.h) / box.w) : 600;
@@ -303,6 +334,11 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
         </div>
         {timeMode && frames && <TimelineControl t={t} dates={frames.dates} label="지도 시점" />}
         {timeMode && framesError && <p className="msg err">{framesError}</p>}
+        {isDd && dd && (
+          <p className="callout" style={{ margin: 0 }}>
+            전국 시군구 실거래를 매일 조금씩(하루 2,500번까지) 받아 쌓고 있습니다: <b>{dd.done}</b> / {dd.total}곳 완료{dd.at ? ` (${dd.at.slice(0, 10)} 계산)` : ''}. 2020년 이후 모든 달을 받은 곳부터 칠하고, 다 차는 데 1~2주 걸립니다.
+          </p>
+        )}
         <span className="sub">{def.about}. {timeMode ? `최근 6년을 달마다 재생합니다(색 기준은 6년 전체에 고정). 지금 ${frameLabel(frames?.dates[t.i])} · 한국부동산원.` : isLoc ? '통계청 KOSIS · 국세청 연간 자료.' : `기준 ${view.date?.slice(0, 7).replace('-', '.') ?? '—'} · 한국부동산원.`} 회색은 자료가 없는 곳(주로 군 지역)입니다. 시군구를 누르면 그 지역을 자세히 봅니다.</span>
         <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
           <svg viewBox={`0 0 ${(box.w * k).toFixed(0)} ${(box.h * k).toFixed(0)}`} style={{ width: '100%', height: 'auto', maxHeight: 720 }} role="img" aria-label={`${def.label} 지도`}>

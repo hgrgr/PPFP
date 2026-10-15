@@ -9,7 +9,9 @@ export interface ApplyViewData {
   region: { key: string; label: string };
   years: number;
   rows: { listing: Listing; models: Model[]; summary: ListingSummary }[];
-  charts: { rate: ChartData; price: ChartData };
+  charts: { rate: ChartData; price: ChartData; moveIn: ChartData };
+  moveInYears: { year: string; households: number; when: 'past' | 'this' | 'future' }[];
+  regulation: { date: string | null; name: string | null; flags: string[] };
 }
 
 const rate = (v: number | null | undefined) => (v === null || v === undefined ? '—' : v < 1 ? `미달 (${v.toFixed(2)}:1)` : `${v.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}:1`);
@@ -23,7 +25,40 @@ export function ApplyPanel({ view }: { view: ApplyViewData }) {
   const avg = done.length ? done.reduce((a, r) => a + r.summary.rate!, 0) / done.length : null;
   return (
     <div className="stack" style={{ gap: 16 }}>
+      <section className="card indicator" aria-label="규제지역">
+        <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <div className="stack" style={{ gap: 2 }}>
+            <h3>{view.region.label} 규제</h3>
+            <span className="sub">
+              {view.regulation.date ? `가장 최근 분양 공고(${md(view.regulation.date)} ${view.regulation.name}) 기준` : '최근 6년 분양 공고가 없어 알 수 없습니다'}
+            </span>
+          </div>
+          <div className="inline" style={{ gap: 6, flexWrap: 'wrap' }}>
+            {view.regulation.date && (view.regulation.flags.length ? view.regulation.flags.map((f) => (
+              <span key={f} className="badge" style={{ background: 'var(--series-4)', color: 'var(--surface)' }}>{f}</span>
+            )) : <span className="badge">비규제</span>)}
+          </div>
+        </div>
+        <p className="sub" style={{ margin: 0 }}>투기과열지구·조정대상지역·분양가상한제는 분양 공고에 적힌 표시를 옮긴 것이라, 공고 뒤에 지정·해제된 것은 다음 공고가 나와야 반영됩니다. 정확한 현황은 국토교통부 고시로 확인하세요.</p>
+      </section>
       <div className="ind-grid">
+        <section className="card indicator" aria-label="입주 예정">
+          <div className="stack" style={{ gap: 4 }}>
+            <h3>{view.region.label} 입주 예정 물량</h3>
+            <span className="sub">분양 공고의 입주예정월 기준</span>
+          </div>
+          {view.charts.moveIn.rows.length ? <IndicatorChart data={view.charts.moveIn} animate /> : <p className="empty">입주 예정 자료가 없습니다.</p>}
+          {view.moveInYears.length > 0 && (
+            <div className="inline" style={{ gap: 6, flexWrap: 'wrap' }}>
+              {view.moveInYears.map((y) => (
+                <span key={y.year} className="chip-btn" style={{ cursor: 'default', borderColor: y.when !== 'past' ? 'var(--series-1)' : undefined }}>
+                  {y.year}년 <b>{y.households.toLocaleString('ko-KR')}</b>세대{y.when === 'past' ? ' (지남)' : y.when === 'this' ? ' (올해)' : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="sub">{view.charts.moveIn.note}</p>
+        </section>
         <section className="card indicator" aria-label="청약 흐름">
           <div className="stack" style={{ gap: 4 }}>
             <h3>{view.region.label} 청약 경쟁률</h3>
