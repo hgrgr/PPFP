@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AskAiButton } from '@/components/ai/launcher';
+import { AskAiButton, AskAiSuggestions } from '@/components/ai/launcher';
 import { Gurus } from '@/components/gurus';
 import { requireUser } from '@/server/auth';
 
@@ -19,6 +19,13 @@ export default async function GurusPage() {
           <AskAiButton label="AI 거장 동향 해석" prompt="거장 포트폴리오 화면을 보고 이번 분기 거장들의 매매를 해석해 줘. 여러 거장이 함께 사거나 판 종목과 그 이유로 짐작되는 것, 공통 보유 종목의 특징, 내 포트폴리오와 비슷한 거장이 누구인지와 시사점을 정리해 줘." />
         </div>
       </header>
+      <AskAiSuggestions
+        items={[
+          { label: '이번 분기 공통 매매', prompt: '거장 포트폴리오에서 이번 분기에 여러 거장이 함께 산 종목과 판 종목을 보고, 공통된 테마나 이유로 짐작되는 것을 정리해 줘.' },
+          { label: '나와 닮은 거장에게 배울 점', prompt: '나와 비슷한 거장 목록에서 겹침이 가장 큰 거장의 포트폴리오와 내 포트폴리오를 비교해 차이와 배울 점을 알려 줘.' },
+          { label: '버핏은 무엇을 바꿨나', prompt: '워런 버핏(버크셔 해서웨이)의 최근 13F에서 새로 사거나 늘리거나 줄인 종목과 그 의미를 설명해 줘.' },
+        ]}
+      />
       <Suspense fallback={<p className="empty">불러오는 중…</p>}>
         <Gurus />
       </Suspense>

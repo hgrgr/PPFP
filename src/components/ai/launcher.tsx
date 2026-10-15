@@ -28,6 +28,20 @@ export function AskAiButton({ label, prompt, agent, sageId, className = 'btn' }:
   );
 }
 
+/** A row of ready-made questions about the screen; one tap opens the AI window with it. */
+export function AskAiSuggestions({ items }: { items: (AskAiDetail & { label: string })[] }) {
+  return (
+    <div className="inline ai-suggest" role="group" aria-label="AI에게 물어볼 만한 것">
+      <span className="sub">✦ 물어보기</span>
+      {items.map((i) => (
+        <button key={i.label} type="button" className="chip-btn" onClick={() => askAi({ prompt: i.prompt, agent: i.agent, sageId: i.sageId })}>
+          {i.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Floating "AI" button (Alt+K) and the side window it opens. The chat knows which
  * screen it was opened on; buttons elsewhere open it with a question via askAi().

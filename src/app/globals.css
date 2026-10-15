@@ -760,3 +760,5 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 /* 종목 분석 */
 .va-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .va-grid td { transition: background-color .3s ease; }
+.ai-suggest { gap: 6px; margin: -4px 0 12px; }
+.ai-suggest .chip-btn { font-size: 12px; padding: 4px 10px; }
