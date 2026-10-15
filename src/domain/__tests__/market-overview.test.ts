@@ -13,6 +13,7 @@ import {
   periodStart,
   returnFrames,
   squarify,
+  technicals,
   yahooSymbols,
   yieldId,
   yieldRow,
@@ -168,5 +169,21 @@ describe('government bond yields', () => {
     assert.equal(f.curves.US?.[0]['10Y'], 4.2);
     assert.equal(f.curves.US?.[1]['2Y'], 3.5);
     assert.equal(f.curves.KR, undefined);
+  });
+});
+
+describe('technicals', () => {
+  it('reads RSI, moving averages and the 52-week range', () => {
+    const up = Array.from({ length: 260 }, (_, k) => ({ date: `d${String(k).padStart(3, '0')}`, close: 100 + k }));
+    const t = technicals(up);
+    assert.equal(t.rsi, 100);
+    close(t.ma50, 359 / 334.5 - 1);
+    assert.equal(t.fromHigh, 0);
+    close(t.fromLow, 359 / 108 - 1);
+    assert.ok(t.vol! > 0);
+    const zig = Array.from({ length: 40 }, (_, k) => ({ date: `d${k}`, close: 100 + (k % 2 ? 1 : -1) }));
+    close(technicals(zig).rsi, 50, 6);
+    assert.equal(technicals(zig).ma200, null);
+    assert.equal(technicals(zig).fromHigh, null);
   });
 });

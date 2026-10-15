@@ -110,6 +110,7 @@ model User {
   priceAlerts       PriceAlert[]
   realEstateAlerts  RealEstateAlert[]
   favoriteComplexes FavoriteComplex[]
+  valuations        Valuation[]
   notifications     Notification[]
   pushSubs          PushSubscription[]
   notes             Note[]
@@ -796,6 +797,24 @@ model FavoriteComplex {
   createdAt  DateTime @default(now())
 
   @@unique([userId, lawdCd, complexKey])
+}
+
+/// A fair-value estimate saved on 종목 분석: the model, its inputs and the result at the time.
+model Valuation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    String
+  /// DCF, REVERSE_DCF, DDM, RIM
+  method    String
+  inputs    Json
+  /// value per share (or implied growth for REVERSE_DCF)
+  value     Decimal  @db.Decimal(20, 6)
+  price     Decimal? @db.Decimal(20, 6)
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, symbol])
 }
 
 /// A quick note. `#키워드` in the body links the note to that topic.

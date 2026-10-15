@@ -19,7 +19,9 @@ import {
   PERIODS,
   returnFrames,
   returnsOf,
+  technicals,
   SECTOR_ETFS,
+  SECTOR_KO,
   STYLE_BOX,
   TENORS,
   yahooSymbols,
@@ -33,6 +35,7 @@ import {
   type MapSector,
   type Member,
   type Period,
+  type Technicals,
   type YieldCountry,
   type YieldRow,
 } from '@/domain/market-overview';
@@ -214,6 +217,37 @@ export async function mapView(userId: string): Promise<MapView> {
     mapPending = null;
   });
   return mapPending;
+}
+
+// ------------------------------------------------------------------ technical ranking
+
+export interface RankRow {
+  symbol: string;
+  name: string;
+  sector: string;
+  weight: number;
+  last: number | null;
+  returns: Partial<Record<Period, number | null>>;
+  tech: Technicals;
+}
+
+let rankCache: { at: number; rows: RankRow[]; asOf: string | null } | null = null;
+
+/** Every S&P 500 member with its RSI, moving-average gaps, 52-week range and returns (an hour's cache) */
+export async function rankView(userId: string): Promise<{ asOf: string | null; rows: RankRow[] }> {
+  if (rankCache && Date.now() - rankCache.at < MAP_TTL) return rankCache;
+  const [holdings, members] = await Promise.all([spyHoldings(userId), sp500Members(userId)]);
+  const bySym = new Map(members.map((m) => [m.symbol, m]));
+  const held = holdings.filter((h) => bySym.has(h.ticker));
+  const series = await dailyCloses(userId, held.map((h) => yahooTicker(h.ticker)), '2y');
+  const rows = held.map((h) => {
+    const c = series.get(yahooTicker(h.ticker)) ?? [];
+    const m = bySym.get(h.ticker)!;
+    const r = returnsOf(c);
+    return { symbol: h.ticker, name: m.name, sector: SECTOR_KO[m.sector] ?? m.sector, weight: h.weight, last: c.at(-1)?.close ?? null, returns: { '1D': r['1D'], '1M': r['1M'], '3M': r['3M'], YTD: r.YTD, '1Y': r['1Y'] }, tech: technicals(c) };
+  });
+  rankCache = { at: Date.now(), rows, asOf: lastDate(series.values()) };
+  return rankCache;
 }
 
 // ------------------------------------------------------------------ government bond yields
