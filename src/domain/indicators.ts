@@ -246,6 +246,19 @@ export function addMonths(date: string, months: number): string {
 /** Every point moved `months` later (a pipeline drawn where it lands) */
 export const shiftMonths = (pts: Point[], months: number): Point[] => pts.map((p) => ({ date: addMonths(p.date, months), value: p.value }));
 
+/**
+ * A year-to-date running total as each month's own amount: January as published, later months
+ * minus the month before (ECOS 901Y105 인허가 and 901Y103 착공 are published as 1월부터 누계).
+ */
+export function fromYearToDate(pts: Point[]): Point[] {
+  const m = new Map(pts.map((p) => [p.date, p.value]));
+  return pts.flatMap((p) => {
+    if (p.date.slice(5, 7) === '01') return [p];
+    const prev = m.get(addMonths(p.date, -1));
+    return prev === undefined ? [] : [{ date: p.date, value: p.value - prev }];
+  });
+}
+
 /** Sum of each month and the `n` − 1 before it; months with a gap in that window are left out */
 export function rollingSum(pts: Point[], n: number): Point[] {
   const m = new Map(pts.map((p) => [p.date, p.value]));
@@ -705,8 +718,8 @@ export const INDICATORS: Indicator[] = [
     },
     build: (get, p) => {
       const r = regionOf(p.region);
-      const permits = get(`IND:ECOS:901Y105/M/${r.permit}`);
-      const sum12 = permits.flatMap((x, i) => (i >= 11 ? [{ date: x.date, value: permits.slice(i - 11, i + 1).reduce((a, b) => a + b.value, 0) / 1000 }] : []));
+      // Published as a running total from January: back to each month's own permits first
+      const sum12 = rollingSum(fromYearToDate(get(`IND:ECOS:901Y105/M/${r.permit}`)), 12).map((x) => ({ ...x, value: x.value / 1000 }));
       const unsold = get(`IND:ECOS:901Y074/M/${r.unsold}`).map((x) => ({ ...x, value: x.value / 1000 }));
       return {
         lines: [
@@ -1249,7 +1262,7 @@ export const INDICATORS: Indicator[] = [
     defaultOn: true,
     needs: () => [ecos('901Y103/M/1/I47ABA'), ecos('901Y074/M/I410A')],
     build: (get) => {
-      const starts = rollingSum(get('IND:ECOS:901Y103/M/1/I47ABA'), 12).map((p) => ({ ...p, value: p.value / 10_000 }));
+      const starts = rollingSum(fromYearToDate(get('IND:ECOS:901Y103/M/1/I47ABA')), 12).map((p) => ({ ...p, value: p.value / 10_000 }));
       const landing = shiftMonths(starts, 30);
       const unsold = get('IND:ECOS:901Y074/M/I410A').map((p) => ({ ...p, value: p.value / 1000 }));
       return {

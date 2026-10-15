@@ -12,6 +12,8 @@ export const BUYER_TABLES = {
   residence: 'A_2024_00609',
   age: 'A_2024_00610',
   owner: 'A_2024_00611',
+  /** 거래규모별 (전용면적대) — numbered like 거래주체별 */
+  size: 'A_2024_00612',
 } as const;
 export type BuyerTable = keyof typeof BUYER_TABLES;
 
@@ -39,17 +41,26 @@ export const BUYER_CLASSES: Record<BuyerTable, number[]> = {
   residence: [TOTAL, ...RESIDENCE.map((x) => x.cls)],
   age: [TOTAL, ...AGES.map((x) => x.cls)],
   owner: [OWNER.total, ...new Set([...OWNER.corpBuys, ...OWNER.corpSells])],
+  size: [500001, 500002, 500003, 500004, 500005, 500006, 500007, 500008, 500009, 500010],
 };
+/** 전용면적 bands of 거래규모별, folded into the 주택법 size classes */
+export const SIZE_BANDS = [
+  { key: 's', label: '60㎡ 이하', cls: [500002, 500003, 500004] },
+  { key: 'ms', label: '60~85㎡', cls: [500005] },
+  { key: 'ml', label: '85~135㎡', cls: [500006, 500007] },
+  { key: 'l', label: '135㎡ 초과', cls: [500008, 500009, 500010] },
+] as const;
 
 const ITEM = '100001';
 /** The request that loads every class of one table for the region (null when the table has no row for it) */
+const groupOf = (r: RoneRegion, t: BuyerTable) => (t === 'size' ? r.groups.owner : r.groups[t]);
 export function buyerReq(r: RoneRegion, t: BuyerTable): SeriesReq | null {
-  const grp = r.groups[t];
+  const grp = groupOf(r, t);
   if (!grp) return null;
   return { id: `IND:RONE:${BUYER_TABLES[t]}/*/${ITEM}/${grp}`, source: 'RONE', code: `${BUYER_TABLES[t]}/*/${ITEM}/${grp}`, freq: 'M' };
 }
 /** The stored series of one class */
-export const classId = (r: RoneRegion, t: BuyerTable, cls: number) => `${roneId(BUYER_TABLES[t], cls, ITEM)}/${r.groups[t]}`;
+export const classId = (r: RoneRegion, t: BuyerTable, cls: number) => `${roneId(BUYER_TABLES[t], cls, ITEM)}/${groupOf(r, t)}`;
 
 type Get = (id: string) => Point[];
 
@@ -131,6 +142,33 @@ export function ownerChart(r: RoneRegion, get: Get): ChartData {
     latest: [...latest('법인 매수', buys, '%'), ...latest('법인 매도', sells, '%')],
     note: '법인 매수는 2020년 규제 전 갭투자 수단으로 몰렸다가 세금이 무거워지며 줄었습니다. 법인 매수가 다시 늘면 투자 수요가 돌아오는 신호로 봅니다.',
   };
+}
+
+/** Deals by 전용면적 class, and the share of the larger homes */
+export function sizeChart(r: RoneRegion, get: Get): ChartData {
+  const total = get(classId(r, 'size', TOTAL));
+  const bands = Object.fromEntries(SIZE_BANDS.map((b) => [b.key, sumByDate(b.cls.map((c) => get(classId(r, 'size', c))))]));
+  const big = shareOver([bands.ml, bands.l], total);
+  const small = shareOver([bands.s], total);
+  return {
+    lines: [
+      ...SIZE_BANDS.map((b, i) => ({ key: b.key, label: b.label, color: C[i], kind: 'bar' as const, stack: 'z' })),
+      { key: 'big', label: '85㎡ 초과 비율', color: 'var(--ink)', axis: 'right' as const },
+      { key: 'small', label: '60㎡ 이하 비율', color: C[0], axis: 'right' as const, dash: true },
+    ],
+    rows: joinSeries({ ...bands, big, small }),
+    unit: '건',
+    rightUnit: '%',
+    latest: [...latest('85㎡ 초과', big, '%'), ...latest('60㎡ 이하', small, '%')],
+    note: '상승장 초입에는 실수요가 몰리는 소형·중소형 거래가 먼저 늘고, 과열 국면에는 중대형 비중이 커지는 경우가 많습니다. 비율은 3개월 합입니다.',
+  };
+}
+
+/** Points of several series summed on the dates any of them has */
+function sumByDate(list: Point[][]): Point[] {
+  const m = new Map<string, number>();
+  for (const pts of list) for (const p of pts) m.set(p.date, (m.get(p.date) ?? 0) + p.value);
+  return [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([date, value]) => ({ date, value }));
 }
 
 // ---------------------------------------------------------------- ranking

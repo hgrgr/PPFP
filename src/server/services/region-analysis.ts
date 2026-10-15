@@ -36,7 +36,7 @@ import {
   type RoneRegion,
   type RoneSet,
 } from '@/domain/region-analysis';
-import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, permitChart, permitIds, permitReq, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
+import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, permitChart, permitIds, permitReq, rankRow, residenceChart, sizeChart, type RankRow } from '@/domain/buyer-trends';
 import { mapValues, timelineFrames, type RegionValues, type TimelineFrames } from '@/domain/region-map';
 import { LOCATION_TABLES, locationValues, rankLocations, type KosisRow, type LocationRow, type LocationTable, type LocationValues } from '@/domain/location';
 import { addMonths } from '@/domain/indicators';
@@ -79,7 +79,7 @@ const ALL_SETS: RoneSet[] = ['price', 'jeonse', 'median', 'ratio', 'demand', 'jd
 export interface OneView {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: { price: ChartData; rtpi: ChartData; population: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
+  charts: { price: ChartData; rtpi: ChartData; population: ChartData; supply: ChartData; afford: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
   quadrant: (PathPoint & { q: Quadrant })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: ReturnType<typeof seasonality>;
@@ -101,8 +101,11 @@ export async function oneView(userId: string, key: string, years: number): Promi
   const unsold = unsoldReq(r);
   const rtpi = rtpiSource(r);
   const pop = indicatorById('population')!;
+  const supply = indicatorById('supply')!, afford = indicatorById('affordability')!;
+  const sidoCode = REGIONS.find((x) => x.name === r.sido)?.code ?? null;
+  const sidoParams = { region: sidoCode ?? '00', incomeBase: 'region' as const };
   const popParams = { region: popRegion(r) ?? '00', incomeBase: 'region' as const };
-  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold, rtpi?.req ?? null, ...(popRegion(r) ? pop.needs(popParams) : [])]);
+  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold, rtpi?.req ?? null, ...(popRegion(r) ? pop.needs(popParams) : []), ...(sidoCode ? [...supply.needs(sidoParams), ...afford.needs(sidoParams)] : [])]);
   const { s, ids } = setsOf(r, ALL_SETS, get);
   const demandFrom = ids.demand && ids.demand.from.key !== r.key ? ids.demand.from.label : '';
   return {
@@ -112,6 +115,8 @@ export async function oneView(userId: string, key: string, years: number): Promi
       price: cut(priceChart(s), years),
       rtpi: cut(rtpiChart(s.price ?? [], rtpi ? get(rtpi.req.id) : [], rtpi, r), years),
       population: cut(popRegion(r) ? pop.build(get, popParams) : { lines: [], rows: [], unit: '', latest: [] }, years),
+      supply: cut(sidoCode ? supply.build(get, sidoParams) : { lines: [], rows: [], unit: '', latest: [] }, years),
+      afford: cut(sidoCode ? afford.build(get, sidoParams) : { lines: [], rows: [], unit: '', latest: [] }, years),
       ratio: cut(ratioChart(s), years),
       demand: cut(demandChart(s, demandFrom), years),
       trade: cut(tradeChart(s, unsold ? get(unsold.id) : [], r.sido), years),
@@ -231,6 +236,7 @@ export interface BuyersView {
   age: ChartData;
   owner: ChartData;
   permit: ChartData;
+  size: ChartData;
   ranking: RankRow[];
   rankBy: 'outside' | 'otherSido';
   missing: Missing[];
@@ -242,10 +248,10 @@ export async function buyersView(userId: string, key: string, years: number): Pr
   const r = regionOrThrow(key);
   if (!r.groups.residence) throw new UserError('이 지역은 매입자 통계가 없습니다. 시도나 시군구를 고르세요.');
   const peers = peersOf(r);
-  const reqs = [buyerReq(r, 'residence'), buyerReq(r, 'age'), buyerReq(r, 'owner'), permitReq(r), ...peers.map((p) => buyerReq(p, 'residence'))].filter((x): x is SeriesReq => !!x);
+  const reqs = [buyerReq(r, 'residence'), buyerReq(r, 'age'), buyerReq(r, 'owner'), buyerReq(r, 'size'), permitReq(r), ...peers.map((p) => buyerReq(p, 'residence'))].filter((x): x is SeriesReq => !!x);
   const { missing, errors } = await refreshSeries(userId, [...new Map(reqs.map((x) => [x.id, x])).values()]);
   // A request loads every class; read each class's own series
-  const ids = [...BUYER_CLASSES.residence.flatMap((c) => [r, ...peers].map((p) => classId(p, 'residence', c))), ...BUYER_CLASSES.age.map((c) => classId(r, 'age', c)), ...BUYER_CLASSES.owner.map((c) => classId(r, 'owner', c)), ...permitIds(r)];
+  const ids = [...BUYER_CLASSES.residence.flatMap((c) => [r, ...peers].map((p) => classId(p, 'residence', c))), ...BUYER_CLASSES.age.map((c) => classId(r, 'age', c)), ...BUYER_CLASSES.owner.map((c) => classId(r, 'owner', c)), ...BUYER_CLASSES.size.map((c) => classId(r, 'size', c)), ...permitIds(r)];
   const series = await readSeries([...new Set(ids)]);
   const get = (id: string) => series.get(id) ?? [];
   return {
@@ -254,6 +260,7 @@ export async function buyersView(userId: string, key: string, years: number): Pr
     age: cut(ageChart(r, get), years),
     owner: cut(ownerChart(r, get), years),
     permit: cut(permitChart(r, get), years),
+    size: cut(sizeChart(r, get), years),
     // 시도 side by side: by buyers from other 시도; 시군구: by buyers from outside the 시군구
     ranking: peers.map((p) => rankRow(p, get)).sort((a, b) => (peers[0]?.depth === 0 ? (b.otherSido ?? -1) - (a.otherSido ?? -1) : (b.outside ?? -1) - (a.outside ?? -1))),
     rankBy: peers[0]?.depth === 0 ? 'otherSido' : 'outside',

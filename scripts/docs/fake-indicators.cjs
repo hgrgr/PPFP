@@ -75,7 +75,18 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     if (stat === '901Y074') [level, amp, trend] = [2500 * big, 1800 * big, 0];
     if (stat === '901Y105') [level, amp, trend] = [6000 * big, 2500 * big, 0];
     const rows = [];
-    const push = (time, t, years) => rows.push({ STAT_CODE: stat, TIME: time, DATA_VALUE: String(Number(wave(key, t, level, amp, trend * (years ? 12 : 1)).toFixed(3))) });
+    // 인허가 and 착공 are published as running totals from January
+    const ytd = stat === '901Y105' || stat === '901Y103';
+    let run = 0;
+    const push = (time, t, years) => {
+      let v = wave(key, t, level, amp, trend * (years ? 12 : 1));
+      if (ytd) {
+        if (time.endsWith('01')) run = 0;
+        run += Math.max(0, v) / 12;
+        v = run;
+      }
+      rows.push({ STAT_CODE: stat, TIME: time, DATA_VALUE: String(Number(v.toFixed(3))) });
+    };
     if (cycle === 'A') {
       const last = stat === '291Y524' || stat === '903Y201' || stat === '903Y206' ? NOW.getUTCFullYear() - 1 : NOW.getUTCFullYear() - 2;
       const first = stat === '903Y001' || stat === '903Y006' ? 2012 : stat === '903Y201' || stat === '903Y206' ? 2017 : 2010;
@@ -245,6 +256,8 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     A_2024_00611: [0.93, 0.01, 0.005, 0.03, 0.002, 0.003, 0.02, 0.0, 0.0],
     // 토지거래허가 처리: 허가, 불허가
     A_2024_00655: [0.04, 0.0015],
+    // 거래규모별: 20㎡ 이하 … 198㎡ 초과
+    A_2024_00612: [0.005, 0.06, 0.28, 0.45, 0.09, 0.08, 0.025, 0.008, 0.002],
   };
   const buyerRows = (url, table) => {
     const grp = url.searchParams.get('GRP_ID') ?? '900001';

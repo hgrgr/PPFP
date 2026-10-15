@@ -26,7 +26,7 @@ interface Common {
 interface OneView extends Common {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: Record<'price' | 'rtpi' | 'population' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
+  charts: Record<'price' | 'rtpi' | 'population' | 'supply' | 'afford' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
   quadrant: (PathPoint & { q: { n: number; name: string; about: string } })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: { rows: Record<string, number | string | null>[]; years: string[]; share: { month: number; pct: number }[] };
@@ -60,6 +60,7 @@ interface BuyersView extends Common {
   age: ChartData;
   owner: ChartData;
   permit: ChartData;
+  size: ChartData;
   ranking: RankRow[];
   rankBy: 'outside' | 'otherSido';
 }
@@ -380,6 +381,8 @@ function OnePanel({ view }: { view: OneView }) {
         <ChartCard title="매매 · 전세 수급지수" data={view.charts.demand} />
         <ChartCard title="거래량 · 미분양" data={view.charts.trade} />
         <ChartCard title="인구 · 연령대 · 세대수" data={view.charts.population} sub="주민등록 인구 (통계청 KOSIS)" />
+        <ChartCard title="공급: 인허가 · 미분양" data={view.charts.supply} sub={`${view.region.label.split(' ')[0]} 전체 (시도 자료)`} />
+        <ChartCard title="주택구입부담" data={view.charts.afford} sub={`${view.region.label.split(' ')[0]} 전체 (시도 자료, K-HAI 방식 자체 계산)`} />
         <ChartCard title="기술적 분석: 추세" data={view.charts.techMain} />
         <ChartCard title="기술적 분석: 보조지표" data={view.charts.techOsc} />
         <SeasonCard season={view.season} />
@@ -630,6 +633,7 @@ function BuyersPanel({ view, onPick }: { view: BuyersView; onPick: (key: string)
           about={<p>한국부동산원 *매입자거주지별 아파트매매거래*입니다. 외지인(그 시군구 밖에 사는 매수자) 비율이 오르면 투자 수요가 들어오는 것이고, 특히 서울 거주자 비율이 오르는 지방·경기 지역은 갭투자 자금이 몰리는 경우가 많습니다. 반대로 같은 시군구 사람이 대부분이면 실수요 위주입니다.</p>}
         />
         <ChartCard title="매수자 연령대" data={view.age} about={<p>한국부동산원 *매입자연령대별 아파트매매거래*(2019년부터)입니다. 기타는 법인 등 나이가 없는 매수자입니다.</p>} />
+        <ChartCard title="면적대별 매매거래" data={view.size} sub="어떤 크기의 아파트가 팔리는지 (전용면적)" />
         <ChartCard title="토지거래허가 처리" data={view.permit} sub="허가구역 안 거래의 허가·불허가 필지 수" />
         <ChartCard title="법인 매수 · 매도" data={view.owner} about={<p>한국부동산원 *거래주체별 아파트매매거래*에서 매수자나 매도자가 법인인 거래의 비율입니다. 법인 매도가 많으면 보유세·규제로 법인이 물량을 내놓는 것입니다.</p>} />
         <Card
