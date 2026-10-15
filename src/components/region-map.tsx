@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MAP_METRICS, regionOfShape, shapeValue, TIMELINE_METRICS, type MapMetric, type RegionValues, type TimelineFrames, type TimelineMetric } from '@/domain/region-map';
 import { frameLabel, TimelineControl, useTimeline } from '@/components/timeline';
 import { LOCATION_METRICS, locationOf, splitJeonnam, type LocationMetric, type LocationRow } from '@/domain/location';
-import { roneRegion, type RoneRegion } from '@/domain/region-analysis';
+import { RONE_REGIONS, roneRegion, shortSido, SIDO_KEYS, type RoneRegion } from '@/domain/region-analysis';
 
 interface Shape {
   /** 시군구 code */
@@ -139,6 +139,59 @@ function RaceChart({ items, color, fmt, lo, hi, onPick }: { items: { key: string
         );
       })}
     </div>
+  );
+}
+
+const HEAT_MONTHS = 24;
+
+/**
+ * Regions down, months across: each cell the metric's value that month, the newest column the
+ * frame being played, so the whole grid slides along with the timeline.
+ */
+function Heatmap({ frames, metric, i, sido, color, fmt, onPick }: { frames: TimelineFrames; metric: TimelineMetric; i: number; sido: string; color: (v: number) => string; fmt: (v: number) => string; onPick: (key: string) => void }) {
+  const keys = sido === 'all' ? SIDO_KEYS : RONE_REGIONS.filter((r) => r.depth === 1 && r.sido === splitJeonnam(sido, '')).map((r) => r.key);
+  const regions = keys.filter((k) => frames.values[k]?.[metric]);
+  const from = Math.max(0, i - HEAT_MONTHS + 1);
+  const cols = frames.dates.slice(from, i + 1).map((d, j) => ({ d, j: from + j }));
+  return (
+    <section className="card indicator" aria-label="증감 히트맵">
+      <div className="stack" style={{ gap: 4 }}>
+        <h3>달마다 보기 (히트맵)</h3>
+        <span className="sub">{sido === 'all' ? '전국과 시도' : `${shortSido(sido)}의 시군구`}, {frameLabel(cols[0]?.d)} ~ {frameLabel(cols.at(-1)?.d)}. 맨 오른쪽 열이 지도에 칠한 달이고, 재생하면 표 전체가 한 달씩 밀려갑니다.</span>
+      </div>
+      <div className="table-wrap">
+        <table className="heat" style={{ borderCollapse: 'separate', borderSpacing: 2, width: 'auto' }}>
+          <thead>
+            <tr>
+              <th className="l" />
+              {cols.map((c) => (
+                <th key={c.d} style={{ padding: 0, fontSize: 10, minWidth: 14, textAlign: 'center', border: 0 }}>{c.d.slice(5, 7) === '01' || c.j === from ? c.d.slice(2, 7).replace('-', '.') : ''}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {regions.map((k) => (
+              <tr key={k}>
+                <th scope="row" className="l" style={{ padding: '0 8px 0 0', border: 0, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <button type="button" className="linklike" style={{ textDecoration: 'none' }} onClick={() => onPick(k)}>{roneRegion(k)?.label.split(' ').slice(-1)[0] ?? k}</button>
+                </th>
+                {cols.map((c) => {
+                  const v = frames.values[k]?.[metric]?.[c.j];
+                  return (
+                    <td
+                      key={c.d}
+                      title={`${roneRegion(k)?.label} ${frameLabel(c.d)}: ${v === null || v === undefined ? '—' : fmt(v)}`}
+                      className="map-shape"
+                      style={{ padding: 0, border: 0, width: 14, height: 15, borderRadius: 3, background: v === null || v === undefined ? 'var(--line-soft)' : color(v), outline: c.j === i ? '2px solid var(--ink)' : undefined, outlineOffset: -1 }}
+                    />
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -372,6 +425,9 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
         )}
         <p className="sub">경계: 통계청 SGIS 행정동 경계(공공누리 제1유형)를 <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noreferrer">vuski/admdongkor</a>(2026-07판, CC BY 4.0)에서 받아 시군구로 합쳤습니다.</p>
       </section>
+      {timeMode && frames && (TIMELINE_METRICS as readonly string[]).includes(metric) && (
+        <Heatmap frames={frames} metric={metric as TimelineMetric} i={t.i} sido={sido} color={color} fmt={fmt} onPick={(k) => onPick(k)} />
+      )}
     </div>
   );
 }

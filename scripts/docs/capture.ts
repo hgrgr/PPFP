@@ -217,7 +217,7 @@ const SHOTS: Shot[] = [
     width: 1440,
     height: 6000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
-    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="토지거래허가 처리"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="면적대별 매매거래"]' }, { sel: 'section[aria-label="토지거래허가 처리"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
   },
   {
     file: 'regions-map',
@@ -266,8 +266,16 @@ const SHOTS: Shot[] = [
       { set: { sel: '.timeline input[type=range]' }, value: '30' },
       { wait: 1500 },
     ],
-    clip: [{ sel: 'section[aria-label="지역 지도"]' }, { sel: 'section[aria-label="지도 순위"]' }],
+    clip: [{ sel: 'section[aria-label="지역 지도"]' }, { sel: 'section[aria-label="지도 순위"]' }, { sel: 'section[aria-label="증감 히트맵"]' }],
     marks: [{ sel: '[aria-label="지도 시점"]' }, { sel: '.timeline-play' }, { sel: '.timeline input[type=range]' }, { sel: '[aria-label="재생 속도"]' }, { sel: '.race' }],
+  },
+  {
+    file: 'regions-supply',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="인구 · 연령대 · 세대수"]' }, { sel: 'section[aria-label="공급: 인허가 · 미분양"]' }, { sel: 'section[aria-label="주택구입부담"]' }],
   },
   {
     file: 'regions-complex',
