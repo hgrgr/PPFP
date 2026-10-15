@@ -64,7 +64,7 @@ const closeCache = new Map<string, { at: number; range: string; closes: Close[] 
 const RANGE_DAYS: Record<string, number> = { '2y': 730, '5y': 1826 };
 
 /** Daily closes for Yahoo symbols over `range`, from a 15-minute cache; symbols Yahoo does not know come back empty. */
-async function dailyCloses(userId: string, symbols: string[], range: '2y' | '5y'): Promise<Map<string, Close[]>> {
+export async function dailyCloses(userId: string, symbols: string[], range: '2y' | '5y'): Promise<Map<string, Close[]>> {
   const out = new Map<string, Close[]>();
   const need: string[] = [];
   for (const s of new Set(symbols)) {
@@ -184,7 +184,7 @@ async function spyHoldings(userId: string): Promise<Holding[]> {
   );
 }
 
-async function sp500Members(userId: string): Promise<Member[]> {
+export async function sp500Members(userId: string): Promise<Member[]> {
   return daily('mo:sp500-members', async () => parseSp500Members(await (await get(userId, SP500_WIKI, 'wikipedia')).text()), (v) => v.length > 50);
 }
 
