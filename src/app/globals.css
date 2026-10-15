@@ -711,3 +711,17 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
   /* Too narrow to sit beside the entry: the panel slides over it from the right */
   .indicator-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); max-height: none; z-index: 60; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18); }
 }
+
+/* 지역 분석 timelines: play button, month slider, date, speed */
+.timeline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.timeline input[type='range'] { flex: 1 1 200px; min-width: 160px; accent-color: var(--ink); }
+.timeline-play { width: 40px; justify-content: center; font-size: 13px; }
+.timeline-date { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 64px; }
+.timeline-speed button { padding: 0 8px; }
+.map-shape { transition: fill 0.45s ease; }
+.race { position: relative; }
+.race-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: 28px 1fr 64px; align-items: center; gap: 8px; height: 26px; transition: transform 0.55s ease; font-size: 13px; }
+.race-bar { position: relative; height: 18px; border-radius: 4px; overflow: hidden; background: var(--line-soft); }
+.race-bar span { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px; transition: width 0.55s ease, background 0.55s ease; }
+.race-bar b { position: relative; padding-left: 6px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .map-shape, .race-row, .race-bar span { transition: none; } }

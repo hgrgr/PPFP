@@ -201,7 +201,7 @@ const SHOTS: Shot[] = [
     width: 1440,
     height: 6000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1000 }, { click: { sel: 'th[scope="row"]', text: '서울', closest: 'tr' } }, { wait: 800 }],
-    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역별 현재 국면"]' }, { sel: 'section[aria-label="국면별 지역"]' }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역별 국면"]' }, { sel: 'section[aria-label="국면별 지역"]' }],
   },
   {
     file: 'regions-corr',
@@ -217,7 +217,7 @@ const SHOTS: Shot[] = [
     width: 1440,
     height: 6000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
-    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="토지거래허가 처리"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
   },
   {
     file: 'regions-map',
@@ -253,6 +253,21 @@ const SHOTS: Shot[] = [
     height: 9000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
     clip: [{ sel: 'section[aria-label="실거래가격지수 vs 매매가격지수"]' }],
+  },
+  {
+    file: 'regions-map-time',
+    path: () => '/regions?tab=map',
+    width: 1440,
+    height: 4000,
+    steps: [
+      { until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))" + " && !!document.querySelector('svg[aria-label$=\"지도\"] path')", timeout: 120_000 },
+      { click: { sel: 'button', text: '시간 흐름' } },
+      { until: "!!document.querySelector('.timeline input[type=range]') && !!document.querySelector('.race-row')", timeout: 120_000 },
+      { set: { sel: '.timeline input[type=range]' }, value: '30' },
+      { wait: 1500 },
+    ],
+    clip: [{ sel: 'section[aria-label="지역 지도"]' }, { sel: 'section[aria-label="지도 순위"]' }],
+    marks: [{ sel: '[aria-label="지도 시점"]' }, { sel: '.timeline-play' }, { sel: '.timeline input[type=range]' }, { sel: '[aria-label="재생 속도"]' }, { sel: '.race' }],
   },
   {
     file: 'regions-complex',

@@ -75,3 +75,57 @@ export function shapeValue(code: string, metric: MapMetric, values: RegionValues
   }
   return null;
 }
+
+// ---------------------------------------------------------------- time-lapse
+
+/** The map metrics that can be played month by month */
+export const TIMELINE_METRICS = ['y1', 'm1', 'ratio', 'trade', 'phase'] as const;
+export type TimelineMetric = (typeof TIMELINE_METRICS)[number];
+
+export interface TimelineFrames {
+  /** First day of each month, oldest first */
+  dates: string[];
+  /** Per region key, per metric, one value per date (null when not published) */
+  values: Record<string, Partial<Record<TimelineMetric, (number | null)[]>>>;
+}
+
+const round = (v: number | undefined, d = 2) => (v === undefined || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
+
+/** Every region's map metrics for each of the last `months` months, from whole tables */
+export function timelineFrames(t: Pick<MapTables, 'price' | 'ratio' | 'trade'>, months: number): TimelineFrames {
+  const all = [...t.price.values()].flatMap((pts) => pts.map((p) => p.date));
+  const lastDate = all.sort().at(-1);
+  if (!lastDate) return { dates: [], values: {} };
+  const dates: string[] = [];
+  for (let k = months - 1; k >= 0; k--) {
+    const [y, m] = lastDate.split('-').map(Number);
+    const n = y * 12 + (m - 1) - k;
+    dates.push(`${Math.floor(n / 12)}-${String((n % 12) + 1).padStart(2, '0')}-01`);
+  }
+  const values: TimelineFrames['values'] = {};
+  for (const r of RONE_REGIONS) {
+    const price = t.price.get(`/${r.ids.price}`) ?? [];
+    const trade = t.trade.get(`/${r.ids.trade}`) ?? [];
+    const ratio = t.ratio.get(`/${r.ids.ratio}`) ?? [];
+    if (!price.length && !ratio.length) continue;
+    const at = (pts: Point[]) => {
+      const m = new Map(pts.map((p) => [p.date, p.value]));
+      return (d: string) => m.get(d);
+    };
+    const y1 = at(changeOver(price, 12)), m1 = at(changeOver(price, 1)), ra = at(ratio), tr = at(changeOver(rollingSum(trade, 12), 12));
+    const p6 = at(changeOver(price, 6)), v6 = at(changeOver(rollingSum(trade, 6), 6));
+    const v: Partial<Record<TimelineMetric, (number | null)[]>> = {
+      y1: dates.map((d) => round(y1(d))),
+      m1: dates.map((d) => round(m1(d))),
+      ratio: dates.map((d) => round(ra(d), 1)),
+      trade: dates.map((d) => round(tr(d), 1)),
+      phase: dates.map((d) => {
+        const a = p6(d), b = v6(d);
+        return a === undefined || b === undefined ? null : honeycombPhase(a, b).n;
+      }),
+    };
+    for (const k of TIMELINE_METRICS) if (v[k]!.every((x) => x === null)) delete v[k];
+    if (Object.keys(v).length) values[r.key] = v;
+  }
+  return { dates, values };
+}
