@@ -12,6 +12,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: '대시보드', locked: true },
   { href: '/performance', label: '성과 분석' },
+  { href: '/risk', label: '리스크 분석' },
   { href: '/analysis', label: '분석 지표' },
   { href: '/regions', label: '지역 분석' },
   { href: '/markets', label: '시장 개요' },

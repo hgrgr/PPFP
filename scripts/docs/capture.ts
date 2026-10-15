@@ -417,6 +417,15 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '[aria-label="조건"]' }, { sel: 'select[aria-label="섹터"]', closest: 'label' }],
   },
   {
+    file: 'risk',
+    path: () => '/risk?y=3',
+    width: 1440,
+    height: 3600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 2000 }],
+    clip: [{ sel: 'section[aria-label="리스크 분석 설정"]' }, { sel: 'section[aria-label="리스크 요약"]' }, { sel: 'section[aria-label="가치 변화"]' }, { sel: 'section[aria-label="낙폭"]' }, { sel: 'section[aria-label="위험 기여"]' }, { sel: 'section[aria-label="요인 노출"]' }, { sel: 'section[aria-label="베타 변화"]' }, { sel: 'section[aria-label="상관관계"]' }],
+    marks: [{ sel: '[aria-label="기간"]' }],
+  },
+  {
     file: 'regions-map-time',
     path: () => '/regions?tab=map',
     width: 1440,
