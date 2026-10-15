@@ -1738,7 +1738,7 @@ API가 없는 증권사는 HTS·MTS·웹의 잔고 화면을 표 전체로 복�
 
 ### DB 백업
 
-**추가** [`b689fc0`](https://github.com/hgrgr/PPFP/commit/b689fc0ab324d3085f3b58030129da382e689013) · 2026-10-10
+**추가** [`b689fc0`](https://github.com/hgrgr/PPFP/commit/b689fc0ab324d3085f3b58030129da382e689013) · 2026-10-10 · **바뀜** [`e41c7ba`](https://github.com/hgrgr/PPFP/commit/e41c7ba6609d72c76922ff02ed3e392127422bad) · 2026-10-15 (최근 14개 → 30개 유지)
 
 <img src="images/data-backup.webp" alt="DB 백업 상태" width="720">
 
@@ -1927,6 +1927,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-15 | [`bbb169f`](https://github.com/hgrgr/PPFP/commit/bbb169f5258232e3dc8527f5cb899fdd4afdfb7f) | [#54](https://github.com/hgrgr/PPFP/pull/54) | 지역 분석 지도 시간 흐름에 증감 히트맵(지역×24개월, 재생 따라 이동), 투자자 동향에 면적대별 매매거래, 지역 한눈에 공급(인허가·미분양)·주택구입부담 | — |
 | 2026-10-15 | [`38e54c4`](https://github.com/hgrgr/PPFP/commit/38e54c4375a95286c94fd1105ea404cfc61a53ae) | [#54](https://github.com/hgrgr/PPFP/pull/54) | — | 분석 지표 *공급: 인허가와 미분양*·*공급 파이프라인*: 한국은행의 1월부터 누계를 달마다 값으로 바꿔 12개월 합이 실제 값과 맞게 됨(이전엔 몇 배 크게 표시) |
 | 2026-10-15 | [`745bc69`](https://github.com/hgrgr/PPFP/commit/745bc69c3d1fca13780b074268d481e98548ca5f) | [#55](https://github.com/hgrgr/PPFP/pull/55) | 지역 분석 청약에 규제(최근 공고 기준)·입주 예정 물량, 입지에 외국인·고령인구(참고), 지도에 신고가 비율·최고가 대비(전국 실거래 매일 수집) | — |
+| 2026-10-15 | [`e41c7ba`](https://github.com/hgrgr/PPFP/commit/e41c7ba6609d72c76922ff02ed3e392127422bad) | [#57](https://github.com/hgrgr/PPFP/pull/57) | — | 서버 DB 백업을 최근 14개 → 30개 유지 (업데이트 직전 백업도 개수에 들어감) |
 
 ## 사라진 기능
 
