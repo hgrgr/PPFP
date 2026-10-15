@@ -174,7 +174,8 @@ function Header({ d }: { d: StockView }) {
 // ------------------------------------------------------------------ statements
 
 function Financials({ d }: { d: StockView }) {
-  const [period, setPeriod] = useState<'annual' | 'quarterly'>('annual');
+  // Companies that file only quarterly XBRL (or are new) have no full years yet
+  const [period, setPeriod] = useState<'annual' | 'quarterly'>(d.annual.periods.length ? 'annual' : 'quarterly');
   const table = period === 'annual' ? d.annual : d.quarterly;
   const get = (k: string) => table.rows.find((r) => r.key === k);
   const chart = [...table.periods]

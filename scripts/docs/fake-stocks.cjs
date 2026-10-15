@@ -47,8 +47,13 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     us.StockholdersEquity = { units: { USD: at(2.2) } };
     us.LongTermDebt = { units: { USD: at(0.18) } };
     us.CashAndCashEquivalentsAtCarryingValue ??= { units: { USD: at(0.25) } };
+    us.WeightedAverageNumberOfDilutedSharesOutstanding = { units: { shares: rev.map((f) => ({ ...f, val: 24.4e9 })) } };
     if (scale !== 1) {
-      for (const tag of Object.values(us)) for (const list of Object.values(tag.units)) for (const f of list) f.val = Math.round(f.val * scale * (0.85 + 0.3 * ((cik * 7919) % 100) / 100));
+      // Each figure scaled a little differently so the peers' ratios differ
+      for (const [name, tag] of Object.entries(us)) {
+        const k = 0.55 + ((cik * 7919 + name.length * 131) % 100) / 100;
+        for (const list of Object.values(tag.units)) for (const f of list) f.val = Math.round(f.val * scale * k);
+      }
       // Per-share and share counts are not scaled with the business
       if (us.EarningsPerShareDiluted) for (const f of Object.values(us.EarningsPerShareDiluted.units)[0]) f.val = Number((f.val / scale).toFixed(2));
     }
