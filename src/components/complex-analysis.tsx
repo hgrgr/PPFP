@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts';
 import { IndicatorChart } from '@/components/analysis-board';
-import type { ChartData } from '@/domain/indicators';
+import type { ChartData, Point } from '@/domain/indicators';
+import { sma } from '@/domain/region-analysis';
 import type { ComplexDetail, ComplexRow, Forecast, Ranked } from '@/domain/complex-analysis';
 import { AREA_CLASSES } from '@/domain/complex-analysis';
 
@@ -200,6 +201,33 @@ function DetailCard({ detail, onClose }: { detail: ComplexDetail; onClose: () =>
     note: '달마다 그 평형 거래의 중앙값입니다. 거래가 없는 달은 비워 두고 선으로 잇습니다.',
   };
   const recent = [...detail.deals].reverse().slice(0, 15);
+  // Trend of the most traded 평형: monthly medians carried over quiet months, with 6- and 12-month averages
+  const main = [...detail.areas].sort((a, b) => b.deals - a.deals)[0];
+  const trend: ChartData | null = (() => {
+    if (!main) return null;
+    let lastV: number | null = null;
+    const pts: Point[] = [];
+    for (const r of detail.monthly) {
+      const v = r[`a${main.key}`];
+      if (typeof v === 'number') lastV = v;
+      if (lastV !== null) pts.push({ date: String(r.date), value: lastV });
+    }
+    if (pts.length < 13) return null;
+    const ma6 = sma(pts, 6), ma12 = sma(pts, 12);
+    const rows = pts.map((p) => ({ date: p.date, price: p.value, ma6: ma6.find((x) => x.date === p.date)?.value ?? null, ma12: ma12.find((x) => x.date === p.date)?.value ?? null }));
+    const lastOf = (k: 'price' | 'ma6' | 'ma12') => rows.at(-1)?.[k];
+    return {
+      lines: [
+        { key: 'price', label: `${main.label} 월 중앙값`, color: 'var(--ink)' },
+        { key: 'ma6', label: '6개월 이동평균', color: COLORS[0] },
+        { key: 'ma12', label: '12개월 이동평균', color: COLORS[3] },
+      ],
+      rows,
+      unit: '억',
+      latest: (['price', 'ma6', 'ma12'] as const).flatMap((k) => (typeof lastOf(k) === 'number' ? [{ label: k === 'price' ? '최근' : k === 'ma6' ? '6개월 평균' : '12개월 평균', value: `${(lastOf(k) as number).toFixed(2)}억`, date: String(rows.at(-1)!.date).slice(0, 7) }] : [])),
+      note: '거래가 없는 달은 직전 값을 이어 씁니다. 가격이 6개월·12개월 평균 위에 있고 6개월 평균이 12개월 평균 위면 오름세, 그 반대면 내림세로 봅니다.',
+    };
+  })();
   const sizeOf = new Map(detail.areas.map((a) => [a.key, a.label]));
   return (
     <Card title={`${detail.name} 실거래 전체`} sub={`${detail.umdNm}${detail.jibun ? ` ${detail.jibun}` : ''} · ${detail.buildYear ? `${detail.buildYear}년 준공` : '준공 연도 모름'} · 거래 ${detail.deals.length.toLocaleString('ko-KR')}건`} id="complex-detail">
@@ -240,6 +268,13 @@ function DetailCard({ detail, onClose }: { detail: ComplexDetail; onClose: () =>
         </ResponsiveContainer>
       </div>
       <IndicatorChart data={chart} />
+      {trend && (
+        <div className="stack" style={{ gap: 6 }}>
+          <h4 style={{ margin: '8px 0 0' }}>추세 (기술적 분석)</h4>
+          <IndicatorChart data={trend} />
+          <p className="sub">{trend.note}</p>
+        </div>
+      )}
       <div className="table-wrap">
         <table className="rank">
           <thead>

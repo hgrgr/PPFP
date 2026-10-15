@@ -2,7 +2,7 @@
  * 지역 분석 views: loads the R-ONE and ECOS series a view needs (through indicators.ts, so they
  * share its cache and keys) and builds the view from domain/region-analysis.ts.
  */
-import { changeOver, clip, rollingSum, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
+import { changeOver, clip, indicatorById, REGIONS, rollingSum, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
 import {
   compareChart,
   compareRatioChart,
@@ -36,8 +36,8 @@ import {
   type RoneRegion,
   type RoneSet,
 } from '@/domain/region-analysis';
-import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
-import { mapValues, type RegionValues } from '@/domain/region-map';
+import { ageChart, BUYER_CLASSES, buyerReq, classId, ownerChart, peersOf, permitChart, permitIds, permitReq, rankRow, residenceChart, type RankRow } from '@/domain/buyer-trends';
+import { mapValues, timelineFrames, type RegionValues, type TimelineFrames } from '@/domain/region-map';
 import { LOCATION_TABLES, locationValues, rankLocations, type KosisRow, type LocationRow, type LocationTable, type LocationValues } from '@/domain/location';
 import { addMonths } from '@/domain/indicators';
 import { kstDate, prisma } from '../db';
@@ -79,7 +79,7 @@ const ALL_SETS: RoneSet[] = ['price', 'jeonse', 'median', 'ratio', 'demand', 'jd
 export interface OneView {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: { price: ChartData; rtpi: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
+  charts: { price: ChartData; rtpi: ChartData; population: ChartData; ratio: ChartData; demand: ChartData; trade: ChartData; techMain: ChartData; techOsc: ChartData };
   quadrant: (PathPoint & { q: Quadrant })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: ReturnType<typeof seasonality>;
@@ -87,12 +87,22 @@ export interface OneView {
   errors: string[];
 }
 
+/** The KOSIS 주민등록 code of a region: its 시도's, its own 시군구 code, or a split 시's ("41130" for 성남시) */
+function popRegion(r: RoneRegion): string | null {
+  if (r.key === '전국') return '00';
+  if (r.depth === 0) return REGIONS.find((x) => x.name === r.sido)?.code ?? (r.lawd[0] ?? null);
+  if (r.lawd.length === 1) return r.lawd[0];
+  return r.lawd[0] ? `${r.lawd[0].slice(0, 4)}0` : null;
+}
+
 /** One region in depth */
 export async function oneView(userId: string, key: string, years: number): Promise<OneView> {
   const r = regionOrThrow(key);
   const unsold = unsoldReq(r);
   const rtpi = rtpiSource(r);
-  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold, rtpi?.req ?? null]);
+  const pop = indicatorById('population')!;
+  const popParams = { region: popRegion(r) ?? '00', incomeBase: 'region' as const };
+  const { get, missing, errors } = await load(userId, [...regionReqs(r, ALL_SETS), CPI_REQ, unsold, rtpi?.req ?? null, ...(popRegion(r) ? pop.needs(popParams) : [])]);
   const { s, ids } = setsOf(r, ALL_SETS, get);
   const demandFrom = ids.demand && ids.demand.from.key !== r.key ? ids.demand.from.label : '';
   return {
@@ -101,6 +111,7 @@ export async function oneView(userId: string, key: string, years: number): Promi
     charts: {
       price: cut(priceChart(s), years),
       rtpi: cut(rtpiChart(s.price ?? [], rtpi ? get(rtpi.req.id) : [], rtpi, r), years),
+      population: cut(popRegion(r) ? pop.build(get, popParams) : { lines: [], rows: [], unit: '', latest: [] }, years),
       ratio: cut(ratioChart(s), years),
       demand: cut(demandChart(s, demandFrom), years),
       trade: cut(tradeChart(s, unsold ? get(unsold.id) : [], r.sido), years),
@@ -148,7 +159,7 @@ export async function compareView(userId: string, keys: string[], years: number)
 export interface CycleView {
   window: number;
   real: boolean;
-  /** Each region's latest place and its path over the last 24 months */
+  /** Each region's latest place and its path over the last 60 months */
   rows: { key: string; label: string; date: string | null; x: number | null; y: number | null; phase: number | null; name: string | null; path: PathPoint[] }[];
   missing: Missing[];
   errors: string[];
@@ -165,7 +176,8 @@ export async function cycleView(userId: string, keys: string[] | null, window: 6
     real,
     rows: regions.map((r) => {
       const { s } = setsOf(r, sets, get);
-      const path = honeycombPath(s.price ?? [], s.trade ?? [], { window, last: 24, cpi });
+      // Five years, for the animation; the latest point is the region's place now
+      const path = honeycombPath(s.price ?? [], s.trade ?? [], { window, last: 60, cpi });
       const last = path.at(-1);
       return { key: r.key, label: r.label, date: last?.date ?? null, x: last?.x ?? null, y: last?.y ?? null, phase: last?.phase ?? null, name: last?.label ?? null, path };
     }),
@@ -218,6 +230,7 @@ export interface BuyersView {
   residence: ChartData;
   age: ChartData;
   owner: ChartData;
+  permit: ChartData;
   ranking: RankRow[];
   rankBy: 'outside' | 'otherSido';
   missing: Missing[];
@@ -229,10 +242,10 @@ export async function buyersView(userId: string, key: string, years: number): Pr
   const r = regionOrThrow(key);
   if (!r.groups.residence) throw new UserError('이 지역은 매입자 통계가 없습니다. 시도나 시군구를 고르세요.');
   const peers = peersOf(r);
-  const reqs = [buyerReq(r, 'residence'), buyerReq(r, 'age'), buyerReq(r, 'owner'), ...peers.map((p) => buyerReq(p, 'residence'))].filter((x): x is SeriesReq => !!x);
+  const reqs = [buyerReq(r, 'residence'), buyerReq(r, 'age'), buyerReq(r, 'owner'), permitReq(r), ...peers.map((p) => buyerReq(p, 'residence'))].filter((x): x is SeriesReq => !!x);
   const { missing, errors } = await refreshSeries(userId, [...new Map(reqs.map((x) => [x.id, x])).values()]);
   // A request loads every class; read each class's own series
-  const ids = [...BUYER_CLASSES.residence.flatMap((c) => [r, ...peers].map((p) => classId(p, 'residence', c))), ...BUYER_CLASSES.age.map((c) => classId(r, 'age', c)), ...BUYER_CLASSES.owner.map((c) => classId(r, 'owner', c))];
+  const ids = [...BUYER_CLASSES.residence.flatMap((c) => [r, ...peers].map((p) => classId(p, 'residence', c))), ...BUYER_CLASSES.age.map((c) => classId(r, 'age', c)), ...BUYER_CLASSES.owner.map((c) => classId(r, 'owner', c)), ...permitIds(r)];
   const series = await readSeries([...new Set(ids)]);
   const get = (id: string) => series.get(id) ?? [];
   return {
@@ -240,6 +253,7 @@ export async function buyersView(userId: string, key: string, years: number): Pr
     residence: cut(residenceChart(r, get), years),
     age: cut(ageChart(r, get), years),
     owner: cut(ownerChart(r, get), years),
+    permit: cut(permitChart(r, get), years),
     // 시도 side by side: by buyers from other 시도; 시군구: by buyers from outside the 시군구
     ranking: peers.map((p) => rankRow(p, get)).sort((a, b) => (peers[0]?.depth === 0 ? (b.otherSido ?? -1) - (a.otherSido ?? -1) : (b.outside ?? -1) - (a.outside ?? -1))),
     rankBy: peers[0]?.depth === 0 ? 'otherSido' : 'outside',
@@ -308,5 +322,29 @@ export async function locationView(userId: string): Promise<LocationView> {
   const view: LocationView = { rows: rankLocations(v), years: v.years, at: new Date().toISOString() };
   const value = JSON.stringify(view);
   await prisma.appSetting.upsert({ where: { key: LOCATION_KEY }, create: { key: LOCATION_KEY, value }, update: { value } });
+  return view;
+}
+
+const TIMELINE_KEY = 'regions:timeline';
+const TIMELINE_MONTHS = 72;
+
+/** Six years of every region's map metrics, month by month, for the map's time-lapse; kept 12 hours */
+export async function timelineView(userId: string): Promise<TimelineFrames & { at: string }> {
+  const row = await prisma.appSetting.findUnique({ where: { key: TIMELINE_KEY } });
+  if (row) {
+    const cached = JSON.parse(row.value) as TimelineFrames & { at: string };
+    if (Date.now() - Date.parse(cached.at) < MAP_FRESH_MS) return cached;
+  }
+  const today = kstDate();
+  const start = (months: number) => addMonths(`${today.slice(0, 7)}-01`, -months).slice(0, 7).replace('-', '');
+  // Changes need a year (deals two) before the first frame
+  const [price, ratio, trade] = await Promise.all([
+    roneTable(userId, 'A_2024_00045', start(TIMELINE_MONTHS + 16)),
+    roneTable(userId, 'A_2024_00073', start(TIMELINE_MONTHS + 4)),
+    roneTable(userId, 'A_2024_00554', start(TIMELINE_MONTHS + 28)),
+  ]);
+  const view = { ...timelineFrames({ price, ratio, trade }, TIMELINE_MONTHS), at: new Date().toISOString() };
+  const value = JSON.stringify(view);
+  await prisma.appSetting.upsert({ where: { key: TIMELINE_KEY }, create: { key: TIMELINE_KEY, value }, update: { value } });
   return view;
 }

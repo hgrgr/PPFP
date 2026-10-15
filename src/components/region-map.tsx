@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { MAP_METRICS, regionOfShape, shapeValue, type MapMetric, type RegionValues } from '@/domain/region-map';
+import { MAP_METRICS, regionOfShape, shapeValue, TIMELINE_METRICS, type MapMetric, type RegionValues, type TimelineFrames, type TimelineMetric } from '@/domain/region-map';
+import { frameLabel, TimelineControl, useTimeline } from '@/components/timeline';
 import { LOCATION_METRICS, locationOf, splitJeonnam, type LocationMetric, type LocationRow } from '@/domain/location';
 import { roneRegion, type RoneRegion } from '@/domain/region-analysis';
 
@@ -83,11 +84,76 @@ function shapeLocation(f: Shape, rows: Map<string, LocationRow>): { row: Locatio
   return row ? { row, region: roneRegion(key) ?? null } : null;
 }
 
+function useFrames(on: boolean): { frames: TimelineFrames | null; error: string | null } {
+  const [state, setState] = useState<{ frames: TimelineFrames | null; error: string | null }>({ frames: null, error: null });
+  useEffect(() => {
+    if (!on || state.frames) return;
+    let live = true;
+    fetch('/api/regions?view=timeline', { cache: 'no-store' })
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error ?? '불러오지 못했습니다.');
+        if (live) setState({ frames: j as TimelineFrames, error: null });
+      })
+      .catch((e) => live && setState({ frames: null, error: e instanceof Error ? e.message : '불러오지 못했습니다.' }));
+    return () => {
+      live = false;
+    };
+  }, [on, state.frames]);
+  return state;
+}
+
+/** A shape's value in a time-lapse frame: its own region's, else its 시's */
+function shapeFrame(code: string, metric: TimelineMetric, frames: TimelineFrames, i: number): { value: number; region: RoneRegion } | null {
+  const { own, parent } = regionOfShape(code);
+  for (const r of [own, parent]) {
+    const v = r ? frames.values[r.key]?.[metric]?.[i] : null;
+    if (r && v !== null && v !== undefined) return { value: v, region: r };
+  }
+  return null;
+}
+
+const ROW = 28;
+const RACE_TOP = 15;
+
+/** The regions' order at one frame, rows sliding to their new places as the frame moves */
+function RaceChart({ items, color, fmt, lo, hi, onPick }: { items: { key: string; label: string; value: number }[]; color: (v: number) => string; fmt: (v: number) => string; lo: number; hi: number; onPick: (key: string) => void }) {
+  const order = [...items].sort((a, b) => b.value - a.value);
+  const rank = new Map(order.map((x, i) => [x.key, i]));
+  const span = Math.max(Math.abs(lo), Math.abs(hi)) || 1;
+  const signed = lo < 0;
+  return (
+    <div className="race" style={{ height: Math.min(RACE_TOP, items.length) * ROW }} aria-label="순위 변화">
+      {[...items].sort((a, b) => a.key.localeCompare(b.key)).map((x) => {
+        const r = rank.get(x.key)!;
+        const width = signed ? (Math.abs(x.value) / span) * 50 : ((x.value - Math.min(0, lo)) / (hi - Math.min(0, lo) || 1)) * 100;
+        return (
+          <div key={x.key} className="race-row" style={{ transform: `translateY(${Math.min(r, RACE_TOP) * ROW}px)`, opacity: r < RACE_TOP ? 1 : 0 }}>
+            <span className="sub" style={{ textAlign: 'right' }}>{r + 1}</span>
+            <button type="button" className="race-bar linklike" style={{ textDecoration: 'none', textAlign: 'left' }} onClick={() => onPick(x.key)} tabIndex={r < RACE_TOP ? 0 : -1}>
+              <span style={{ width: `${Math.max(1, Math.min(100, width))}%`, left: signed && x.value < 0 ? `${50 - Math.min(50, width)}%` : signed ? '50%' : 0, background: color(x.value) }} />
+              <b>{x.label}</b>
+            </button>
+            <span className="num" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(x.value)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: string) => void }) {
   const shapes = useShapes();
   const [metric, setMetric] = useState<AnyMetric>('y1');
+  const [mode, setMode] = useState<'now' | 'time'>('now');
+  const timeMode = mode === 'time';
+  const { frames, error: framesError } = useFrames(timeMode);
+  const t = useTimeline(frames?.dates.length ?? 0);
   const isLoc = metric.startsWith('loc:');
   const locRows = useLocationRows(isLoc);
+  useEffect(() => {
+    if (timeMode && !(TIMELINE_METRICS as readonly string[]).includes(metric)) setMetric('y1');
+  }, [timeMode, metric]);
   const [sido, setSido] = useState('all');
   const [hover, setHover] = useState<{ shape: Shape; x: number; y: number } | null>(null);
   const def = ALL_METRICS.find((m) => m.key === metric)!;
@@ -107,6 +173,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
     () =>
       new Map(
         shown.map((f) => {
+          if (timeMode) return [f.c, frames && (TIMELINE_METRICS as readonly string[]).includes(metric) ? shapeFrame(f.c, metric as TimelineMetric, frames, t.i) : null] as const;
           if (!isLoc) return [f.c, shapeValue(f.c, metric as MapMetric, view.values)] as const;
           const hit = locRows ? shapeLocation(f, locRows) : null;
           const m = metric.slice(4) as LocationMetric | 'score';
@@ -114,9 +181,16 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
           return [f.c, hit && v !== undefined && v !== null ? { value: v, region: hit.region ?? ({ key: '', label: hit.row.label, lawd: [] } as unknown as RoneRegion) } : null] as const;
         }),
       ),
-    [shown, metric, view.values, isLoc, locRows],
+    [shown, metric, view.values, isLoc, locRows, timeMode, frames, t.i],
   );
-  const numbers = [...vals.values()].flatMap((v) => (v ? [v.value] : []));
+  // In a time-lapse the colors keep one scale over every frame, so a change of color is a change
+  const numbers = useMemo(() => {
+    if (timeMode && frames && (TIMELINE_METRICS as readonly string[]).includes(metric)) {
+      const keys = new Set(shown.flatMap((f) => [regionOfShape(f.c).own?.key, regionOfShape(f.c).parent?.key]).filter(Boolean) as string[]);
+      return [...keys].flatMap((k) => (frames.values[k]?.[metric as TimelineMetric] ?? []).filter((x): x is number => x !== null));
+    }
+    return [...vals.values()].flatMap((v) => (v ? [v.value] : []));
+  }, [timeMode, frames, metric, shown, vals]);
   const scale = useMemo(() => {
     if (def.kind === 'change') {
       const m = Math.max(1, Math.abs(quantile(numbers, 0.05)), Math.abs(quantile(numbers, 0.95)));
@@ -145,6 +219,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
   const top = def.kind === 'phase' ? [] : [...ranked].sort((a, b) => b.value - a.value);
 
   if (!shapes || (isLoc && !locRows)) return <p className="empty">지도를 불러오는 중…</p>;
+  if (timeMode && !frames && !framesError) return <p className="empty">6년치 지도를 준비하는 중… 처음에는 전국 자료를 받느라 20~30초 걸리고, 그 뒤 12시간은 바로 열립니다.</p>;
   const W = 640;
   const H = box.w > 0 ? Math.min(900, (W * box.h) / box.w) : 600;
   const k = box.w > 0 ? Math.min(W / box.w, H / box.h) : 1;
@@ -153,11 +228,15 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
       <section className="card indicator" aria-label="지역 지도">
         <div className="inline" style={{ gap: 10, flexWrap: 'wrap' }}>
           <div className="seg" role="group" aria-label="지도 지표" style={{ flexWrap: 'wrap' }}>
-            {ALL_METRICS.map((m) => (
+            {ALL_METRICS.filter((m) => !timeMode || (TIMELINE_METRICS as readonly string[]).includes(m.key)).map((m) => (
               <button key={m.key} type="button" aria-current={metric === m.key ? 'true' : undefined} onClick={() => setMetric(m.key)}>
                 {m.label}
               </button>
             ))}
+          </div>
+          <div className="seg" role="group" aria-label="지도 시점">
+            <button type="button" aria-current={!timeMode ? 'true' : undefined} onClick={() => setMode('now')}>최신</button>
+            <button type="button" aria-current={timeMode ? 'true' : undefined} onClick={() => setMode('time')}>시간 흐름 ▶</button>
           </div>
           <label className="inline" style={{ gap: 6 }}>
             <span className="sub">시도</span>
@@ -169,7 +248,9 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
             </select>
           </label>
         </div>
-        <span className="sub">{def.about}. {isLoc ? '통계청 KOSIS · 국세청 연간 자료.' : `기준 ${view.date?.slice(0, 7).replace('-', '.') ?? '—'} · 한국부동산원.`} 회색은 자료가 없는 곳(주로 군 지역)입니다. 시군구를 누르면 그 지역을 자세히 봅니다.</span>
+        {timeMode && frames && <TimelineControl t={t} dates={frames.dates} label="지도 시점" />}
+        {timeMode && framesError && <p className="msg err">{framesError}</p>}
+        <span className="sub">{def.about}. {timeMode ? `최근 6년을 달마다 재생합니다(색 기준은 6년 전체에 고정). 지금 ${frameLabel(frames?.dates[t.i])} · 한국부동산원.` : isLoc ? '통계청 KOSIS · 국세청 연간 자료.' : `기준 ${view.date?.slice(0, 7).replace('-', '.') ?? '—'} · 한국부동산원.`} 회색은 자료가 없는 곳(주로 군 지역)입니다. 시군구를 누르면 그 지역을 자세히 봅니다.</span>
         <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
           <svg viewBox={`0 0 ${(box.w * k).toFixed(0)} ${(box.h * k).toFixed(0)}`} style={{ width: '100%', height: 'auto', maxHeight: 720 }} role="img" aria-label={`${def.label} 지도`}>
             <g transform={`scale(${k})`}>
@@ -178,6 +259,7 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
                 return (
                   <path
                     key={f.c}
+                    className="map-shape"
                     d={paths.get(f.c)}
                     fill={color(v?.value)}
                     stroke="var(--surface)"
@@ -229,10 +311,15 @@ export function RegionMap({ view, onPick }: { view: MapViewData; onPick: (key: s
       </section>
       <section className="card indicator" aria-label="지도 순위">
         <div className="stack" style={{ gap: 4 }}>
-          <h3>{def.kind === 'phase' ? '국면별 지역 수' : `${def.label} 순위`}</h3>
+          <h3>{def.kind === 'phase' ? '국면별 지역 수' : timeMode ? `${def.label} 순위 변화` : `${def.label} 순위`}</h3>
           <span className="sub">{sido === 'all' ? '전국' : sido} · 지도에 칠한 값</span>
         </div>
-        {def.kind === 'phase' ? (
+        {timeMode && def.kind !== 'phase' ? (
+          <>
+            <RaceChart items={ranked.map((x) => ({ key: x.region.key || x.code, label: x.region.label || x.name, value: x.value }))} color={color} fmt={fmt} lo={scale.lo} hi={scale.hi} onPick={(k) => roneRegion(k) && onPick(k)} />
+            <p className="sub">{frameLabel(frames?.dates[t.i])} 기준 상위 {RACE_TOP}곳. 재생하면 순위가 바뀌는 대로 줄이 자리를 옮깁니다.</p>
+          </>
+        ) : def.kind === 'phase' ? (
           <div className="table-wrap">
             <table className="rank">
               <tbody>

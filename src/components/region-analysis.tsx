@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceArea, Ref
 import { IndicatorChart, KEY_HELP } from '@/components/analysis-board';
 import { ComplexPanel, FavoritesPanel, type ComplexViewData, type FavoriteData } from '@/components/complex-analysis';
 import { RegionMap, type MapViewData } from '@/components/region-map';
+import { frameLabel, TimelineControl, useTimeline } from '@/components/timeline';
 import { ApplyPanel, type ApplyViewData } from '@/components/subscriptions';
 import { LocationPanel, type LocationViewData } from '@/components/location';
 import type { ChartData } from '@/domain/indicators';
@@ -25,7 +26,7 @@ interface Common {
 interface OneView extends Common {
   region: { key: string; label: string };
   summary: RegionSummary;
-  charts: Record<'price' | 'rtpi' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
+  charts: Record<'price' | 'rtpi' | 'population' | 'ratio' | 'demand' | 'trade' | 'techMain' | 'techOsc', ChartData>;
   quadrant: (PathPoint & { q: { n: number; name: string; about: string } })[];
   honeycomb: (PathPoint & { phase: number })[];
   season: { rows: Record<string, number | string | null>[]; years: string[]; share: { month: number; pct: number }[] };
@@ -58,6 +59,7 @@ interface BuyersView extends Common {
   residence: ChartData;
   age: ChartData;
   owner: ChartData;
+  permit: ChartData;
   ranking: RankRow[];
   rankBy: 'outside' | 'otherSido';
 }
@@ -163,50 +165,65 @@ function ChartCard({ title, data, sub, about }: { title: string; data: ChartData
           ))}
         </dl>
       )}
-      {empty ? <p className="empty">이 지역은 이 자료가 없습니다.</p> : <IndicatorChart data={data} />}
+      {empty ? <p className="empty">이 지역은 이 자료가 없습니다.</p> : <IndicatorChart data={data} animate={!reducedMotion()} />}
       {data.note && <p className="sub">{data.note}</p>}
     </Card>
   );
 }
 
-/** A path of monthly points on an x/y plane, oldest faint, newest marked */
-function PathChart({ points, xLabel, yLabel, guides }: { points: PathPoint[]; xLabel: string; yLabel: string; guides?: React.ReactNode }) {
-  const data = points.map((p, i) => ({ ...p, i, tag: i === points.length - 1 || i === 0 ? ym(p.date) : '' }));
+/** Fixed axis bounds over every point (so a playing path does not rescale), always showing 0 */
+function boundsOf(points: { x: number; y: number }[]): { x: [number, number]; y: [number, number] } {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const b = (v: number[]): [number, number] => (v.length ? [niceDown(Math.min(0, ...v)), niceUp(Math.max(0, ...v))] : [-1, 1]);
+  return { x: b(xs), y: b(ys) };
+}
+
+/** A path of monthly points on an x/y plane, oldest faint, newest marked; with `animate`, played month by month */
+function PathChart({ points, xLabel, yLabel, guides, animate = false }: { points: PathPoint[]; xLabel: string; yLabel: string; guides?: React.ReactNode; animate?: boolean }) {
+  const t = useTimeline(points.length);
+  const shown = animate ? points.slice(0, t.i + 1) : points;
+  const bounds = boundsOf(points);
+  // While playing, the last year is drawn strong and the head big; older months fade
+  const data = shown.map((p, i) => ({ ...p, i, tag: i === shown.length - 1 || i === 0 ? ym(p.date) : '' }));
+  const n = data.length;
   return (
-    <div style={{ width: '100%', height: 300 }}>
-      <ResponsiveContainer>
-        <ScatterChart margin={{ top: 12, right: 16, bottom: 8, left: 0 }}>
-          <CartesianGrid stroke="var(--line-soft)" />
-          <XAxis type="number" dataKey="x" name={xLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: xLabel, position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
-          <YAxis type="number" dataKey="y" name={yLabel} domain={withZero} tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: yLabel, angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
-          <ZAxis range={[28, 28]} />
-          {guides}
-          <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="4 4" />
-          <ReferenceLine y={0} stroke="var(--muted)" strokeDasharray="4 4" />
-          <Tooltip
-            cursor={false}
-            contentStyle={tipStyle}
-            content={({ payload }) => {
-              const p = payload?.[0]?.payload as (PathPoint & { i: number }) | undefined;
-              if (!p) return null;
-              return (
-                <div style={{ ...tipStyle, padding: '8px 10px' }}>
-                  <div className="strong">{ym(p.date)}</div>
-                  <div>{xLabel}: {pct(p.x)}</div>
-                  <div>{yLabel}: {pct(p.y, 2)}</div>
-                  <div className="sub">{p.label}</div>
-                </div>
-              );
-            }}
-          />
-          <Scatter data={data} line={{ stroke: 'var(--series-1)', strokeWidth: 1.4, strokeOpacity: 0.6 }} isAnimationActive={false}>
-            {data.map((p) => (
-              <Cell key={p.date} fill="var(--series-1)" fillOpacity={0.25 + (0.75 * (p.i + 1)) / data.length} r={p.i === data.length - 1 ? 6 : 3} />
-            ))}
-            <LabelList dataKey="tag" position="top" style={{ fontSize: 11, fill: 'var(--ink-2)' }} />
-          </Scatter>
-        </ScatterChart>
-      </ResponsiveContainer>
+    <div className="stack" style={{ gap: 6 }}>
+      <div style={{ width: '100%', height: 300 }}>
+        <ResponsiveContainer>
+          <ScatterChart margin={{ top: 12, right: 16, bottom: 8, left: 0 }}>
+            <CartesianGrid stroke="var(--line-soft)" />
+            <XAxis type="number" dataKey="x" name={xLabel} domain={bounds.x} allowDataOverflow tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: xLabel, position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
+            <YAxis type="number" dataKey="y" name={yLabel} domain={bounds.y} allowDataOverflow tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: yLabel, angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
+            <ZAxis range={[28, 28]} />
+            {guides}
+            <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="4 4" />
+            <ReferenceLine y={0} stroke="var(--muted)" strokeDasharray="4 4" />
+            <Tooltip
+              cursor={false}
+              contentStyle={tipStyle}
+              content={({ payload }) => {
+                const p = payload?.[0]?.payload as (PathPoint & { i: number }) | undefined;
+                if (!p) return null;
+                return (
+                  <div style={{ ...tipStyle, padding: '8px 10px' }}>
+                    <div className="strong">{ym(p.date)}</div>
+                    <div>{xLabel}: {pct(p.x)}</div>
+                    <div>{yLabel}: {pct(p.y, 2)}</div>
+                    <div className="sub">{p.label}</div>
+                  </div>
+                );
+              }}
+            />
+            <Scatter data={data} line={{ stroke: 'var(--series-1)', strokeWidth: 1.4, strokeOpacity: 0.6 }} isAnimationActive={false}>
+              {data.map((p) => (
+                <Cell key={p.date} fill="var(--series-1)" fillOpacity={animate ? (p.i >= n - 12 ? 0.35 + (0.65 * (p.i - (n - 12))) / 12 : 0.12) : 0.25 + (0.75 * (p.i + 1)) / n} r={p.i === n - 1 ? 6 : 3} />
+              ))}
+              <LabelList dataKey="tag" position="top" style={{ fontSize: 11, fill: 'var(--ink-2)' }} />
+            </Scatter>
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+      {animate && <TimelineControl t={t} dates={points.map((p) => p.date)} label="궤적 시점" />}
     </div>
   );
 }
@@ -334,7 +351,7 @@ function OnePanel({ view }: { view: OneView }) {
         >
           {view.quadrant.length ? (
             <>
-              <PathChart points={view.quadrant} xLabel="매매 3개월" yLabel="전세 3개월" />
+              <PathChart points={view.quadrant} xLabel="매매 3개월" yLabel="전세 3개월" animate />
               {q && <p className="sub"><b>{ym(q.date)}</b> {q.q.name}: {q.q.about}</p>}
             </>
           ) : (
@@ -352,7 +369,7 @@ function OnePanel({ view }: { view: OneView }) {
         >
           {view.honeycomb.length ? (
             <>
-              <PathChart points={view.honeycomb} xLabel="거래량 6개월" yLabel="실질가격 6개월" guides={flatBand} />
+              <PathChart points={view.honeycomb} xLabel="거래량 6개월" yLabel="실질가격 6개월" guides={flatBand} animate />
               <HoneycombLegend current={h?.phase} />
             </>
           ) : (
@@ -362,6 +379,7 @@ function OnePanel({ view }: { view: OneView }) {
         <ChartCard title="전세가율 · 전월세 전환율" data={view.charts.ratio} />
         <ChartCard title="매매 · 전세 수급지수" data={view.charts.demand} />
         <ChartCard title="거래량 · 미분양" data={view.charts.trade} />
+        <ChartCard title="인구 · 연령대 · 세대수" data={view.charts.population} sub="주민등록 인구 (통계청 KOSIS)" />
         <ChartCard title="기술적 분석: 추세" data={view.charts.techMain} />
         <ChartCard title="기술적 분석: 보조지표" data={view.charts.techOsc} />
         <SeasonCard season={view.season} />
@@ -369,6 +387,9 @@ function OnePanel({ view }: { view: OneView }) {
     </div>
   );
 }
+
+/** Whether the viewer asked for less motion (no chart animation then) */
+const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 const corrColor = (r: number | null) => {
   if (r === null) return 'transparent';
@@ -455,25 +476,35 @@ function ComparePanel({ view }: { view: CompareView }) {
 
 function CyclePanel({ view, onPick }: { view: CycleView; onPick: (key: string) => void }) {
   const [focus, setFocus] = useState<string | null>(null);
-  const rows = view.rows.filter((r) => r.x !== null && r.y !== null);
-  const sel = rows.find((r) => r.key === focus) ?? null;
+  // Every month any region has, oldest first: the frames of the animation (the last is now)
+  const dates = useMemo(() => [...new Set(view.rows.flatMap((r) => r.path.map((p) => p.date)))].sort(), [view.rows]);
+  const t = useTimeline(dates.length);
+  const at = dates[t.i];
+  const bounds = useMemo(() => boundsOf(view.rows.flatMap((r) => r.path)), [view.rows]);
+  const frame = view.rows.map((r) => {
+    const p = r.path.find((x) => x.date === at);
+    return { ...r, x: p?.x ?? null, y: p?.y ?? null, name: p?.label ?? null, phase: p ? Number(p.label.match(/^(\d)/)?.[1]) || null : null, date: p?.date ?? null };
+  });
+  const rows = frame.filter((r) => r.x !== null && r.y !== null);
+  const sel = frame.find((r) => r.key === focus) ?? null;
+  const trail = sel ? sel.path.filter((p) => p.date <= (at ?? '')).slice(-24) : [];
   const dots = rows.map((r) => ({ x: r.x!, y: r.y!, key: r.key, label: r.label, date: r.date ?? '', name: r.name ?? '' }));
-  const sorted = [...view.rows].sort((a, b) => (a.phase ?? 9) - (b.phase ?? 9) || (b.y ?? 0) - (a.y ?? 0));
+  const sorted = [...frame].sort((a, b) => (a.phase ?? 9) - (b.phase ?? 9) || (b.y ?? 0) - (a.y ?? 0));
   return (
     <div className="stack" style={{ gap: 16 }}>
       <Notices view={view} />
       <div className="ind-grid">
         <Card
-          title="지역별 현재 국면"
-          sub={`${view.real ? '실질' : '명목'} 가격 ${view.window}개월 변화 × 거래량 ${view.window}개월 변화. 점을 누르면 그 지역의 2년 궤적을 그립니다.`}
-          about={<p>오른쪽 위(가격↑ 거래↑)가 1 회복기, 왼쪽 위가 2 활황기, 왼쪽 가운데가 3 침체 진입기, 왼쪽 아래가 4 침체기, 오른쪽 아래가 5 불황기, 오른쪽 가운데가 6 회복 진입기입니다. 지역마다 국면이 다르게 돌기 때문에, 먼저 도는 지역의 궤적이 뒤따르는 지역을 짐작하는 데 쓰입니다.</p>}
+          title="지역별 국면"
+          sub={`${view.real ? '실질' : '명목'} 가격 ${view.window}개월 변화 × 거래량 ${view.window}개월 변화. ▶로 최근 5년을 재생하고, 점을 누르면 그 지역의 궤적을 그립니다.`}
+          about={<p>오른쪽 위(가격↑ 거래↑)가 1 회복기, 왼쪽 위가 2 활황기, 왼쪽 가운데가 3 침체 진입기, 왼쪽 아래가 4 침체기, 오른쪽 아래가 5 불황기, 오른쪽 가운데가 6 회복 진입기입니다. 재생하면 지역들이 달마다 국면 사이를 움직이는 모습을 볼 수 있습니다. 지역마다 국면이 다르게 돌기 때문에, 먼저 도는 지역의 궤적이 뒤따르는 지역을 짐작하는 데 쓰입니다.</p>}
         >
           <div style={{ width: '100%', height: 360 }}>
             <ResponsiveContainer>
               <ScatterChart margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
                 <CartesianGrid stroke="var(--line-soft)" />
-                <XAxis type="number" dataKey="x" tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: '거래량 변화', position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis type="number" dataKey="y" tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: '가격 변화', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
+                <XAxis type="number" dataKey="x" domain={bounds.x} allowDataOverflow tick={axis} tickLine={false} axisLine={false} tickFormatter={pctTick} label={{ value: '거래량 변화', position: 'insideBottomRight', offset: -2, fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis type="number" dataKey="y" domain={bounds.y} allowDataOverflow tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={pctTick} label={{ value: '가격 변화', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--muted)' }} />
                 <ZAxis range={[40, 40]} />
                 {flatBand}
                 <ReferenceLine x={0} stroke="var(--muted)" strokeDasharray="4 4" />
@@ -493,21 +524,22 @@ function CyclePanel({ view, onPick }: { view: CycleView; onPick: (key: string) =
                     );
                   }}
                 />
-                {sel && <Scatter data={sel.path.map((p) => ({ ...p, name: p.label }))} fill="var(--series-2)" fillOpacity={0.5} line={{ stroke: 'var(--series-2)', strokeWidth: 1.4 }} isAnimationActive={false} />}
+                {sel && trail.length > 0 && <Scatter data={trail.map((p) => ({ ...p, name: p.label }))} fill="var(--series-2)" fillOpacity={0.5} line={{ stroke: 'var(--series-2)', strokeWidth: 1.4 }} isAnimationActive={false} />}
                 <Scatter data={dots} fill="var(--series-1)" isAnimationActive={false} onClick={(d: { payload?: { key: string } }) => d.payload && setFocus(d.payload.key)} style={{ cursor: 'pointer' }}>
                   <LabelList dataKey="label" position="top" style={{ fontSize: 11, fill: 'var(--ink-2)' }} />
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
+          <TimelineControl t={t} dates={dates} label="국면 시점" />
           <HoneycombLegend current={sel?.phase} />
           {sel && (
             <p className="sub">
-              <b>{sel.label}</b> {ym(sel.path[0]?.date)} → {ym(sel.date)} 궤적. 지금 {sel.name}. <button type="button" className="linklike" onClick={() => onPick(sel.key)}>이 지역 자세히 보기 ›</button>
+              <b>{sel.label}</b> {frameLabel(trail[0]?.date)} → {frameLabel(at)} 궤적. {sel.name ? `이때 ${sel.name}.` : '이 달 자료 없음.'} <button type="button" className="linklike" onClick={() => onPick(sel.key)}>이 지역 자세히 보기 ›</button>
             </p>
           )}
         </Card>
-        <Card title="국면별 지역" sub="국면 번호 순, 같은 국면 안에서는 가격 변화가 큰 순">
+        <Card title="국면별 지역" sub={`${frameLabel(at)} 기준. 국면 번호 순, 같은 국면 안에서는 가격 변화가 큰 순`}>
           <div className="table-wrap">
             <table className="rank">
               <thead>
@@ -516,7 +548,6 @@ function CyclePanel({ view, onPick }: { view: CycleView; onPick: (key: string) =
                   <th className="l">국면</th>
                   <th className="num">가격</th>
                   <th className="num">거래량</th>
-                  <th className="num">기준</th>
                 </tr>
               </thead>
               <tbody>
@@ -526,7 +557,6 @@ function CyclePanel({ view, onPick }: { view: CycleView; onPick: (key: string) =
                     <td className="l">{r.name ? r.name.replace(/\s*\(.*\)$/, '') : '자료 없음'}</td>
                     <td className="num">{pct(r.y, 2)}</td>
                     <td className="num">{pct(r.x, 0)}</td>
-                    <td className="num sub">{ym(r.date)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -600,6 +630,7 @@ function BuyersPanel({ view, onPick }: { view: BuyersView; onPick: (key: string)
           about={<p>한국부동산원 *매입자거주지별 아파트매매거래*입니다. 외지인(그 시군구 밖에 사는 매수자) 비율이 오르면 투자 수요가 들어오는 것이고, 특히 서울 거주자 비율이 오르는 지방·경기 지역은 갭투자 자금이 몰리는 경우가 많습니다. 반대로 같은 시군구 사람이 대부분이면 실수요 위주입니다.</p>}
         />
         <ChartCard title="매수자 연령대" data={view.age} about={<p>한국부동산원 *매입자연령대별 아파트매매거래*(2019년부터)입니다. 기타는 법인 등 나이가 없는 매수자입니다.</p>} />
+        <ChartCard title="토지거래허가 처리" data={view.permit} sub="허가구역 안 거래의 허가·불허가 필지 수" />
         <ChartCard title="법인 매수 · 매도" data={view.owner} about={<p>한국부동산원 *거래주체별 아파트매매거래*에서 매수자나 매도자가 법인인 거래의 비율입니다. 법인 매도가 많으면 보유세·규제로 법인이 물량을 내놓는 것입니다.</p>} />
         <Card
           title={bySido ? '시도별 외지인 매수' : '이웃 지역 외지인 매수'}

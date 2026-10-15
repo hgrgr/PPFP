@@ -6,6 +6,7 @@
  */
 import { joinSeries, rollingSum, type ChartData, type Point, type SeriesReq } from './indicators';
 import { RONE_REGIONS, roneId, SIDO_KEYS, type RoneRegion } from './region-analysis';
+import { LAND_PERMIT_GRP } from './rone-regions';
 
 export const BUYER_TABLES = {
   residence: 'A_2024_00609',
@@ -184,5 +185,42 @@ export function rankRow(r: RoneRegion, get: Get): RankRow {
     change: now !== null && before !== null ? now - before : null,
     months,
     date: last,
+  };
+}
+
+// ---------------------------------------------------------------- 토지거래허가
+
+const PERMIT_TABLE = 'A_2024_00655';
+/** 토지거래허가 처리 (필지수): every class of the region at once; null where the table has no row */
+export function permitReq(r: RoneRegion): SeriesReq | null {
+  const grp = LAND_PERMIT_GRP[r.key];
+  return grp ? { id: `IND:RONE:${PERMIT_TABLE}/*/${ITEM}/${grp}`, source: 'RONE', code: `${PERMIT_TABLE}/*/${ITEM}/${grp}`, freq: 'M' } : null;
+}
+/** Stored series of a 토지거래허가 class: 500001 합계, 500002 허가, 500003 불허가 */
+export const permitIds = (r: RoneRegion): string[] => {
+  const grp = LAND_PERMIT_GRP[r.key];
+  return grp ? [500001, 500002, 500003].map((c) => `${roneId(PERMIT_TABLE, c, ITEM)}/${grp}`) : [];
+};
+
+/** 토지거래허가 처리 건수 (필지) by month: granted, refused, and the refused share */
+export function permitChart(r: RoneRegion, get: Get): ChartData {
+  const [, okId, noId] = permitIds(r);
+  const ok = okId ? get(okId) : [], no = noId ? get(noId) : [];
+  const total = ok.length ? ok.map((p) => ({ date: p.date, value: p.value + (no.find((q) => q.date === p.date)?.value ?? 0) })) : [];
+  const refused = shareOver([no], total, 3);
+  const any = total.some((p) => p.value > 0);
+  return {
+    lines: [
+      { key: 'ok', label: '허가 (필지)', color: C[0], kind: 'bar', stack: 'p' },
+      { key: 'no', label: '불허가 (필지)', color: C[3], kind: 'bar', stack: 'p' },
+      { key: 'refused', label: '불허가 비율', color: 'var(--ink)', axis: 'right' },
+    ],
+    rows: any ? joinSeries({ ok, no, refused }) : [],
+    unit: '필지',
+    rightUnit: '%',
+    latest: [...latest('허가', ok, '필지', 0), ...latest('불허가 비율', refused, '%')],
+    note: any
+      ? '토지거래허가구역 안에서 땅·집을 사려면 시군구의 허가를 받아야 합니다. 허가 신청이 늘면 규제 지역에서도 매수세가 붙는 것이고, 불허가 비율이 오르면 실거주 요건 등 심사가 깐깐해진 것입니다. 비율은 3개월 합으로 계산합니다.'
+      : '이 지역은 토지거래허가 처리 건이 없습니다(허가구역이 없거나 신청이 없음).',
   };
 }

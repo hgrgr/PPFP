@@ -35,8 +35,12 @@ function num(v: number, unit: string) {
   return `${v.toLocaleString('ko-KR', { maximumFractionDigits: digits })}${unit && !unit.startsWith('%') ? ` ${unit}` : unit}`;
 }
 
-/** A card's chart: lines, stacked areas and bars on one or two axes; the legend switches series. */
-export function IndicatorChart({ data }: { data: ChartData }) {
+/**
+ * A card's chart: lines, stacked areas and bars on one or two axes; the legend switches series.
+ * With `animate`, lines draw themselves left to right (oldest to newest) when the chart appears.
+ */
+export function IndicatorChart({ data, animate = false }: { data: ChartData; animate?: boolean }) {
+  const anim = { isAnimationActive: animate, animationDuration: 900, animationEasing: 'ease-out' as const };
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const shown = data.lines.filter((l) => !hidden.has(l.key));
   const right = shown.some((l) => l.axis === 'right');
@@ -70,9 +74,9 @@ export function IndicatorChart({ data }: { data: ChartData }) {
             ))}
             {shown.map((l) => {
               const y = l.axis === 'right' ? 'r' : 'l';
-              if (l.kind === 'area') return <Area key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stackId={l.stack} stroke={l.color} fill={l.color} fillOpacity={0.35} strokeWidth={1.2} connectNulls isAnimationActive={false} />;
-              if (l.kind === 'bar') return <Bar key={l.key} yAxisId={y} dataKey={l.key} stackId={l.stack} fill={l.color} fillOpacity={0.55} isAnimationActive={false} />;
-              return <Line key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stroke={l.color} strokeWidth={l.color === 'var(--ink)' ? 2 : 1.6} strokeDasharray={l.dash ? '5 4' : undefined} dot={false} connectNulls isAnimationActive={false} />;
+              if (l.kind === 'area') return <Area key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stackId={l.stack} stroke={l.color} fill={l.color} fillOpacity={0.35} strokeWidth={1.2} connectNulls {...anim} />;
+              if (l.kind === 'bar') return <Bar key={l.key} yAxisId={y} dataKey={l.key} stackId={l.stack} fill={l.color} fillOpacity={0.55} {...anim} />;
+              return <Line key={l.key} yAxisId={y} type="monotone" dataKey={l.key} stroke={l.color} strokeWidth={l.color === 'var(--ink)' ? 2 : 1.6} strokeDasharray={l.dash ? '5 4' : undefined} dot={false} connectNulls {...anim} />;
             })}
           </ComposedChart>
         </ResponsiveContainer>
