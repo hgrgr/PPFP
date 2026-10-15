@@ -105,8 +105,12 @@ export interface Model {
   score: { min: number | null; max: number | null; avg: number | null } | null;
 }
 
-/** "084.9800A" → "84.98A" */
-export const typeName = (v: string) => v.replace(/^0+(?=\d)/, '').replace(/(\.\d*?)0+(?=[A-Z]*$)/, '$1').replace(/\.(?=[A-Z]*$)/, '');
+/** "084.9800A" → "84.98A", "059.9442B" → "59.94B" (two decimals at most, as 청약홈 shows them) */
+export const typeName = (v: string) => {
+  const m = v.trim().match(/^0*(\d+(?:\.\d+)?)(.*)$/);
+  if (!m) return v.trim();
+  return `${Number(Number(m[1]).toFixed(2))}${m[2]}`;
+};
 
 export function readModels(models: Row[], cmpet: Row[], scores: Row[]): Model[] {
   return models
