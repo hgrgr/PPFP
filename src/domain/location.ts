@@ -1,7 +1,8 @@
 /**
  * 입지: how well placed each 시군구 is for living, from 통계청 KOSIS — 사설학원 and 의사 per thousand
  * people, average 근로소득 (국세청), jobs per resident, 재정자립도 and five years of population —
- * each ranked against every 시군구 and averaged into one score and a 급지 (1 = top fifth).
+ * each ranked against every 시군구 and averaged into one score and a 급지 (1 = top fifth). 외국인 and
+ * 고령인구 are shown beside them but not scored.
  *
  * KOSIS numbers its regions its own way (e-지방지표 "31020" 성남시, 국세통계 "A0101" 강남구), so rows
  * are matched to 지역 분석's regions by 시도 and name. These tables go down to 시 level: a 구 of a
@@ -15,6 +16,8 @@ export const LOCATION_TABLES = {
   fiscal: { org: '101', tbl: 'DT_1YL20921', itm: 'T20', years: 1 },
   jobs: { org: '101', tbl: 'DT_1YL15014', itm: 'T001', years: 1 },
   income: { org: '133', tbl: 'DT_133001N_4215', itm: 'T001 T002', years: 1, objL2: 'B01' },
+  foreign: { org: '101', tbl: 'DT_1YL21271', itm: 'T10', years: 1 },
+  elderly: { org: '101', tbl: 'DT_1YL20631', itm: 'T10', years: 1 },
 } as const;
 export type LocationTable = keyof typeof LOCATION_TABLES;
 
@@ -25,8 +28,12 @@ export const LOCATION_METRICS = [
   { key: 'jobs', label: '일자리', unit: '명/100명', digits: 0, about: '주민 100명당 그 시군구에 있는 사업체 종사자 수 — 직장이 가까운 정도' },
   { key: 'fiscal', label: '재정자립도', unit: '%', digits: 1, about: '자체 수입으로 살림을 꾸리는 정도 (세입과목 개편 후 기준)' },
   { key: 'growth', label: '인구 5년', unit: '%', digits: 1, about: '주민등록인구의 5년 증감' },
+  // Shown, not scored: neither is better or worse in itself
+  { key: 'foreign', label: '외국인', unit: '명/천명', digits: 1, about: '인구 천 명당 등록외국인 수 — 공단·산업단지 일자리가 많은 곳에서 높습니다 (점수에는 넣지 않음)', unscored: true },
+  { key: 'elderly', label: '고령인구', unit: '%', digits: 1, about: '65세 이상 인구 비율 (점수에는 넣지 않음)', unscored: true },
 ] as const;
 export type LocationMetric = (typeof LOCATION_METRICS)[number]['key'];
+const isScored = (m: (typeof LOCATION_METRICS)[number]) => !('unscored' in m && m.unscored);
 
 export interface KosisRow {
   C1: string;
@@ -129,6 +136,11 @@ export function locationValues(t: Record<LocationTable, KosisRow[]>): LocationVa
   const fy = latestOf(t.fiscal, 'T20');
   years.fiscal = fy ?? undefined;
   for (const r of t.fiscal) if (r.PRD_DE === fy) put(eRegionKey(r.C1, r.C1_NM), 'fiscal', num(r.DT));
+  for (const k of ['foreign', 'elderly'] as const) {
+    const y = latestOf(t[k], 'T10');
+    years[k] = y ?? undefined;
+    for (const r of t[k]) if (r.PRD_DE === y) put(eRegionKey(r.C1, r.C1_NM), k, num(r.DT));
+  }
   const jy = latestOf(t.jobs, 'T001');
   years.jobs = jy ?? undefined;
   for (const r of t.jobs) {
@@ -184,15 +196,16 @@ export function rankLocations(v: LocationValues): LocationRow[] {
     list.forEach((e, i) => ((pct[e.k] ??= {})[m.key] = list.length > 1 ? (i / (list.length - 1)) * 100 : 50));
   }
   const known = new Set(RONE_REGIONS.map((r) => r.key));
+  const scored = new Set(LOCATION_METRICS.filter(isScored).map((m) => m.key));
   const rows: LocationRow[] = keys.map((k) => {
-    const ps = Object.values(pct[k] ?? {});
+    const ps = Object.entries(pct[k] ?? {}).filter(([m]) => scored.has(m as LocationMetric)).map(([, v]) => v);
     const score = ps.length >= 4 ? ps.reduce((a, b) => a + b, 0) / ps.length : null;
     return { key: k, label: k.replace('>', ' '), sido: k.split('>')[0], linked: known.has(k), values: v.values[k], pct: pct[k] ?? {}, score, grade: null, rank: null };
   });
-  const scored = rows.filter((r) => r.score !== null).sort((a, b) => b.score! - a.score!);
-  scored.forEach((r, i) => {
+  const ranked = rows.filter((r) => r.score !== null).sort((a, b) => b.score! - a.score!);
+  ranked.forEach((r, i) => {
     r.rank = i + 1;
-    r.grade = Math.min(5, Math.floor((i / scored.length) * 5) + 1);
+    r.grade = Math.min(5, Math.floor((i / ranked.length) * 5) + 1);
   });
   return rows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
 }

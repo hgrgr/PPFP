@@ -59,6 +59,8 @@ describe('입지 score', () => {
     doctor: names.map(([c, n], i) => r(c, n, 'T10', '2025', i)),
     fiscal: names.map(([c, n], i) => r(c, n, 'T20', '2026', 20 + i)),
     jobs: names.map(([c, n], i) => r(c, n, 'T001', '2024', 50_000 + i * 10_000)),
+    foreign: names.map(([c, n], i) => r(c, n, 'T10', '2025', 50 - i * 10)),
+    elderly: names.map(([c, n]) => r(c, n, 'T10', '2025', 20)),
     income: [{ C1: 'A01', C1_NM: '서울', ITM_ID: 'T001', PRD_DE: '2023', DT: '1' } as KosisRow, ...names.flatMap(([, n], i) => [{ C1: `A010${i + 1}`, C1_NM: n, ITM_ID: 'T001', PRD_DE: '2023', DT: '1000' }, { C1: `A010${i + 1}`, C1_NM: n, ITM_ID: 'T002', PRD_DE: '2023', DT: String(40_000 + i * 10_000) }] as KosisRow[])],
   };
 
@@ -72,13 +74,17 @@ describe('입지 score', () => {
     close(yongsan.income, 60_000 * 100 / 1000);
     assert.equal(v.years.growth, '2020~2025');
     assert.equal(v.years.income, '2023');
+    assert.equal(yongsan.foreign, 30);
+    assert.equal(yongsan.elderly, 20);
   });
 
   it('ranks by the average percentile into five 급지', () => {
     const rows = rankLocations(locationValues(tables));
     assert.equal(rows.length, 5);
     assert.equal(rows[0].key, '서울>광진구');
+    // 외국인 (falling here) is shown but not scored
     assert.equal(rows[0].score, 100);
+    assert.equal(rows[0].pct.foreign, 0);
     assert.equal(rows[0].rank, 1);
     assert.equal(rows[0].grade, 1);
     assert.equal(rows.at(-1)!.grade, 5);

@@ -10,6 +10,9 @@ import {
   ApplyApiError,
   inRegion,
   monthlyApply,
+  moveInChart,
+  regulationOf,
+  type Regulation,
   parseApply,
   readListing,
   readModels,
@@ -98,7 +101,9 @@ export interface ApplyView {
   region: { key: string; label: string };
   years: number;
   rows: ApplyRow[];
-  charts: { rate: ChartData; price: ChartData };
+  charts: { rate: ChartData; price: ChartData; moveIn: ChartData };
+  moveInYears: { year: string; households: number; when: 'past' | 'this' | 'future' }[];
+  regulation: Regulation;
 }
 
 export async function applyView(userId: string, regionKey: string, years: number): Promise<ApplyView> {
@@ -111,8 +116,13 @@ export async function applyView(userId: string, regionKey: string, years: number
   // 수도권·지방권 are not 공급지역; ask for the whole country and keep their 시도
   const sido = ['수도권', '지방권', '5대광역시'].includes(r.key) ? '전국' : r.sido;
   const parts = r.depth > 0 ? r.key.split('>').slice(1) : [];
-  let list = (await listings(userId, key, sido, since)).filter((l) => inRegion(l, sido, parts));
-  if (r.key === '수도권') list = list.filter((l) => ['서울', '경기', '인천'].some((s) => l.area.startsWith(s)));
+  const keep = (all: Listing[]) => {
+    const inside = all.filter((l) => inRegion(l, sido, parts));
+    return r.key === '수도권' ? inside.filter((l) => ['서울', '경기', '인천'].some((s) => l.area.startsWith(s))) : inside;
+  };
+  let list = keep(await listings(userId, key, sido, since));
+  // 입주 예정 reads six years of 공고 whatever the period shown (a 공고 moves in two to four years later)
+  const six = keep(await listings(userId, key, sido, `${Number(today.slice(0, 4)) - 6}${today.slice(4)}`));
   list.sort((a, b) => String(b.announced).localeCompare(String(a.announced)));
   const rows: ApplyRow[] = new Array(list.length);
   let next = 0;
@@ -132,7 +142,8 @@ export async function applyView(userId: string, regionKey: string, years: number
     }),
   );
   const charts = monthlyApply(rows.map((x) => ({ listing: x.listing, summary: x.summary, general: x.models.filter((m) => m.rate !== null).reduce((a, m) => a + m.general, 0), rank1: x.models.reduce((a, m) => a + m.rank1, 0) })));
-  return { region: { key: r.key, label: r.label }, years: y, rows, charts };
+  const moveIn = moveInChart(six, today);
+  return { region: { key: r.key, label: r.label }, years: y, rows, charts: { ...charts, moveIn: moveIn.chart }, moveInYears: moveIn.years, regulation: regulationOf(six) };
 }
 
 export { ApplyApiError };

@@ -234,7 +234,7 @@ const SHOTS: Shot[] = [
     width: 1440,
     height: 5000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { click: { sel: 'th[scope="row"]', text: '개포 새솔마을', closest: 'tr' } }, { wait: 1200 }],
-    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="청약 흐름"]' }, { sel: 'section[aria-label="분양가 흐름"]' }, { sel: 'section[aria-label="분양 공고"]' }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="규제지역"]' }, { sel: 'section[aria-label="입주 예정"]' }, { sel: 'section[aria-label="분양가 흐름"]' }, { sel: 'section[aria-label="분양 공고"]' }],
     marks: [{ sel: '[aria-label="공고 기간"]' }],
   },
   {
