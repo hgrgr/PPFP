@@ -57,7 +57,7 @@ export function Risk() {
               </button>
             ))}
           </div>
-          {d?.dates && <span className="sub">{d.dates.from} ~ {d.dates.to} · 상장 자산의 {pct(d.covered, 0)}를 분석</span>}
+          {d?.dates && <span className="sub">{d.dates.from} ~ {d.dates.to} · 전체 자산 가운데 {pct(d.covered, 0)}(상장 종목)를 분석</span>}
         </div>
         <p className="sub" style={{ margin: 0 }}>지금 들고 있는 상장 종목을 오늘 비중 그대로 기간 내내 들고 있었다고 가정해 원화로 계산한 값입니다(실제 계좌 수익률과는 다름). 계좌 포트폴리오만 셉니다.</p>
       </section>
@@ -205,7 +205,7 @@ function Body({ d }: { d: RiskView }) {
             <LineChart data={d.rolling} margin={{ left: 0, right: 12, top: 8, bottom: 4 }}>
               <CartesianGrid stroke="var(--line-soft)" />
               <XAxis dataKey="date" tickFormatter={(v: string) => v.slice(2, 7).replace('-', '.')} minTickGap={40} stroke="var(--muted)" fontSize={11} />
-              <YAxis domain={['auto', 'auto']} stroke="var(--muted)" fontSize={11} width={36} />
+              <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} stroke="var(--muted)" fontSize={11} width={48} />
               <Tooltip formatter={(v, n) => [Number(v).toFixed(2), String(n)]} contentStyle={tip} />
               <Legend />
               <ReferenceLine y={1} stroke="var(--muted)" strokeDasharray="4 3" />
