@@ -255,6 +255,42 @@ const SHOTS: Shot[] = [
     clip: [{ sel: 'section[aria-label="실거래가격지수 vs 매매가격지수"]' }],
   },
   {
+    file: 'markets-sectors',
+    path: () => '/markets?tab=sectors&p=3M',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="시장 개요 설정"]' }, { sel: 'section[aria-label="시점 재생"]' }, { sel: 'section[aria-label="섹터 히트맵"]' }, { sel: 'section[aria-label="섹터 순위"]' }, { sel: 'section[aria-label="스타일 박스"]' }],
+    marks: [{ sel: '[aria-label="기간"]' }, { sel: '.timeline-play' }, { sel: 'section[aria-label="스타일 박스"] .mo-style' }],
+  },
+  {
+    file: 'markets-map',
+    path: () => '/markets?tab=map&p=1M',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('.mo-map rect')", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="S&P 500 지도"]' }, { sel: 'section[aria-label="섹터별 수익률"]' }],
+    marks: [{ sel: '[aria-label="색 범례"]' }],
+  },
+  {
+    file: 'markets-yields',
+    path: () => '/markets?tab=yields',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('.timeline input[type=range]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="국채 금리 표"]' }, { sel: 'section[aria-label="금리 곡선"]' }, { sel: 'section[aria-label="10년물 추이"]' }, { sel: 'section[aria-label="장단기 금리차"]' }],
+    marks: [{ sel: 'section[aria-label="국채 금리 표"] [aria-label="보기"]' }, { sel: '.timeline-play' }],
+  },
+  {
+    file: 'markets-watch',
+    path: () => '/markets?tab=watch',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="기간 수익률"]' }],
+    marks: [],
+  },
+  {
     file: 'regions-map-time',
     path: () => '/regions?tab=map',
     width: 1440,
@@ -1275,7 +1311,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
     await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: shot.dark ? 'dark' : 'light' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     await s('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Seoul' });
     await s('Emulation.setLocaleOverride', { locale: 'ko-KR' });
-    const loaded = cdp.once('Page.loadEventFired', sessionId);
+    const loaded = cdp.once('Page.loadEventFired', sessionId, 90_000);
     await s('Page.navigate', { url: BASE + shot.path(ids) });
     await loaded;
     await sleep(shot.wait ?? 1200);

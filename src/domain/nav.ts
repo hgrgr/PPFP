@@ -14,6 +14,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/performance', label: '성과 분석' },
   { href: '/analysis', label: '분석 지표' },
   { href: '/regions', label: '지역 분석' },
+  { href: '/markets', label: '시장 개요' },
   { href: '/market', label: '실시간 시세' },
   { href: '/portfolios', label: '포트폴리오' },
   { href: '/assets', label: '보유 자산' },
