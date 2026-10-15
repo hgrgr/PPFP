@@ -756,3 +756,7 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .cot-bar span { position: absolute; top: -2px; width: 8px; height: 18px; border-radius: 3px; background: var(--ink); }
 .cot-bar b { position: absolute; left: 116px; top: -1px; font-size: 11px; font-weight: 500; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .rrg-dot { transition: none; } }
+
+/* 종목 분석 */
+.va-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.va-grid td { transition: background-color .3s ease; }

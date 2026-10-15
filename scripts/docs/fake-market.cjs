@@ -591,3 +591,4 @@ require('./fake-sec.cjs');
 require('./fake-apply.cjs');
 require('./fake-markets.cjs');
 require('./fake-gurus.cjs');
+require('./fake-stocks.cjs');

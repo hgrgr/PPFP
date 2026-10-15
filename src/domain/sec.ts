@@ -98,6 +98,16 @@ export const METRICS: { key: string; label: string; tags: string[]; instant?: bo
   { key: 'dilutedShares', label: '희석 주식 수', tags: ['us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding', 'ifrs-full:WeightedAverageNumberOfSharesOutstandingDiluted'] },
 ];
 
+/** Balance sheet and dividends, for the 종목 분석 screen's statements and fair-value inputs */
+export const STATEMENT_METRICS: typeof METRICS = [
+  ...METRICS,
+  { key: 'totalAssets', label: '총자산', tags: ['us-gaap:Assets', 'ifrs-full:Assets'], instant: true },
+  { key: 'liabilities', label: '총부채', tags: ['us-gaap:Liabilities', 'ifrs-full:Liabilities'], instant: true },
+  { key: 'equity', label: '자본', tags: ['us-gaap:StockholdersEquity', 'us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest', 'ifrs-full:EquityAttributableToOwnersOfParent'], instant: true },
+  { key: 'debt', label: '장기 차입금', tags: ['us-gaap:LongTermDebt', 'us-gaap:LongTermDebtNoncurrent', 'ifrs-full:NoncurrentBorrowings'], instant: true },
+  { key: 'dividendsPaid', label: '배당금 지급', tags: ['us-gaap:PaymentsOfDividends', 'us-gaap:PaymentsOfDividendsCommonStock', 'ifrs-full:DividendsPaidClassifiedAsFinancingActivities'] },
+];
+
 export interface FinancialTable {
   period: 'quarterly' | 'annual';
   /** Newest first: "2026 2분기", "2025" */
@@ -184,7 +194,7 @@ function series(list: Fact[], period: 'quarterly' | 'annual', instant: boolean, 
  * earlier. Companies whose fiscal year is not the calendar year are put in the calendar quarter
  * their quarter mostly falls in (NVIDIA's fiscal 2027 second quarter, May–July 2026, is 2026 Q2).
  */
-export function financialTable(facts: Facts, period: 'quarterly' | 'annual', count = 8): FinancialTable {
+export function financialTable(facts: Facts, period: 'quarterly' | 'annual', count = 8, metrics: typeof METRICS = METRICS): FinancialTable {
   // Period ends come from revenue or net income; balance sheet values are read at those ends
   const pickTag = (tags: string[]) => {
     let best: { unit: string; list: Fact[]; latest: string } | null = null;
@@ -197,7 +207,7 @@ export function financialTable(facts: Facts, period: 'quarterly' | 'annual', cou
     }
     return best;
   };
-  const picked = METRICS.map((m) => ({ m, p: pickTag(m.tags) }));
+  const picked = metrics.map((m) => ({ m, p: pickTag(m.tags) }));
   const ends = new Map<string, string>();
   const flows = picked.filter(({ m }) => !m.instant).map(({ m, p }) => ({ m, p, s: p ? series(p.list, period, false, !/shares/i.test(p.unit) && m.key !== 'dilutedShares', ends) : new Map() }));
   for (const key of ['revenue', 'netIncome', 'operatingIncome']) {

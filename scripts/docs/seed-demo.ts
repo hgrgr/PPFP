@@ -173,6 +173,11 @@ async function main() {
     ],
   });
 
+  // A fair value saved on 종목 분석 a month ago
+  await prisma.valuation.create({
+    data: { userId: uid, symbol: 'NVDA', method: 'DCF', inputs: { fcf: 150e9, growth: 0.2, years: 10, terminal: 0.025, discount: 0.1, netCash: 40e9, shares: 24.4e9 }, value: 182.5, price: 168.2, note: '데이터센터 성장 20% 가정', createdAt: new Date(Date.now() - 30 * D) },
+  });
+
   await runDailyForUser(uid, { fullRebuild: true });
   await seedStrategies(uid);
   await seedJournals(uid);
