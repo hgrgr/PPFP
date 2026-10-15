@@ -493,3 +493,58 @@ export function curveFrames(series: Map<string, Close[]>, from: string): CurveFr
   }
   return { dates, curves };
 }
+
+// ------------------------------------------------------------------ technical ranking
+
+export interface Technicals {
+  /** Wilder's 14-day RSI */
+  rsi: number | null;
+  /** close against its 50- and 200-day averages, fraction */
+  ma50: number | null;
+  ma200: number | null;
+  /** close against the 52-week high (≤ 0) and low (≥ 0) */
+  fromHigh: number | null;
+  fromLow: number | null;
+  /** annualized volatility of daily returns over 60 days */
+  vol: number | null;
+}
+
+export function technicals(closes: Close[]): Technicals {
+  const c = closes.map((x) => x.close);
+  const n = c.length;
+  const last = c[n - 1];
+  const avg = (k: number) => (n >= k ? c.slice(n - k).reduce((a, v) => a + v, 0) / k : null);
+  let rsi: number | null = null;
+  if (n > 15) {
+    let gain = 0, loss = 0;
+    for (let i = 1; i <= 14; i++) {
+      const d = c[i] - c[i - 1];
+      gain += Math.max(0, d);
+      loss += Math.max(0, -d);
+    }
+    gain /= 14;
+    loss /= 14;
+    for (let i = 15; i < n; i++) {
+      const d = c[i] - c[i - 1];
+      gain = (gain * 13 + Math.max(0, d)) / 14;
+      loss = (loss * 13 + Math.max(0, -d)) / 14;
+    }
+    rsi = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  }
+  const year = c.slice(Math.max(0, n - 252));
+  const m50 = avg(50), m200 = avg(200);
+  let vol: number | null = null;
+  if (n > 61) {
+    const r = c.slice(n - 61).map((v, i, a) => (i ? Math.log(v / a[i - 1]) : 0)).slice(1);
+    const mean = r.reduce((a, v) => a + v, 0) / r.length;
+    vol = Math.sqrt(r.reduce((a, v) => a + (v - mean) ** 2, 0) / (r.length - 1)) * Math.sqrt(252);
+  }
+  return {
+    rsi: rsi === null ? null : Number(rsi.toFixed(1)),
+    ma50: m50 ? last / m50 - 1 : null,
+    ma200: m200 ? last / m200 - 1 : null,
+    fromHigh: n >= 200 ? last / Math.max(...year) - 1 : null,
+    fromLow: n >= 200 ? last / Math.min(...year) - 1 : null,
+    vol,
+  };
+}

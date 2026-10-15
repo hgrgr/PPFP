@@ -408,6 +408,15 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '[aria-label="평가 방법"]' }],
   },
   {
+    file: 'markets-rank',
+    path: () => '/markets?tab=rank',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { click: { sel: 'button', text: '200일선 위' } }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="기술적 순위"]' }],
+    marks: [{ sel: '[aria-label="조건"]' }, { sel: 'select[aria-label="섹터"]', closest: 'label' }],
+  },
+  {
     file: 'regions-map-time',
     path: () => '/regions?tab=map',
     width: 1440,

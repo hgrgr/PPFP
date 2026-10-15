@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/server/auth';
-import { mapView, sectorsView, watchView, yieldsView } from '@/server/services/market-overview';
+import { mapView, rankView, sectorsView, watchView, yieldsView } from '@/server/services/market-overview';
 import { UserError } from '@/server/services/portfolios';
 
 export const dynamic = 'force-dynamic';
 
-/** 시장 개요 views: ?view=sectors · map · yields · watch */
+/** 시장 개요 views: ?view=sectors · map · yields · watch · rank */
 export async function GET(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -20,7 +20,9 @@ export async function GET(req: Request) {
             ? await yieldsView(user.id)
             : view === 'watch'
               ? await watchView(user.id)
-              : null;
+              : view === 'rank'
+                ? await rankView(user.id)
+                : null;
     if (!body) return NextResponse.json({ error: '없는 화면입니다.' }, { status: 400 });
     return NextResponse.json(body);
   } catch (e) {

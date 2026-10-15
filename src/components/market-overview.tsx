@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { frameLabel, TimelineControl, useTimeline } from '@/components/timeline';
 import { KEY_HELP } from '@/components/analysis-board';
-import { PERIOD_LABEL, PERIODS, squarify, TENORS, TENOR_YEARS, type CurveFrames, type MapSector, type Period, type Rect, type Tenor, type YieldRow } from '@/domain/market-overview';
+import { PERIOD_LABEL, PERIODS, squarify, type Technicals, TENORS, TENOR_YEARS, type CurveFrames, type MapSector, type Period, type Rect, type Tenor, type YieldRow } from '@/domain/market-overview';
 
 type Returns = Partial<Record<Period, number | null>>;
 interface EtfRow {
@@ -48,6 +48,7 @@ interface ReturnRow {
 const TABS = [
   { key: 'sectors', label: '섹터 · 스타일' },
   { key: 'map', label: 'S&P 500 지도' },
+  { key: 'rank', label: '기술적 순위' },
   { key: 'yields', label: '국채 금리' },
   { key: 'watch', label: '기간 수익률' },
 ] as const;
@@ -125,7 +126,7 @@ export function MarketOverview() {
           {(tab === 'sectors' || tab === 'map') && <PeriodSeg value={tab === 'map' && period === '3Y' ? '1Y' : period} periods={tab === 'map' ? PERIODS.filter((p) => p !== '3Y') : PERIODS} onPick={(p) => set({ p })} />}
         </div>
       </section>
-      {tab === 'sectors' ? <SectorsTab period={period} /> : tab === 'map' ? <MapTab period={period === '3Y' ? '1Y' : period} /> : tab === 'yields' ? <YieldsTab /> : <WatchTab />}
+      {tab === 'sectors' ? <SectorsTab period={period} /> : tab === 'map' ? <MapTab period={period === '3Y' ? '1Y' : period} /> : tab === 'rank' ? <RankTab /> : tab === 'yields' ? <YieldsTab /> : <WatchTab />}
     </div>
   );
 }
@@ -627,5 +628,134 @@ function WatchTab() {
         <p className="sub">Yahoo Finance 일별 종가(15분마다 새로 받음). 국내 종목은 거래소 종가, 가상자산은 원화 기준입니다. 배당은 빼고 가격만 잰 수익률입니다.</p>
       </section>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ technical ranking
+
+interface RankRow {
+  symbol: string;
+  name: string;
+  sector: string;
+  weight: number;
+  last: number | null;
+  returns: Returns;
+  tech: Technicals;
+}
+
+const FILTERS = [
+  { key: 'all', label: '전체', test: () => true },
+  { key: 'above200', label: '200일선 위', test: (r: RankRow) => (r.tech.ma200 ?? -1) > 0 },
+  { key: 'below200', label: '200일선 아래', test: (r: RankRow) => (r.tech.ma200 ?? 1) < 0 },
+  { key: 'oversold', label: '과매도 (RSI < 30)', test: (r: RankRow) => r.tech.rsi !== null && r.tech.rsi < 30 },
+  { key: 'overbought', label: '과매수 (RSI > 70)', test: (r: RankRow) => r.tech.rsi !== null && r.tech.rsi > 70 },
+  { key: 'nearHigh', label: '52주 신고가 근처 (3% 안)', test: (r: RankRow) => (r.tech.fromHigh ?? -1) >= -0.03 },
+] as const;
+
+type SortKey = 'weight' | 'rsi' | 'ma50' | 'ma200' | 'fromHigh' | 'vol' | '1M' | '3M' | 'YTD' | '1Y';
+const sortValue = (r: RankRow, k: SortKey): number | null => (k === 'weight' ? r.weight : k === 'rsi' || k === 'ma50' || k === 'ma200' || k === 'fromHigh' || k === 'vol' ? r.tech[k] : (r.returns[k] ?? null));
+
+function RankTab() {
+  const { data, error } = useView<{ asOf: string | null; rows: RankRow[] }>('/api/markets?view=rank');
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
+  const [sector, setSector] = useState('');
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'weight', desc: true });
+  const [limit, setLimit] = useState(50);
+  if (error) return <p className="msg err">{error}</p>;
+  if (!data) return <p className="empty">불러오는 중… 처음에는 S&P 500 종목 500여 개의 시세를 받느라 10~20초 걸립니다.</p>;
+  const f = FILTERS.find((x) => x.key === filter)!;
+  const rows = data.rows
+    .filter((r) => f.test(r) && (!sector || r.sector === sector))
+    .sort((a, b) => {
+      const va = sortValue(a, sort.key), vb = sortValue(b, sort.key);
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return sort.desc ? vb - va : va - vb;
+    });
+  const sectors = [...new Set(data.rows.map((r) => r.sector))].sort();
+  const above = data.rows.filter((r) => (r.tech.ma200 ?? -1) > 0).length;
+  const known = data.rows.filter((r) => r.tech.ma200 !== null).length;
+  const head = (k: SortKey, label: string) => (
+    <th className="num">
+      <button type="button" className="linklike" aria-pressed={sort.key === k} onClick={() => setSort((s) => ({ key: k, desc: s.key === k ? !s.desc : true }))} style={{ fontWeight: sort.key === k ? 700 : undefined }}>
+        {label}{sort.key === k ? (sort.desc ? ' ▼' : ' ▲') : ''}
+      </button>
+    </th>
+  );
+  const rsiColor = (v: number | null) => (v === null ? undefined : v >= 70 ? 'var(--up)' : v <= 30 ? 'var(--down)' : undefined);
+  return (
+    <section className="card indicator" aria-label="기술적 순위">
+      <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h3>S&P 500 기술적 순위</h3>
+          <span className="sub">{data.asOf} 종가 기준. 200일 이동평균 위에 있는 종목 {above}/{known}개({known ? Math.round((above / known) * 100) : 0}%) — 시장 폭(breadth)을 가늠하는 숫자입니다. 머리글을 누르면 정렬합니다.</span>
+        </div>
+        <label className="inline" style={{ gap: 6 }}>
+          <span className="sub">섹터</span>
+          <select value={sector} onChange={(e) => setSector(e.target.value)} style={{ width: 'auto' }} aria-label="섹터">
+            <option value="">전체</option>
+            {sectors.map((x) => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="inline" style={{ gap: 6, flexWrap: 'wrap' }} role="group" aria-label="조건">
+        {FILTERS.map((x) => (
+          <button key={x.key} type="button" className="chip-btn" aria-pressed={filter === x.key} onClick={() => { setFilter(x.key); setLimit(50); }}>
+            {x.label} <span className="sub">{data.rows.filter((r) => x.test(r) && (!sector || r.sector === sector)).length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="table-wrap">
+        <table className="rank">
+          <thead>
+            <tr>
+              <th className="l">종목</th>
+              <th className="l">섹터</th>
+              {head('weight', '지수 비중')}
+              <th className="num">종가</th>
+              {head('rsi', 'RSI(14)')}
+              {head('ma50', '50일선 대비')}
+              {head('ma200', '200일선 대비')}
+              {head('fromHigh', '52주 고점 대비')}
+              {head('vol', '변동성')}
+              {head('1M', '1개월')}
+              {head('3M', '3개월')}
+              {head('YTD', '연초 이후')}
+              {head('1Y', '1년')}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, limit).map((r) => (
+              <tr key={r.symbol}>
+                <th scope="row" className="l">
+                  <Link href={`/stocks?t=${encodeURIComponent(r.symbol)}`}>{r.symbol}</Link>
+                  <span className="sub" style={{ display: 'block' }}>{r.name}</span>
+                </th>
+                <td className="l sub">{r.sector}</td>
+                <td className="num">{r.weight.toFixed(2)}%</td>
+                <td className="num">{r.last?.toLocaleString('en-US', { maximumFractionDigits: 2 }) ?? '—'}</td>
+                <td className="num strong" style={{ color: rsiColor(r.tech.rsi) }}>{r.tech.rsi ?? '—'}</td>
+                {(['ma50', 'ma200', 'fromHigh'] as const).map((k) => (
+                  <td key={k} className={`num ${(r.tech[k] ?? 0) >= 0 ? 'up' : 'down'}`}>{pct(r.tech[k])}</td>
+                ))}
+                <td className="num">{r.tech.vol === null ? '—' : `${Math.round(r.tech.vol * 100)}%`}</td>
+                {(['1M', '3M', 'YTD', '1Y'] as const).map((p) => (
+                  <td key={p} className="num" style={{ background: heat(r.returns[p], p), color: inkOn(r.returns[p], p) }}>{pct(r.returns[p])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > limit && (
+        <button type="button" className="btn small" style={{ alignSelf: 'center' }} onClick={() => setLimit((l) => l + 100)}>
+          더 보기 ({rows.length - limit}개 남음)
+        </button>
+      )}
+      {!rows.length && <p className="empty">조건에 맞는 종목이 없습니다.</p>}
+      <p className="sub">RSI는 14일 와일더 방식(70 위 과매수, 30 아래 과매도로 흔히 봄), 이동평균 대비는 종가가 평균보다 몇 % 위·아래인지, 변동성은 최근 60일 일간 수익률의 연 환산 표준편차입니다. 종목을 누르면 종목 분석으로 갑니다.</p>
+    </section>
   );
 }
