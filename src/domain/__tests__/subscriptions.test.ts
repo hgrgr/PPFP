@@ -26,6 +26,8 @@ describe('청약홈', () => {
     assert.equal(typeName('084.9800A'), '84.98A');
     assert.equal(typeName('059.9000B'), '59.9B');
     assert.equal(typeName('114.0000'), '114');
+    assert.equal(typeName('059.9442B'), '59.94B');
+    assert.equal(typeName('74B'), '74B');
   });
 
   it('works out 경쟁률, 분양가 per 평 and 가점 per 주택형 and in all', () => {

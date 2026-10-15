@@ -71,7 +71,8 @@ interface Detail {
 
 /** A 공고's 주택형, 경쟁률 and 가점; kept for good once the winners were announced a month ago */
 async function detail(userId: string, key: string, l: Listing): Promise<Model[]> {
-  const sk = `apply:${l.id}:${l.pblancNo}`;
+  // v2: 주택형 names as typeName writes them now
+  const sk = `apply:v2:${l.id}:${l.pblancNo}`;
   const row = await prisma.appSetting.findUnique({ where: { key: sk } });
   const today = kstDate();
   const settledBy = (date: string | null) => !!date && new Date(Date.parse(`${date}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10) <= today;
