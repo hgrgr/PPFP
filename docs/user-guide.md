@@ -2108,9 +2108,9 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-15 | [`e41c7ba`](https://github.com/hgrgr/PPFP/commit/e41c7ba6609d72c76922ff02ed3e392127422bad) | [#57](https://github.com/hgrgr/PPFP/pull/57) | — | 서버 DB 백업을 최근 14개 → 30개 유지 (업데이트 직전 백업도 개수에 들어감) |
 | 2026-10-15 | [`b75243c`](https://github.com/hgrgr/PPFP/commit/b75243c281f5fa8f5c6bab7515e32e23ccfe0a23) | [#58](https://github.com/hgrgr/PPFP/pull/58) | *시장 개요* 화면: 미국 섹터 ETF·러셀 스타일 박스 기간 수익률(3년 월별 재생), S&P 500 종목 지도(비중 크기·수익률 색, 섹터·산업 묶음), 미국·한국·일본·독일·영국 국채 금리와 변화폭, 금리 곡선 재생(2000년~), 보유·관심 종목과 주요 지수·환율·원자재 기간 수익률 | — |
 | 2026-10-15 | [`104c0c5`](https://github.com/hgrgr/PPFP/commit/104c0c5f5e2b5df17f72ea2ea2d451fc2c277d12) | [#59](https://github.com/hgrgr/PPFP/pull/59) | *글로벌 매크로* 화면: 17개국 OECD 경기선행지수·세계은행 지표·주가지수와 경기 시계 재생, 미국 경기 국면 히트맵(지표 18개, 10년 재생), 섹터 순환 그래프(꼬리, 2년 재생), CFTC 투기적 순포지션과 3년 위치, 미국·한국 GDP 성장 기여도. *거장 포트폴리오* 화면: 거장 41명 13F 보유·많이 산·판 종목·공통 보유·나와 비슷한 거장, 거장별 보유 변화·8분기 재생·섹터 비중·따라 샀을 때 수익률 | — |
-| 2026-10-15 | [`f1f9e23`](https://github.com/hgrgr/PPFP/commit/f1f9e23b618876aca3fe932a0009b21bc75a1e16) | — | *종목 분석* 화면: 미국 종목 재무제표·실적 추이, 동종 S&P 500 종목과 PER·PSR·PBR·EV/EBIT·FCF 수익률 비교, Form 4 내부자 매매, DCF(민감도 표)·역DCF·DDM·RIM 적정가 계산과 저장 | — |
-| 2026-10-15 | [`87b5d4c`](https://github.com/hgrgr/PPFP/commit/87b5d4cd0e0af46f52c2ec06e3763a9377482a10) | — | *시장 개요* 기술적 순위: S&P 500 종목별 RSI·이동평균 대비·52주 고점 대비·변동성·기간 수익률, 조건·섹터 필터, 200일선 위 종목 비율 | — |
-| 2026-10-15 | [`ee88dc9`](https://github.com/hgrgr/PPFP/commit/ee88dc98c73e1f64a75a6540e1dfbbe296c2f65c) | — | 시장 개요·글로벌 매크로·거장 포트폴리오·종목 분석에 AI 추천 질문 칩(✦ 물어보기) | — |
+| 2026-10-15 | [`f1f9e23`](https://github.com/hgrgr/PPFP/commit/f1f9e23b618876aca3fe932a0009b21bc75a1e16) | [#60](https://github.com/hgrgr/PPFP/pull/60) | *종목 분석* 화면: 미국 종목 재무제표·실적 추이, 동종 S&P 500 종목과 PER·PSR·PBR·EV/EBIT·FCF 수익률 비교, Form 4 내부자 매매, DCF(민감도 표)·역DCF·DDM·RIM 적정가 계산과 저장 | — |
+| 2026-10-15 | [`87b5d4c`](https://github.com/hgrgr/PPFP/commit/87b5d4cd0e0af46f52c2ec06e3763a9377482a10) | [#60](https://github.com/hgrgr/PPFP/pull/60) | *시장 개요* 기술적 순위: S&P 500 종목별 RSI·이동평균 대비·52주 고점 대비·변동성·기간 수익률, 조건·섹터 필터, 200일선 위 종목 비율 | — |
+| 2026-10-15 | [`ee88dc9`](https://github.com/hgrgr/PPFP/commit/ee88dc98c73e1f64a75a6540e1dfbbe296c2f65c) | [#60](https://github.com/hgrgr/PPFP/pull/60) | 시장 개요·글로벌 매크로·거장 포트폴리오·종목 분석에 AI 추천 질문 칩(✦ 물어보기) | — |
 
 ## 사라진 기능
 
