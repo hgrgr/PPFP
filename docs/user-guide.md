@@ -2130,7 +2130,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-15 | [`f1f9e23`](https://github.com/hgrgr/PPFP/commit/f1f9e23b618876aca3fe932a0009b21bc75a1e16) | [#60](https://github.com/hgrgr/PPFP/pull/60) | *종목 분석* 화면: 미국 종목 재무제표·실적 추이, 동종 S&P 500 종목과 PER·PSR·PBR·EV/EBIT·FCF 수익률 비교, Form 4 내부자 매매, DCF(민감도 표)·역DCF·DDM·RIM 적정가 계산과 저장 | — |
 | 2026-10-15 | [`87b5d4c`](https://github.com/hgrgr/PPFP/commit/87b5d4cd0e0af46f52c2ec06e3763a9377482a10) | [#60](https://github.com/hgrgr/PPFP/pull/60) | *시장 개요* 기술적 순위: S&P 500 종목별 RSI·이동평균 대비·52주 고점 대비·변동성·기간 수익률, 조건·섹터 필터, 200일선 위 종목 비율 | — |
 | 2026-10-15 | [`ee88dc9`](https://github.com/hgrgr/PPFP/commit/ee88dc98c73e1f64a75a6540e1dfbbe296c2f65c) | [#60](https://github.com/hgrgr/PPFP/pull/60) | 시장 개요·글로벌 매크로·거장 포트폴리오·종목 분석에 AI 추천 질문 칩(✦ 물어보기) | — |
-| 2026-10-15 | [`c996d6c`](https://github.com/hgrgr/PPFP/commit/c996d6c248cac2d5a66f2742c8b2321b1e719b72) | — | *리스크 분석* 화면: 오늘 비중 기준 변동성·최대 낙폭·VaR·CVaR·샤프(코스피·S&P 500과 비교), 비중 vs 위험 기여, 요인 노출과 R², 6개월 베타 변화, 종목 간 상관관계 | — |
+| 2026-10-15 | [`c996d6c`](https://github.com/hgrgr/PPFP/commit/c996d6c248cac2d5a66f2742c8b2321b1e719b72) | [#61](https://github.com/hgrgr/PPFP/pull/61) | *리스크 분석* 화면: 오늘 비중 기준 변동성·최대 낙폭·VaR·CVaR·샤프(코스피·S&P 500과 비교), 비중 vs 위험 기여, 요인 노출과 R², 6개월 베타 변화, 종목 간 상관관계 | — |
 
 ## 사라진 기능
 
