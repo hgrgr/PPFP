@@ -147,6 +147,71 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const boe = (codes) => [`DATE,${codes.join(',')}`, ...dailyFrom('2000-01-01').map((t) => { const x = new Date(t); return `${String(x.getUTCDate()).padStart(2, '0')} ${MON[x.getUTCMonth()]} ${x.getUTCFullYear()},${codes.map((c) => (yieldAt('UK', YEARS[c], t)).toFixed(4)).join(',')}`; })].join('\n');
 
+
+  // ------------------------------------------------------------ 글로벌 매크로
+  const ISOS = ['USA', 'KOR', 'JPN', 'CHN', 'DEU', 'GBR', 'FRA', 'ITA', 'ESP', 'CAN', 'AUS', 'IND', 'BRA', 'MEX', 'IDN', 'TUR', 'ZAF'];
+  const months = (from) => {
+    const out = [];
+    const d = new Date(`${from}-01T00:00:00Z`);
+    const end = new Date(NOW);
+    end.setUTCMonth(end.getUTCMonth() - 1);
+    while (d <= end) {
+      out.push(d.toISOString().slice(0, 7));
+      d.setUTCMonth(d.getUTCMonth() + 1);
+    }
+    return out;
+  };
+  const oecdCsv = () => {
+    const lines = ['STRUCTURE,STRUCTURE_ID,ACTION,REF_AREA,Reference area,FREQ,MEASURE,TIME_PERIOD,OBS_VALUE'];
+    for (const iso of ISOS) months('2015-01').forEach((m, k) => {
+      const v = 100 + 1.6 * Math.sin(k / 9 + hash(iso) * 6.28) + 0.4 * Math.sin(k / 3.1 + hash(`${iso}b`) * 6.28);
+      lines.push(`DATAFLOW,X,I,${iso},${iso},M,LI,${m},${v.toFixed(4)}`);
+    });
+    return lines.join('\n');
+  };
+  const WB = { 'NY.GDP.MKTP.KD.ZG': [2.5, 2.5], 'FP.CPI.TOTL.ZG': [3, 3], 'SL.UEM.TOTL.ZS': [5.5, 4], 'GC.DOD.TOTL.GD.ZS': [70, 50], 'BN.CAB.XOKA.GD.ZS': [0, 4] };
+  const worldBank = (url) => {
+    const code = url.pathname.split('/indicator/')[1];
+    const [level, amp] = WB[code] ?? [1, 1];
+    const isos = (url.pathname.split('/country/')[1] ?? '').split('/')[0].split(';');
+    const y = new Date(NOW).getUTCFullYear();
+    const rows = isos.flatMap((iso) => [y - 1, y - 2, y - 3].map((yr) => ({ countryiso3code: iso, date: String(yr), value: yr === y - 1 && hash(`${iso}${code}`) < 0.3 ? null : Number((level + amp * (hash(`${iso}${code}${yr}`) * 2 - 1)).toFixed(2)) })));
+    return [{ page: 1, pages: 1, total: rows.length }, rows];
+  };
+  const COT = ['13874A', '209742', '1170E1', '042601', '043602', '098662', '099741', '097741', '088691', '084691', '085692', '067651', '133741'];
+  const cftc = () => {
+    const rows = [];
+    for (const code of COT) {
+      const oi = 200000 + hash(code) * 800000;
+      for (let w = 0; w < 320; w++) {
+        const t = NOW - (w * 7 + ((new Date(NOW).getUTCDay() + 5) % 7)) * DAY;
+        const net = oi * (0.25 * Math.sin(w / 20 + hash(code) * 6.28) + 0.08 * Math.sin(w / 5));
+        rows.push({ cftc_contract_market_code: code, report_date_as_yyyy_mm_dd: `${iso(t)}T00:00:00.000`, open_interest_all: String(Math.round(oi)), noncomm_positions_long_all: String(Math.round(oi * 0.3 + Math.max(0, net))), noncomm_positions_short_all: String(Math.round(oi * 0.3 + Math.max(0, -net))) });
+      }
+    }
+    return rows;
+  };
+  const quarters = (from) => months(from).filter((m) => ['01', '04', '07', '10'].includes(m.slice(5))).slice(0, -1);
+  const GDP_US = { DPCERY2Q224SBEA: [1.6, 1.0], A007RY2Q224SBEA: [0.6, 0.9], A014RY2Q224SBEA: [0, 1.2], A822RY2Q224SBEA: [0.4, 0.3], A019RY2Q224SBEA: [-0.3, 0.9] };
+  const gdpPart = (code, k) => {
+    const [level, amp] = GDP_US[code] ?? [0, 1];
+    return level + amp * Math.sin(k / 2.3 + hash(code) * 6.28);
+  };
+  const fredGdp = (id) => {
+    const lines = [`observation_date,${id}`];
+    quarters('2010-01').forEach((m, k) => {
+      const v = id === 'A191RL1Q225SBEA' ? Object.keys(GDP_US).reduce((a, c) => a + gdpPart(c, k), 0) : gdpPart(id, k);
+      lines.push(`${m}-01,${v.toFixed(2)}`);
+    });
+    return lines.join('\n');
+  };
+  const KR_PARTS = { 1010110: [0.3, 0.3], 1010120: [0.15, 0.1], 1020111: [-0.05, 0.4], 1020112: [0.1, 0.4], 1020113: [0.05, 0.05], 1020120: [0, 0.4], 1060150: [0.1, 0.6] };
+  const ecosGdp = (item) => {
+    const [level, amp] = KR_PARTS[item] ?? [0, 0.2];
+    const row = quarters('2010-01').map((m, k) => ({ STAT_CODE: '200Y125', TIME: `${m.slice(0, 4)}Q${(Number(m.slice(5)) + 2) / 3}`, DATA_VALUE: (level + amp * Math.sin(k / 2.1 + hash(String(item)) * 6.28)).toFixed(1) }));
+    return { StatisticSearch: { list_total_count: row.length, row } };
+  };
+
   const text = (body, type = 'text/csv') => new Response(body, { status: 200, headers: { 'content-type': type } });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async function marketsDemoFetch(input, init) {
@@ -157,6 +222,11 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     } catch {
       return prevFetch(input, init);
     }
+    if (url.hostname === 'sdmx.oecd.org' && url.pathname.includes('DF_CLI')) return text(oecdCsv());
+    if (url.hostname === 'api.worldbank.org') return text(JSON.stringify(worldBank(url)), 'application/json');
+    if (url.hostname === 'publicreporting.cftc.gov') return text(JSON.stringify(cftc()), 'application/json');
+    if (url.hostname === 'fred.stlouisfed.org' && (url.searchParams.get('id') === 'A191RL1Q225SBEA' || GDP_US[url.searchParams.get('id')])) return text(fredGdp(url.searchParams.get('id')));
+    if (url.hostname === 'ecos.bok.or.kr' && url.pathname.includes('/200Y125/Q/')) return text(JSON.stringify(ecosGdp(url.pathname.split('/').at(-1))), 'application/json');
     if (url.hostname === 'query1.finance.yahoo.com' && url.pathname === '/v8/finance/spark') return text(JSON.stringify(spark(url)), 'application/json');
     if (url.hostname === 'www.ssga.com' && url.pathname.endsWith('holdings-daily-us-en-spy.xlsx')) return new Response(await holdingsXlsx(), { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
     if (url.hostname === 'en.wikipedia.org' && url.pathname === '/wiki/List_of_S%26P_500_companies') return text(wikiHtml(), 'text/html');

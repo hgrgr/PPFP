@@ -745,3 +745,14 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .mo-legend span { padding: 3px 8px; font-variant-numeric: tabular-nums; }
 .mo-returns td { transition: background-color .4s ease; }
 @media (prefers-reduced-motion: reduce) { .mo-tile, .mo-style td, .mo-map-cell, .mo-returns td { transition: none; } }
+
+/* 거장 포트폴리오 */
+.gu-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.gu-kpis .value { font-size: 20px; }
+
+/* 글로벌 매크로 */
+.rrg-dot { transition: transform .55s ease; }
+.cot-bar { position: relative; display: inline-block; width: 110px; height: 14px; border-radius: 7px; background: linear-gradient(90deg, var(--down), var(--line-soft) 50%, var(--up)); vertical-align: middle; }
+.cot-bar span { position: absolute; top: -2px; width: 8px; height: 18px; border-radius: 3px; background: var(--ink); }
+.cot-bar b { position: absolute; left: 116px; top: -1px; font-size: 11px; font-weight: 500; color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .rrg-dot { transition: none; } }

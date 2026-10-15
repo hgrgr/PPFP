@@ -141,7 +141,7 @@ const ROW = 28;
 const RACE_TOP = 15;
 
 /** The regions' order at one frame, rows sliding to their new places as the frame moves */
-function RaceChart({ items, color, fmt, lo, hi, onPick }: { items: { key: string; label: string; value: number }[]; color: (v: number) => string; fmt: (v: number) => string; lo: number; hi: number; onPick: (key: string) => void }) {
+export function RaceChart({ items, color, fmt, lo, hi, onPick }: { items: { key: string; label: string; value: number }[]; color: (v: number) => string; fmt: (v: number) => string; lo: number; hi: number; onPick: (key: string) => void }) {
   const order = [...items].sort((a, b) => b.value - a.value);
   const rank = new Map(order.map((x, i) => [x.key, i]));
   const span = Math.max(Math.abs(lo), Math.abs(hi)) || 1;
