@@ -33,7 +33,9 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     const drift = (a - 0.38) * 0.0012;
     const level = 20 + 400 * b;
     const x = k - n;
-    return level * Math.exp(drift * x + 0.12 * Math.sin(x / (40 + 60 * c) + a * 6.28) + 0.04 * Math.sin(x / 9 + b * 6.28) + 0.015 * Math.sin(x / 2.3 + c * 6.28));
+    // A little day-to-day noise of its own, so no symbol is an exact mix of the others
+    const noise = 0.012 * (hash(`${sym}:${k}`) - 0.5);
+    return level * Math.exp(drift * x + 0.12 * Math.sin(x / (40 + 60 * c) + a * 6.28) + 0.04 * Math.sin(x / 9 + b * 6.28) + 0.015 * Math.sin(x / 2.3 + c * 6.28) + noise);
   };
 
   // ------------------------------------------------------------ S&P 500 sample
