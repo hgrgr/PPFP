@@ -39,7 +39,8 @@ services:
       PGPASSWORD: ppfp
       PGDATABASE: ppfp
       BACKUP_DIR: /backups
-      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # Counts the backup taken before every update too, so a day of deploys still leaves older ones
+      BACKUP_KEEP: ${BACKUP_KEEP:-30}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_GPG_PASSPHRASE: ${BACKUP_GPG_PASSPHRASE:-}
     volumes:
