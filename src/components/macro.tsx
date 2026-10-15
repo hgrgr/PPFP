@@ -350,9 +350,12 @@ function RotationBody({ d }: { d: RotationView }) {
   const t = useTimeline(d.weeks.length);
   const [tail, setTail] = useState(8);
   const all = d.sectors.flatMap((s) => s.points.filter((p): p is RrgPoint => !!p));
-  const span = Math.max(2, ...all.map((p) => Math.max(Math.abs(p.ratio - 100), Math.abs(p.momentum - 100)))) * 1.05;
-  const X = (v: number) => RRG / 2 + ((v - 100) / span) * (RRG / 2 - 20);
-  const Y = (v: number) => RRG / 2 - ((v - 100) / span) * (RRG / 2 - 20);
+  // The 95th percentile of distances from 100, so a few spikes do not squeeze everything into the middle
+  const dist = all.map((p) => Math.max(Math.abs(p.ratio - 100), Math.abs(p.momentum - 100))).sort((a, b) => a - b);
+  const span = Math.max(2, dist[Math.floor(dist.length * 0.95)] ?? 2) * 1.15;
+  const clamp = (v: number) => Math.max(8, Math.min(RRG - 8, v));
+  const X = (v: number) => clamp(RRG / 2 + ((v - 100) / span) * (RRG / 2 - 20));
+  const Y = (v: number) => clamp(RRG / 2 - ((v - 100) / span) * (RRG / 2 - 20));
   const now = d.sectors.map((s, k) => ({ s, k, p: s.points[t.i] })).filter((x) => x.p);
   return (
     <div className="ind-grid">
