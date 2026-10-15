@@ -10,4 +10,6 @@ PROFILES=()
 sudo docker compose exec -T backup sh /scripts/backup.sh once || echo "[ppfp] backup before update failed; continuing"
 sudo docker compose -f docker-compose.yml -f docker-compose.cloud.yml "${PROFILES[@]}" up -d --build
 sudo docker image prune -f >/dev/null
+# Each build leaves layers in the build cache (it had grown to ~50 GB); keep the newest 10 GB for speed
+sudo docker builder prune -f --keep-storage 10GB >/dev/null
 echo "[ppfp] updated to $(git log -1 --format='%h %s')"

@@ -141,7 +141,22 @@ main에 새 기능이 들어오면 VM에서:
 bash ~/ppfp/deploy/cloud/update.sh
 ```
 
-[update.sh](../deploy/cloud/update.sh)는 백업을 먼저 하나 뜬 뒤 최신 코드로 다시 빌드합니다. 새 마이그레이션은 앱이 시작하면서 적용됩니다.
+[update.sh](../deploy/cloud/update.sh)는 백업을 먼저 하나 뜬 뒤 최신 코드로 다시 빌드하고, 쓰지 않는 이미지와 오래된 빌드 캐시(최근 10GB만 남김)를 지웁니다. 새 마이그레이션은 앱이 시작하면서 적용됩니다.
+
+## 10. 디스크 알림 (권장)
+
+디스크가 90% 넘게 차면 메일을 받습니다. 메일은 Gmail로 보내므로 받는 계정(기본 `fsi.hbw@gmail.com`, `PPFP_ALERT_TO`로 바꿈)의 **앱 비밀번호**가 필요합니다. 앱 비밀번호는 Google 계정의 2단계 인증을 켠 뒤 [앱 비밀번호](https://myaccount.google.com/apppasswords)에서 만듭니다(16자리).
+
+```bash
+sudo apt-get install -y msmtp
+mkdir -p ~/.config/ppfp-mail && (umask 077; read -rsp 'Gmail 앱 비밀번호: ' p && printf %s "${p// /}" > ~/.config/ppfp-mail/app-password); echo
+bash ~/ppfp/deploy/cloud/disk-alert.sh --test      # 시험 메일
+bash ~/ppfp/deploy/cloud/disk-alert.sh --install   # 30분마다 확인
+```
+
+[disk-alert.sh](../deploy/cloud/disk-alert.sh)는 사용량이 기준(`PPFP_DISK_LIMIT`, 기본 90%)을 넘으면 한 번, 넘은 채로 있으면 24시간마다 다시, 85% 아래로 내려오면 한 번 더 메일을 보냅니다. 메일에는 디스크와 Docker 사용량이 들어 있습니다. 기록은 `~/.local/state/ppfp-disk-alert.log`에 쌓입니다.
+
+디스크를 많이 쓰는 것은 대개 Docker 빌드 캐시입니다. [update.sh](../deploy/cloud/update.sh)가 업데이트마다 최근 10GB만 남기고 지우며, DB 백업은 `backups/`에 최근 30개(`BACKUP_KEEP`), Drive에 30일치가 남습니다.
 
 ## 주의할 점
 
