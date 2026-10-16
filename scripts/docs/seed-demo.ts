@@ -178,6 +178,21 @@ async function main() {
     data: { userId: uid, symbol: 'NVDA', method: 'DCF', inputs: { fcf: 150e9, growth: 0.2, years: 10, terminal: 0.025, discount: 0.1, netCash: 40e9, shares: 24.4e9 }, value: 182.5, price: 168.2, note: '데이터센터 성장 20% 가정', createdAt: new Date(Date.now() - 30 * D) },
   });
 
+  // 가상 포트폴리오: paper purchases on past dates, apart from the real book
+  const vp = await prisma.virtualPortfolio.create({ data: { userId: uid, name: '코로나 저점에 샀다면', note: '2020년 3월 전후로 나눠 담은 연습용', benchmark: '^KS11' } });
+  const vd = (d: string) => new Date(`${d}T00:00:00Z`);
+  await prisma.virtualPosition.createMany({
+    data: [
+      { portfolioId: vp.id, kind: 'STOCK', symbol: '005930.KS', name: '삼성전자', currency: 'KRW', buyDate: vd('2020-03-19'), mode: 'AMOUNT', amount: 10_000_000 },
+      { portfolioId: vp.id, kind: 'FUND', symbol: 'SPY', name: 'SPDR S&P 500 ETF', currency: 'USD', buyDate: vd('2020-03-23'), mode: 'QTY', qty: 30 },
+      { portfolioId: vp.id, kind: 'COMMODITY', symbol: 'GC=F', name: '금 선물', currency: 'USD', buyDate: vd('2019-06-03'), mode: 'AMOUNT', amount: 5_000_000 },
+      { portfolioId: vp.id, kind: 'CRYPTO', symbol: 'BTC-KRW', name: '비트코인 (원화)', currency: 'KRW', buyDate: vd('2021-11-10'), sellDate: vd('2022-06-15'), mode: 'AMOUNT', amount: 3_000_000 },
+      { portfolioId: vp.id, kind: 'REAL_ESTATE', symbol: '서울>강남구', name: '서울 강남구 아파트', currency: 'KRW', buyDate: vd('2018-01-02'), mode: 'AMOUNT', amount: 300_000_000 },
+      { portfolioId: vp.id, kind: 'FIXED', symbol: null, name: '예금 연 3.50%', currency: 'KRW', buyDate: vd('2022-01-03'), mode: 'AMOUNT', amount: 20_000_000, rate: 0.035 },
+    ],
+  });
+  await prisma.virtualPortfolio.create({ data: { userId: uid, name: '배당주 모음 (검토 중)', benchmark: '^GSPC' } });
+
   // 내 지표 시트 on 글로벌 매크로
   await prisma.appSetting.create({
     data: {

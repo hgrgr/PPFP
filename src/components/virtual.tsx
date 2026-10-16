@@ -298,7 +298,8 @@ function PositionRow({ p, onChange }: { p: Detail['positions'][number]; onChange
     setSelling(false);
     onChange();
   };
-  const price = (v: number | null) => (v === null ? '—' : p.kind === 'REAL_ESTATE' ? v.toFixed(1) : won(v));
+  // Prices to the won (amounts elsewhere round to 만/억)
+  const price = (v: number | null) => (v === null ? '—' : p.kind === 'REAL_ESTATE' ? v.toFixed(1) : v >= 1e8 ? won(v) : `${v.toLocaleString('ko-KR', { maximumFractionDigits: v < 100 ? 2 : 0 })}원`);
   return (
     <tr>
       <th scope="row" className="l">
