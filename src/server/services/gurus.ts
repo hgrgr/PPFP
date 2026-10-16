@@ -31,6 +31,7 @@ import {
   type Position,
 } from '@/domain/gurus';
 import { SECTOR_KO, yahooTicker } from '@/domain/market-overview';
+import { metrics as evalMetrics, type Metrics } from '@/domain/metrics';
 import { noteCall, outcomeOf } from './api-usage';
 import { dailyCloses, sp500Members } from './market-overview';
 import { UserError } from './portfolios';
@@ -191,7 +192,9 @@ export function refreshGurus(userId = SYSTEM): Promise<void> {
     }
     await putJson('13f:refreshed', { at: new Date().toISOString() });
     // Tickers can take a while (keyless OpenFIGI); the screen does not wait for them
-    void resolveCusips([...cusips].sort((a, b) => b[1] - a[1]).map(([c]) => c), userId).catch((e) => console.error('[gurus] tickers', e));
+    void resolveCusips([...cusips].sort((a, b) => b[1] - a[1]).map(([c]) => c), userId)
+      .catch((e) => console.error('[gurus] tickers', e))
+      .then(() => refreshGuruMetrics(userId));
   })().finally(() => {
     refreshing = null;
   });
@@ -232,6 +235,29 @@ export interface GuruSummary {
   turnover: number | null;
   buys: number;
   sells: number;
+  /** copy-portfolio metrics against SPY (quarterly), from the last time the manager's page was computed */
+  metrics: GuruMetrics | null;
+}
+
+/** The figures kept for the list: from quarterly copy-portfolio returns against SPY */
+export type GuruMetrics = Pick<Metrics, 'total' | 'cagr' | 'vol' | 'maxDrawdown' | 'sharpe' | 'sortino' | 'calmar' | 'beta' | 'alpha' | 'informationRatio' | 'excess' | 'hitRate' | 'periods'>;
+
+async function storedMetrics(): Promise<Map<string, GuruMetrics>> {
+  const rows = await prisma.appSetting.findMany({ where: { key: { startsWith: '13f:metrics:' } } });
+  return new Map(rows.map((r) => [r.key.slice('13f:metrics:'.length), (JSON.parse(r.value) as { metrics: GuruMetrics }).metrics]));
+}
+
+let metricsRunning: Promise<void> | null = null;
+/** Every manager's page computed once in the background, so the list can sort by Sharpe and the like */
+export function refreshGuruMetrics(userId: string): Promise<void> {
+  metricsRunning ??= (async () => {
+    for (const g of GURUS) {
+      await guruView(userId, g.key).catch((e) => console.error('[gurus] metrics', g.key, e instanceof Error ? e.message : e));
+    }
+  })().finally(() => {
+    metricsRunning = null;
+  });
+  return metricsRunning;
 }
 
 export interface SimilarGuru {
@@ -241,7 +267,7 @@ export interface SimilarGuru {
 }
 
 export interface GurusView {
-  progress: { done: number; total: number; running: boolean; tickers: boolean };
+  progress: { done: number; total: number; running: boolean; tickers: boolean; metrics: boolean };
   quarter: string | null;
   gurus: GuruSummary[];
   buys: Consensus[];
@@ -274,7 +300,9 @@ async function myUsWeights(userId: string): Promise<{ weights: Map<string, numbe
 
 export async function gurusView(userId: string): Promise<GurusView> {
   await refreshIfDue(userId);
-  const [map, sages, mine] = await Promise.all([tickers(), sageIds(userId), myUsWeights(userId)]);
+  const [map, sages, mine, kept] = await Promise.all([tickers(), sageIds(userId), myUsWeights(userId), storedMetrics()]);
+  // Managers whose metrics were never computed (a first visit before the background run): start it
+  if (kept.size < GURUS.length && !refreshing && !metricsRunning) void refreshGuruMetrics(userId);
   const gurus: GuruSummary[] = [];
   const books: { key: string; holdings: Holding[] }[] = [];
   const changes: { key: string; changes: Change[] }[] = [];
@@ -303,6 +331,7 @@ export async function gurusView(userId: string): Promise<GurusView> {
       turnover: ch.length ? ch.reduce((a, c) => a + Math.abs(c.weight - c.prevWeight), 0) / 2 : null,
       buys: ch.filter((c) => c.kind === 'new' || c.kind === 'add').length,
       sells: ch.filter((c) => c.kind === 'sold' || c.kind === 'reduce').length,
+      metrics: kept.get(g.key) ?? null,
     });
   }
   const quarter = [...periods].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0]?.[0] ?? null;
@@ -321,7 +350,7 @@ export async function gurusView(userId: string): Promise<GurusView> {
         .slice(0, 8)
     : [];
   return {
-    progress: { done: refreshing ? progress.done : GURUS.length, total: GURUS.length, running: !!refreshing, tickers: !!figiRunning },
+    progress: { done: refreshing ? progress.done : GURUS.length, total: GURUS.length, running: !!refreshing, tickers: !!figiRunning, metrics: !!metricsRunning },
     quarter,
     gurus,
     buys: consensus(latest, 'buy', 20),
@@ -339,7 +368,7 @@ export interface GuruDetail {
   sectors: { sector: string; weight: number }[];
   /** quarter → the top holdings' weights, for the replay */
   history: { period: string; aum: number; top: { key: string; label: string; weight: number }[] }[];
-  clone: { quarters: CloneQuarter[]; stats: ReturnType<typeof cloneStats> };
+  clone: { quarters: CloneQuarter[]; stats: ReturnType<typeof cloneStats>; metrics: Metrics | null };
 }
 
 const QUARTERS = 8;
@@ -379,6 +408,13 @@ export async function guruView(userId: string, key: string): Promise<GuruDetail>
   const closes = await dailyCloses(userId, [...symbols.map(yahooTicker), 'SPY'], '5y');
   const prices = new Map(symbols.map((s) => [s, closes.get(yahooTicker(s)) ?? []]));
   const quarters = cloneReturns(tops, prices, closes.get('SPY') ?? [], kstDate());
+  // Quarterly copy-portfolio returns against SPY over the same quarters
+  const full = quarters.filter((q) => q.ret !== null && q.bench !== null);
+  const guruMetrics = full.length >= 2 ? evalMetrics(full.map((q) => q.ret!), 4, full.map((q) => q.bench!)) : null;
+  if (guruMetrics) {
+    const pick = (({ total, cagr, vol, maxDrawdown, sharpe, sortino, calmar, beta, alpha, informationRatio, excess, hitRate, periods }) => ({ total, cagr, vol, maxDrawdown, sharpe, sortino, calmar, beta, alpha, informationRatio, excess, hitRate, periods }))(guruMetrics);
+    await putJson(`13f:metrics:${g.key}`, { at: new Date().toISOString(), metrics: pick });
+  }
 
   // Replay: the union of each quarter's top 12, weights per quarter (oldest first)
   const label = (h: Holding) => h.ticker ?? h.name.split(' ').slice(0, 2).join(' ');
@@ -403,11 +439,12 @@ export async function guruView(userId: string, key: string): Promise<GuruDetail>
       turnover: ch.length ? ch.reduce((a, c) => a + Math.abs(c.weight - c.prevWeight), 0) / 2 : null,
       buys: ch.filter((c) => c.kind === 'new' || c.kind === 'add').length,
       sells: ch.filter((c) => c.kind === 'sold' || c.kind === 'reduce').length,
+      metrics: null,
     },
     holdings,
     sold: ch.filter((c) => c.kind === 'sold').sort((a, b) => b.prevWeight - a.prevWeight),
     sectors: [...sectors].map(([sector, weight]) => ({ sector, weight })).sort((a, b) => b.weight - a.weight),
     history,
-    clone: { quarters, stats: cloneStats(quarters) },
+    clone: { quarters, stats: cloneStats(quarters), metrics: guruMetrics },
   };
 }

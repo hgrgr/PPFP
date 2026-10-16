@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { CompareView } from '@/server/services/compare';
+import { MetricsTable } from '@/components/metrics';
 
 const COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)', 'var(--series-6)', 'var(--series-7)', 'var(--ink-2)'];
 const KIND_BADGE: Record<string, string> = { real: '실제', virtual: '가상', index: '지수' };
@@ -50,6 +51,31 @@ export function ComparePicker({ view }: { view: CompareView }) {
   );
 }
 
+function BenchmarkPick({ view }: { view: CompareView }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  return (
+    <label className="inline" style={{ gap: 6 }}>
+      <span className="sub">기준 지수</span>
+      <select
+        value={view.benchmark.key}
+        onChange={(e) => {
+          const q = new URLSearchParams(sp.toString());
+          q.set('bm', e.target.value);
+          router.push(`${pathname}?${q.toString()}`, { scroll: false });
+        }}
+        aria-label="기준 지수"
+        style={{ width: 'auto' }}
+      >
+        {view.options.filter((o) => o.kind === 'index').map((o) => (
+          <option key={o.key} value={o.key}>{o.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function CompareResults({ view }: { view: CompareView }) {
   if (!view.series.length) return <p className="empty">비교할 자료가 없습니다. 위에서 포트폴리오를 고르거나 기간을 늘려 보세요.</p>;
   const rows = view.dates.map((date, i) => {
@@ -90,44 +116,14 @@ export function CompareResults({ view }: { view: CompareView }) {
         </ResponsiveContainer>
       </section>
       <section className="card indicator" aria-label="성과 지표">
-        <div className="stack" style={{ gap: 4 }}>
-          <h3>성과 지표</h3>
-          <span className="sub">연 수익률은 기간이 6개월 이상일 때만, 샤프 지수는 무위험 수익률 연 3%를 뺀 값입니다. 하루 최고·최저는 단 하루에 가장 크게 오르내린 폭입니다.</span>
+        <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <div className="stack" style={{ gap: 4 }}>
+            <h3>성과 지표</h3>
+            <span className="sub">같은 기간 하루(또는 주) 수익률로 계산했습니다. 머리글에 마우스를 올리거나 아래 지표 설명을 펼치면 뜻이 나옵니다.</span>
+          </div>
+          <BenchmarkPick view={view} />
         </div>
-        <div className="table-wrap">
-          <table className="rank">
-            <thead>
-              <tr>
-                <th className="l">포트폴리오</th>
-                <th className="num">누적</th>
-                <th className="num">연 수익률</th>
-                <th className="num">연 변동성</th>
-                <th className="num">최대 낙폭</th>
-                <th className="num">샤프</th>
-                <th className="num">하루 최고</th>
-                <th className="num">하루 최저</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.series.map((s) => (
-                <tr key={s.key}>
-                  <th scope="row" className="l">
-                    <span className="dot" style={{ background: color(s.key), marginRight: 6 }} />
-                    <span className="badge" style={{ marginRight: 6 }}>{KIND_BADGE[s.kind]}</span>
-                    {s.label}
-                  </th>
-                  <td className={`num strong ${tone(s.stats.total)}`}>{pct(s.stats.total)}</td>
-                  <td className={`num ${tone(s.stats.cagr)}`}>{pct(s.stats.cagr)}</td>
-                  <td className="num">{s.stats.vol === null ? '—' : `${(s.stats.vol * 100).toFixed(1)}%`}</td>
-                  <td className="num down">{pct(s.stats.maxDrawdown)}</td>
-                  <td className="num">{s.stats.sharpe === null ? '—' : s.stats.sharpe.toFixed(2)}</td>
-                  <td className="num up">{pct(s.stats.best, 2)}</td>
-                  <td className="num down">{pct(s.stats.worst, 2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MetricsTable rows={view.series.map((s) => ({ key: s.key, label: s.label, badge: KIND_BADGE[s.kind], color: color(s.key), metrics: s.metrics }))} benchmark={view.benchmark.label} periodName="거래일" />
       </section>
       <div className="ind-grid">
         <section className="card indicator" aria-label="연도별 수익률">

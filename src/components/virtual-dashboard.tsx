@@ -3,6 +3,8 @@ import { PeriodBar } from '@/components/period-bar';
 import { krw, krwShort, pct, signedKrwShort, tone } from '@/lib/format';
 import type { ResolvedRange } from '@/domain/period';
 import type { DetailView } from '@/server/services/virtual';
+import type { Evaluation } from '@/server/services/compare';
+import { MetricsTable } from '@/components/metrics';
 
 const KIND_COLOR: Record<string, string> = {
   STOCK: 'var(--series-1)',
@@ -19,7 +21,7 @@ const KIND_COLOR: Record<string, string> = {
  * The dashboard for a 가상 포트폴리오: the same cards as a real portfolio, from the paper
  * positions only. It never adds into 순자산 전체 and has no transactions, income or export.
  */
-export function VirtualDashboard({ d, range, linkParams, scope }: { d: DetailView; range: ResolvedRange; linkParams: Record<string, string | undefined>; scope: React.ReactNode }) {
+export function VirtualDashboard({ d, range, linkParams, scope, evaluation }: { d: DetailView; range: ResolvedRange; linkParams: Record<string, string | undefined>; scope: React.ReactNode; evaluation: Evaluation | null }) {
   const t = d.period;
   const live = d.positions.filter((p) => !p.problem && (p.value ?? 0) > 0);
   const slices = d.byKind.map((k) => ({ key: k.kind, label: k.label, color: KIND_COLOR[k.kind] ?? 'var(--muted)', value: k.value, share: k.weight }));
@@ -73,6 +75,16 @@ export function VirtualDashboard({ d, range, linkParams, scope }: { d: DetailVie
           <div className="note">처음부터 지금까지, 같은 날 같은 금액</div>
         </div>
       </section>
+
+      {evaluation && (
+        <section className="card" aria-label="평가 지표">
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>평가 지표</h2>
+            <p className="sub">{evaluation.from} ~ {evaluation.to}, 새로 넣은 돈을 뺀 시간가중 수익률로 계산했습니다(기준: {evaluation.benchmark}, 원화).</p>
+          </div>
+          <MetricsTable compact rows={[{ key: 'scope', label: d.portfolio.name, metrics: evaluation.metrics }]} benchmark={evaluation.benchmark} periodName={evaluation.periodName} />
+        </section>
+      )}
 
       <section className="row">
         <div className="card wide">
