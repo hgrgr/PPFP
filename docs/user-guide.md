@@ -2267,7 +2267,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-16 | [`61a821c`](https://github.com/hgrgr/PPFP/commit/61a821cecc79c67525a10f9cc252e417af1cd2c8) | [#64](https://github.com/hgrgr/PPFP/pull/64) | *포트폴리오 비교*(실제·가상 포트폴리오·지수를 같은 기간으로: 누적·연 수익률·변동성·최대 낙폭·샤프·연도별·상관관계), *가상 포트폴리오 대시보드* | 포트폴리오 화면에 가상 포트폴리오 칸 |
 | 2026-10-16 | [`a3e144b`](https://github.com/hgrgr/PPFP/commit/a3e144b7614a9ab27cae7adf0f50620669f2be89) | [#65](https://github.com/hgrgr/PPFP/pull/65) | *평가 지표*(샤프·소르티노·칼마·오메가·울서·VaR·CVaR·베타·알파·트레이너·정보비율·추적오차·상승·하락 포착률 등): 대시보드(실제·가상) 카드, 거장 화면 | 포트폴리오 비교 성과 지표가 세 묶음과 기준 지수 선택으로, 거장 목록에 샤프·소르티노·알파·최대 낙폭 열과 정렬 |
 | 2026-10-16 | [`fa1856b`](https://github.com/hgrgr/PPFP/commit/fa1856b87ae11d4036db8de5ea7a93ee625c35cc) | [#66](https://github.com/hgrgr/PPFP/pull/66) | *놀이 모드*(브라우저별 켜기·끄기): 종목을 끌어 포트폴리오 바구니에 담는 *바구니 담기*(실제는 옮기기, 가상은 복사), 대시보드 날씨와 기간 최고 축하 꽃가루 | — |
-| 2026-10-16 | [`cd710da`](https://github.com/hgrgr/PPFP/commit/cd710da3c89a3f05f74965b655b63f680d2c7558) | — | *바구니 담기* 새 그림: 수익률 표정의 말랑이, 등나무 바구니, 가상 종목이 보이는 꿈 바구니, 날씨 배지 색 | — |
+| 2026-10-16 | [`cd710da`](https://github.com/hgrgr/PPFP/commit/cd710da3c89a3f05f74965b655b63f680d2c7558) | [#68](https://github.com/hgrgr/PPFP/pull/68) | *바구니 담기* 새 그림: 수익률 표정의 말랑이, 등나무 바구니, 가상 종목이 보이는 꿈 바구니, 날씨 배지 색 | — |
 
 ## 사라진 기능
 
