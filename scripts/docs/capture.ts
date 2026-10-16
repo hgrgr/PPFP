@@ -426,6 +426,42 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '[aria-label="기간"]' }],
   },
   {
+    file: 'stocks-kr',
+    path: () => '/stocks?t=999990&tab=fin',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('section[aria-label=\"종목 요약\"]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="종목 고르기"]' }, { sel: 'section[aria-label="종목 요약"]' }, { sel: 'section[aria-label="실적 추이"]' }],
+    marks: [{ sel: '[aria-label="티커"]' }],
+  },
+  {
+    file: 'stocks-kr-filings',
+    path: () => '/stocks?t=999990&tab=insider',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('section[aria-label=\"공시 목록\"]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="임원·주요주주 소유"]' }, { sel: 'section[aria-label="공시 목록"]' }],
+    marks: [{ sel: '[aria-label="공시 종류"]' }],
+  },
+  {
+    file: 'macro-calendar',
+    path: () => '/macro?tab=calendar',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="경제 지표 일정"]' }],
+    marks: [],
+  },
+  {
+    file: 'macro-sheet',
+    path: () => '/macro?tab=sheet',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지표 추가"]' }, { sel: 'section[aria-label="Consumer Price Index for All Urban Consumers"]' }, { sel: 'section[aria-label="Unemployment Rate"]' }, { sel: 'section[aria-label="10-Year Treasury Minus 2-Year Treasury"]' }, { sel: 'section[aria-label="M2"]' }],
+    marks: [{ sel: 'input[aria-label="FRED 검색어"]' }],
+  },
+  {
     file: 'regions-map-time',
     path: () => '/regions?tab=map',
     width: 1440,
@@ -1554,6 +1590,9 @@ async function main() {
     ECOS_API_KEY: 'DOCSDEMOECOSKEY0000',
     KOSIS_API_KEY: 'docsDemoKosisKeyNotReal0000',
     RONE_API_KEY: 'docsDemoRoneKeyNotReal0000',
+    // OpenDART and FRED answer from fake-dart-fred.cjs
+    DART_API_KEY: '0000000000000000000000000000000000000000',
+    FRED_API_KEY: '00000000000000000000000000000000',
     // Two-step sign-in, devices and a backup record for the security screens (seed-demo.ts)
     DOCS_CAPTURE: '1',
   };

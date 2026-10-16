@@ -31,7 +31,8 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   const price = (sym, k, n) => {
     const a = hash(sym), b = hash(`${sym}b`), c = hash(`${sym}c`);
     const drift = (a - 0.38) * 0.0012;
-    const level = 20 + 400 * b;
+    // 데모전자 (fake-dart-fred.cjs) trades near 70,000원
+    const level = sym.startsWith('999990') ? 70000 : 20 + 400 * b;
     const x = k - n;
     // A little day-to-day noise of its own, so no symbol is an exact mix of the others
     const noise = 0.012 * (hash(`${sym}:${k}`) - 0.5);

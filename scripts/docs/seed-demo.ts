@@ -178,6 +178,19 @@ async function main() {
     data: { userId: uid, symbol: 'NVDA', method: 'DCF', inputs: { fcf: 150e9, growth: 0.2, years: 10, terminal: 0.025, discount: 0.1, netCash: 40e9, shares: 24.4e9 }, value: 182.5, price: 168.2, note: '데이터센터 성장 20% 가정', createdAt: new Date(Date.now() - 30 * D) },
   });
 
+  // 내 지표 시트 on 글로벌 매크로
+  await prisma.appSetting.create({
+    data: {
+      key: `sheet:${uid}`,
+      value: JSON.stringify([
+        { id: 'CPIAUCSL', title: 'Consumer Price Index for All Urban Consumers', units: 'Index', frequency: 'M', transform: 'yoy' },
+        { id: 'UNRATE', title: 'Unemployment Rate', units: '%', frequency: 'M', transform: 'level' },
+        { id: 'T10Y2Y', title: '10-Year Treasury Minus 2-Year Treasury', units: '%', frequency: 'D', transform: 'level' },
+        { id: 'M2SL', title: 'M2', units: 'Bil. of $', frequency: 'M', transform: 'yoy' },
+      ]),
+    },
+  });
+
   await runDailyForUser(uid, { fullRebuild: true });
   await seedStrategies(uid);
   await seedJournals(uid);

@@ -161,8 +161,7 @@ export function dartTables(reports: ReportData[], years = 6, quarters = 12): { a
       };
       set(r.year, amount(row.thstrm_amount));
       set(r.year - 1, amount(row.frmtrm_amount));
-      if (!m.instant) set(r.year - 2, amount(row.bfefrmtrm_amount));
-      else set(r.year - 2, amount(row.bfefrmtrm_amount));
+      set(r.year - 2, amount(row.bfefrmtrm_amount));
     }
   }
   const allYears = [...new Set([...annualVals.values()].flatMap((m) => [...m.keys()]))].sort((a, b) => b - a).slice(0, years);
