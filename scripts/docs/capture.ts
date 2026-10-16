@@ -534,7 +534,7 @@ const SHOTS: Shot[] = [
       { until: "(() => { const t = document.querySelector('.basket:not(.virtual) .thing'); const b = document.querySelector('.basket.virtual'); if (!t || !b) return false; b.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(), q = b.getBoundingClientRect(); const o = { bubbles: true, pointerId: 7, pointerType: 'mouse', isPrimary: true }; t.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); t.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: q.left + q.width / 2, clientY: q.top + q.height / 2 })); return true; })()", timeout: 20_000 },
       { wait: 300 },
       { until: "(() => { const b = document.querySelector('.basket.virtual'); const t = document.querySelector('.thing.lifted'); if (!b || !t) return false; window.confirm = () => true; const q = b.getBoundingClientRect(); t.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, pointerType: 'mouse', isPrimary: true, clientX: q.left + q.width / 2, clientY: q.top + q.height / 2 })); return true; })()", timeout: 20_000 },
-      { until: "!!document.querySelector('.fun-toast') && /가상 포트폴리오|담았습니다/.test(document.querySelector('.fun-toast').textContent)", timeout: 60_000 },
+      { until: "!!document.querySelector('.fun-toast') && /꿈 바구니|담았/.test(document.querySelector('.fun-toast').textContent)", timeout: 60_000 },
       { wait: 400 },
     ],
     marks: [{ sel: '.fun-toast' }],

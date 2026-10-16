@@ -41,12 +41,12 @@ export async function POST(req: Request) {
       if (value <= 0) throw new UserError('평가액이 없어 담을 수 없습니다.');
       await addPosition(user.id, to.slice(2), kind === 'CASH' ? { kind, name: h.name, buyDate: kstDate(), mode: 'AMOUNT', amount: value } : { kind, query: h.symbol ? yahooSymbols(h.symbol, null)[0].replace(/\.KS$/, '') : h.name, name: h.name, buyDate: kstDate(), mode: 'AMOUNT', amount: value, note: '바구니에서 복사' });
       const v = await prisma.virtualPortfolio.findFirst({ where: { id: to.slice(2), userId: user.id }, select: { name: true } });
-      return NextResponse.json({ ok: true, message: `${h.name}을(를) 가상 포트폴리오 ${v?.name ?? ''}에 오늘 가격으로 담았습니다. 실제 자산은 그대로입니다.` });
+      return NextResponse.json({ ok: true, message: `${h.name}이(가) 꿈 바구니 '${v?.name ?? ''}'에 쏙 들어갔어요! 오늘 가격으로 복사했고, 실제 자산은 그대로예요.` });
     }
     const moved = await moveHolding(user.id, holdingId, to, { settle: true, usdkrw: (await currentFx(user.id, 'USD')).toString() });
     if (moved.firstDate && moved.firstDate < kstDate()) await rebuildSnapshots(user.id, moved.firstDate);
     revalidatePath('/', 'layout');
-    return NextResponse.json({ ok: true, message: `${moved.name}을(를) ${moved.from}에서 ${moved.to}(으)로 옮겼습니다 (거래 ${moved.count}건${moved.merged ? ', 기존 보유와 합침' : ''}).` });
+    return NextResponse.json({ ok: true, message: `${moved.name}이(가) ${moved.from}에서 ${moved.to}(으)로 이사했어요 (거래 ${moved.count}건${moved.merged ? ', 기존 보유와 합침' : ''}).` });
   } catch (e) {
     if (e instanceof UserError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error('[basket]', e);

@@ -63,7 +63,7 @@ export function FunLink({ href, children, className = 'btn' }: { href: string; c
   );
 }
 
-const COLORS = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93', '#ff924c'];
+const COLORS = ['#ff9fbd', '#ffd36e', '#a8e6a1', '#8ec5ff', '#c7b3ff', '#ffb38a'];
 
 /** A burst of confetti (CSS only), removed after it falls */
 export function Confetti({ pieces = 90, onDone }: { pieces?: number; onDone?: () => void }) {
@@ -77,6 +77,7 @@ export function Confetti({ pieces = 90, onDone }: { pieces?: number; onDone?: ()
       color: COLORS[i % COLORS.length],
       w: 6 + Math.random() * 6,
       round: Math.random() < 0.3,
+      glyph: Math.random() < 0.18 ? ['💖', '⭐', '✨', '🌸'][i % 4] : null,
     })),
   );
   useEffect(() => {
@@ -88,7 +89,7 @@ export function Confetti({ pieces = 90, onDone }: { pieces?: number; onDone?: ()
       {bits.map((b, i) => (
         <span
           key={i}
-          style={{
+          style={b.glyph ? { left: `${b.left}%`, fontSize: b.w * 1.8, animationDelay: `${b.delay}s`, animationDuration: `${b.dur}s`, ['--rot' as string]: `${b.rot / 3}deg`, ['--drift' as string]: `${b.drift}px` } : {
             left: `${b.left}%`,
             width: b.w,
             height: b.round ? b.w : b.w * 0.45,
@@ -99,7 +100,9 @@ export function Confetti({ pieces = 90, onDone }: { pieces?: number; onDone?: ()
             ['--rot' as string]: `${b.rot}deg`,
             ['--drift' as string]: `${b.drift}px`,
           }}
-        />
+        >
+          {b.glyph}
+        </span>
       ))}
     </div>
   );
@@ -146,10 +149,10 @@ export function NewHighCelebration({ scope, values }: { scope: string; values: n
 export function FunWeather({ ret }: { ret: number | null }) {
   const [on] = useFun();
   if (!on || ret === null || !Number.isFinite(ret)) return null;
-  const [icon, word] = ret >= 0.015 ? ['☀️', '맑음'] : ret >= 0.003 ? ['🌤️', '구름 조금'] : ret > -0.003 ? ['☁️', '흐림'] : ret > -0.015 ? ['🌧️', '비'] : ['⛈️', '폭풍우'];
+  const [icon, word, sky] = ret >= 0.015 ? ['☀️', '쨍쨍 맑음', 'sun'] : ret >= 0.003 ? ['🌤️', '구름 조금', 'fair'] : ret > -0.003 ? ['☁️', '흐림', 'cloud'] : ret > -0.015 ? ['🌧️', '보슬비', 'rain'] : ['⛈️', '폭풍우', 'storm'];
   return (
-    <span className="fun-weather" title={`직전 거래일 대비 ${(ret * 100).toFixed(2)}% (시간가중)`}>
-      {icon} 오늘 날씨 {word} <span className="sub">{Math.abs(ret) < 0.00005 ? '0.00' : `${ret > 0 ? '+' : ''}${(ret * 100).toFixed(2)}`}%</span>
+    <span className="fun-weather" data-sky={sky} title={`직전 거래일 대비 ${(ret * 100).toFixed(2)}% (시간가중)`}>
+      <span className="fun-weather-icon">{icon}</span> 오늘 날씨 {word} <span className="sub">{Math.abs(ret) < 0.00005 ? '0.00' : `${ret > 0 ? '+' : ''}${(ret * 100).toFixed(2)}`}%</span>
     </span>
   );
 }
