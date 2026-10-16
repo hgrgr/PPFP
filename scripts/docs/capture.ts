@@ -540,6 +540,15 @@ const SHOTS: Shot[] = [
     marks: [{ sel: '.fun-toast' }],
   },
   {
+    file: 'fun-dashboard',
+    path: () => '/dashboard',
+    width: 1440,
+    height: 900,
+    steps: [{ until: "(localStorage.setItem('ppfp:fun','1'), window.dispatchEvent(new CustomEvent('ppfp:fun', { detail: true })), true)", timeout: 20_000 }, { until: "!!document.querySelector('.fun-weather')", timeout: 30_000 }, { wait: 800 }],
+    clip: [{ sel: 'header.page-head' }],
+    marks: [{ sel: '.fun-weather' }],
+  },
+  {
     file: 'regions-map-time',
     path: () => '/regions?tab=map',
     width: 1440,
