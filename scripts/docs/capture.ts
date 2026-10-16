@@ -297,7 +297,7 @@ const SHOTS: Shot[] = [
     path: () => '/gurus?tab=list',
     width: 1440,
     height: 3600,
-    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !document.body.textContent.includes('SEC에서 13F 보고서를 받는 중') && !document.body.textContent.includes('티커로 바꾸는 중')", timeout: 240_000 }, { wait: 800 }],
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !document.body.textContent.includes('SEC에서 13F 보고서를 받는 중') && !document.body.textContent.includes('티커로 바꾸는 중') && !document.body.textContent.includes('샤프·소르티노 등을 계산하는 중')", timeout: 400_000 }, { wait: 800 }],
     clip: [{ sel: 'section[aria-label="거장 포트폴리오 설정"]' }, { sel: 'section[aria-label="거장 목록"]' }],
     marks: [{ sel: '[aria-label="화면"]' }, { sel: '[aria-label="정렬"]' }],
   },

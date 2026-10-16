@@ -16,8 +16,9 @@ const many = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [
 export default async function ComparePage({ searchParams }: { searchParams: SP }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const view = await compareView(user.id, many(sp.p), { period: one(sp.period), from: one(sp.from), to: one(sp.to) });
-  const summary = view.series.map((s) => `${s.label}(${s.kind === 'virtual' ? '가상' : s.kind === 'index' ? '지수' : '실제'}): 누적 ${(s.stats.total * 100).toFixed(1)}%, 최대 낙폭 ${(s.stats.maxDrawdown * 100).toFixed(1)}%, 변동성 ${s.stats.vol === null ? '—' : `${(s.stats.vol * 100).toFixed(1)}%`}`).join('; ');
+  const view = await compareView(user.id, many(sp.p), { period: one(sp.period), from: one(sp.from), to: one(sp.to), bm: one(sp.bm) });
+  const f = (v: number | null, pc = true) => (v === null ? '—' : pc ? `${(v * 100).toFixed(1)}%` : v.toFixed(2));
+  const summary = view.series.map((s) => `${s.label}(${s.kind === 'virtual' ? '가상' : s.kind === 'index' ? '지수' : '실제'}): 누적 ${f(s.metrics.total)}, 연 ${f(s.metrics.cagr)}, 변동성 ${f(s.metrics.vol)}, 최대 낙폭 ${f(s.metrics.maxDrawdown)}, 샤프 ${f(s.metrics.sharpe, false)}, 소르티노 ${f(s.metrics.sortino, false)}, 칼마 ${f(s.metrics.calmar, false)}, ${view.benchmark.label} 대비 베타 ${f(s.metrics.beta, false)}·알파 ${f(s.metrics.alpha)}·정보비율 ${f(s.metrics.informationRatio, false)}`).join('; ');
   return (
     <>
       <header className="page-head">
@@ -33,7 +34,7 @@ export default async function ComparePage({ searchParams }: { searchParams: SP }
       <Suspense fallback={null}>
         <ComparePicker view={view} />
       </Suspense>
-      <PeriodBar base="/performance/compare" params={{ p: view.picked.join(','), period: one(sp.period), from: one(sp.from), to: one(sp.to) }} range={view.range} />
+      <PeriodBar base="/performance/compare" params={{ p: view.picked.join(','), bm: one(sp.bm), period: one(sp.period), from: one(sp.from), to: one(sp.to) }} range={view.range} />
       <CompareResults view={view} />
     </>
   );

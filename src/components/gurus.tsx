@@ -7,6 +7,8 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Toolti
 import { RaceChart } from '@/components/region-map';
 import { TimelineControl, useTimeline } from '@/components/timeline';
 import type { Change, ChangeKind, CloneQuarter, Common, Consensus, Holding } from '@/domain/gurus';
+import type { Metrics } from '@/domain/metrics';
+import { MetricsTable } from '@/components/metrics';
 
 interface GuruSummary {
   key: string;
@@ -22,9 +24,10 @@ interface GuruSummary {
   turnover: number | null;
   buys: number;
   sells: number;
+  metrics: Pick<Metrics, 'total' | 'cagr' | 'vol' | 'maxDrawdown' | 'sharpe' | 'sortino' | 'calmar' | 'beta' | 'alpha' | 'informationRatio' | 'excess' | 'hitRate' | 'periods'> | null;
 }
 interface GurusView {
-  progress: { done: number; total: number; running: boolean; tickers: boolean };
+  progress: { done: number; total: number; running: boolean; tickers: boolean; metrics: boolean };
   quarter: string | null;
   gurus: GuruSummary[];
   buys: Consensus[];
@@ -39,7 +42,7 @@ interface GuruDetail {
   sold: Change[];
   sectors: { sector: string; weight: number }[];
   history: { period: string; aum: number; top: { key: string; label: string; weight: number }[] }[];
-  clone: { quarters: CloneQuarter[]; stats: { total: number | null; bench: number | null; vol: number | null; sharpe: number | null; quarters: number } };
+  clone: { quarters: CloneQuarter[]; stats: { total: number | null; bench: number | null; vol: number | null; sharpe: number | null; quarters: number }; metrics: Metrics | null };
 }
 
 const TABS = [
@@ -109,7 +112,7 @@ export function Gurus() {
     for (const [k, v] of Object.entries(q)) v === null ? n.delete(k) : n.set(k, v);
     router.push(`${pathname}?${n.toString()}`, { scroll: false });
   };
-  const { data, error } = useJson<GurusView>('/api/gurus?view=list', (d) => d.progress.running || d.progress.tickers);
+  const { data, error } = useJson<GurusView>('/api/gurus?view=list', (d) => d.progress.running || d.progress.tickers || d.progress.metrics);
   if (g) return <GuruPage key={g} gkey={g} onBack={() => go({ g: null })} />;
   if (error) return <p className="msg err">{error}</p>;
   if (!data) return <p className="empty">불러오는 중…</p>;
@@ -133,6 +136,7 @@ export function Gurus() {
             SEC에서 13F 보고서를 받는 중입니다 ({data.progress.done}/{data.progress.total}). 처음 한 번은 1~2분 걸리고, 받는 대로 화면이 채워집니다.
           </p>
         )}
+        {!data.progress.running && !data.progress.tickers && data.progress.metrics && <p className="sub" style={{ margin: 0 }}>거장마다 따라 샀을 때의 샤프·소르티노 등을 계산하는 중입니다. 몇 분 뒤 다시 열면 채워집니다.</p>}
         {!data.progress.running && data.progress.tickers && <p className="sub" style={{ margin: 0 }}>종목 코드(CUSIP)를 티커로 바꾸는 중이라 일부 종목은 이름으로 보입니다. 몇 분 뒤 다시 열면 채워집니다.</p>}
       </section>
       {tab === 'list' ? (
@@ -224,8 +228,10 @@ export function Gurus() {
 }
 
 function GuruList({ gurus, onPick }: { gurus: GuruSummary[]; onPick: (k: string) => void }) {
-  const [sort, setSort] = useState<'aum' | 'turnover' | 'count'>('aum');
-  const rows = [...gurus].sort((a, b) => (sort === 'aum' ? (b.aum ?? -1) - (a.aum ?? -1) : sort === 'count' ? b.count - a.count : (b.turnover ?? -1) - (a.turnover ?? -1)));
+  const [sort, setSort] = useState<'aum' | 'turnover' | 'count' | 'sharpe' | 'sortino' | 'alpha'>('aum');
+  const mv = (g: GuruSummary, k: 'sharpe' | 'sortino' | 'alpha') => g.metrics?.[k] ?? -Infinity;
+  const rows = [...gurus].sort((a, b) => (sort === 'aum' ? (b.aum ?? -1) - (a.aum ?? -1) : sort === 'count' ? b.count - a.count : sort === 'turnover' ? (b.turnover ?? -1) - (a.turnover ?? -1) : mv(b, sort) - mv(a, sort)));
+  const ratio = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(2));
   return (
     <section className="card indicator" aria-label="거장 목록">
       <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -234,9 +240,9 @@ function GuruList({ gurus, onPick }: { gurus: GuruSummary[]; onPick: (k: string)
           <span className="sub">이름을 누르면 보유 종목, 분기별 변화 재생, 따라 샀을 때 추정 수익률을 봅니다.</span>
         </div>
         <div className="seg" role="group" aria-label="정렬">
-          {(['aum', 'turnover', 'count'] as const).map((k) => (
+          {(['aum', 'turnover', 'count', 'sharpe', 'sortino', 'alpha'] as const).map((k) => (
             <button key={k} type="button" aria-current={sort === k ? 'true' : undefined} onClick={() => setSort(k)}>
-              {{ aum: '보고 자산 순', turnover: '회전율 순', count: '종목 수 순' }[k]}
+              {{ aum: '보고 자산 순', turnover: '회전율 순', count: '종목 수 순', sharpe: '샤프 순', sortino: '소르티노 순', alpha: '알파 순' }[k]}
             </button>
           ))}
         </div>
@@ -249,6 +255,10 @@ function GuruList({ gurus, onPick }: { gurus: GuruSummary[]; onPick: (k: string)
               <th className="num">보고 자산</th>
               <th className="num">종목</th>
               <th className="num">회전율</th>
+              <th className="num" title="따라 샀을 때 분기 수익률의 샤프 지수(무위험 3%)" style={{ cursor: 'help' }}>샤프</th>
+              <th className="num" title="손실 쪽 변동성만 본 샤프" style={{ cursor: 'help' }}>소르티노</th>
+              <th className="num" title="SPY 대비 젠센 알파(연)" style={{ cursor: 'help' }}>알파</th>
+              <th className="num" title="따라 산 포트폴리오의 분기 말 기준 최대 낙폭" style={{ cursor: 'help' }}>최대 낙폭</th>
               <th className="num">매수 · 매도</th>
               <th className="l">상위 보유 (비중)</th>
               <th className="l">기준</th>
@@ -265,6 +275,10 @@ function GuruList({ gurus, onPick }: { gurus: GuruSummary[]; onPick: (k: string)
                 <td className="num">{usd(g.aum)}</td>
                 <td className="num">{g.count || '—'}</td>
                 <td className="num">{pct(g.turnover, 0)}</td>
+                <td className={`num ${(g.metrics?.sharpe ?? 0) >= 0 ? '' : 'down'}`}>{ratio(g.metrics?.sharpe)}</td>
+                <td className="num">{ratio(g.metrics?.sortino)}</td>
+                <td className={`num ${(g.metrics?.alpha ?? 0) >= 0 ? 'up' : 'down'}`}>{g.metrics?.alpha === null || g.metrics?.alpha === undefined ? '—' : signed(g.metrics.alpha)}</td>
+                <td className="num down">{g.metrics ? pct(g.metrics.maxDrawdown) : '—'}</td>
                 <td className="num">
                   <span className="up">{g.buys}</span> · <span className="down">{g.sells}</span>
                 </td>
@@ -275,7 +289,7 @@ function GuruList({ gurus, onPick }: { gurus: GuruSummary[]; onPick: (k: string)
           </tbody>
         </table>
       </div>
-      <p className="sub">보고 자산은 13F에 적힌 미국 상장 주식 평가액(옵션 제외). 회전율은 직전 분기와 비교해 비중이 옮겨 간 정도(0%면 그대로, 100%면 전부 교체)입니다.</p>
+      <p className="sub">보고 자산은 13F에 적힌 미국 상장 주식 평가액(옵션 제외). 회전율은 직전 분기와 비교해 비중이 옮겨 간 정도(0%면 그대로, 100%면 전부 교체)입니다. 샤프·소르티노·알파·최대 낙폭은 보고서마다 상위 30종목을 따라 샀을 때의 분기 수익률(최근 8분기, SPY 대비)로 추정한 값이라 분기 수가 적어 참고용입니다. 비어 있으면 아직 계산 중입니다.</p>
     </section>
   );
 }
@@ -396,6 +410,15 @@ function GuruBody({ d }: { d: GuruDetail }) {
             </BarChart>
           </ResponsiveContainer>
         </section>
+        {d.clone.metrics && (
+          <section className="card indicator" aria-label="거장 평가 지표" style={{ gridColumn: '1 / -1' }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <h3>평가 지표 (따라 샀을 때)</h3>
+              <span className="sub">보고서마다 상위 30종목을 분기 말 비중대로 사서 다음 분기 말까지 들고 있었을 때의 분기 수익률 {d.clone.metrics.periods}개로 계산했습니다(기준: S&P 500 SPY, 달러). 분기 자료라 개수가 적어 추정치입니다.</span>
+            </div>
+            <MetricsTable compact rows={[{ key: d.guru.key, label: d.guru.person, metrics: d.clone.metrics }]} benchmark="S&P 500" periodName="분기" />
+          </section>
+        )}
         <section className="card indicator" aria-label="섹터 비중">
           <div className="stack" style={{ gap: 4 }}>
             <h3>섹터 비중</h3>

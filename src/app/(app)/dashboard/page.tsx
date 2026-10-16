@@ -19,6 +19,8 @@ import { VirtualDashboard } from '@/components/virtual-dashboard';
 import { detailView } from '@/server/services/virtual';
 import { resolveRange } from '@/domain/period';
 import { kstDate } from '@/server/db';
+import { evaluate } from '@/server/services/compare';
+import { MetricsTable } from '@/components/metrics';
 
 export const metadata = { title: '대시보드' };
 export const dynamic = 'force-dynamic';
@@ -48,8 +50,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     const range = resolveRange({ period: one(sp.period), from: one(sp.from), to: one(sp.to) }, today, first ? first.buyDate.toISOString().slice(0, 10) : today);
     const v = await detailView(user.id, vid, { start: range.start, end: range.end }).catch(() => null);
     if (v) {
+      // Days before the first purchase have no value and no return
+      const ev = await evaluate(user.id, v.path.dates.map((date, i) => ({ date, index: v.path.twr[i], value: v.path.value[i] })).filter((x) => x.value > 0).map(({ date, index }) => ({ date, index })), v.portfolio.benchmark).catch(() => null);
       return (
         <VirtualDashboard
+          evaluation={ev}
           d={v}
           range={range}
           linkParams={{ p: raw, period: one(sp.period), from: one(sp.from), to: one(sp.to) }}
@@ -62,6 +67,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const params = { p: scopeId ?? (home ? 'all' : undefined), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
   const [d, graph, counts, groups, fx] = await Promise.all([dashboard(user.id, scopeId, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id), fxQuote(user.id, 'USD')]);
   const isHome = (home?.id ?? null) === scopeId;
+  const evaluation = await evaluate(user.id, d.twrDaily.map((p) => ({ date: p.date, index: 1 + p.twr }))).catch(() => null);
   const local = user.localCurrency;
   const usdkrw = d.usdkrw.toNumber();
   const usdHeld = d.allocation.byCurrency.find((x) => x.key === 'USD')?.value ?? 0;
@@ -214,6 +220,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           <div className="note">기간 내 받은 금액 (원화 환산)</div>
         </div>
       </section>
+
+      {evaluation && (
+        <section className="card" aria-label="평가 지표">
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>평가 지표</h2>
+            <p className="sub">{evaluation.from} ~ {evaluation.to}의 시간가중 일별 수익률로 계산한 샤프·소르티노·칼마·베타·알파 등입니다(기준: {evaluation.benchmark}, 원화). 다른 포트폴리오와 나란히 보려면 <a href="/performance/compare">포트폴리오 비교</a>를 쓰세요.</p>
+          </div>
+          <MetricsTable compact rows={[{ key: 'scope', label: d.scope.name, metrics: evaluation.metrics }]} benchmark={evaluation.benchmark} periodName={evaluation.periodName} />
+        </section>
+      )}
 
       <section className="row">
         <div className="card wide">
