@@ -10,6 +10,7 @@ import { currentState, strategyValues } from '@/server/services/analytics';
 import { userGraph } from '@/server/services/portfolios';
 import { prisma } from '@/server/db';
 import { membershipsByHolding, strategyStates } from '@/server/services/strategy-portfolios';
+import { listView } from '@/server/services/virtual';
 
 export const metadata = { title: '포트폴리오' };
 export const dynamic = 'force-dynamic';
@@ -17,11 +18,12 @@ export const dynamic = 'force-dynamic';
 export default async function PortfoliosPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const user = await requireUser();
   const { welcome } = await searchParams;
-  const [{ portfolios: all, edges }, state, members, states] = await Promise.all([
+  const [{ portfolios: all, edges }, state, members, states, virtual] = await Promise.all([
     userGraph(user.id),
     currentState(user.id),
     membershipsByHolding(user.id),
     strategyStates(user.id, prisma, { archived: true }),
+    listView(user.id).catch(() => ({ portfolios: [] })),
   ]);
   const values = new Map(strategyValues(states, state).map((v) => [v.id, v]));
   // Accounts form the tree; strategies only weigh account holdings and are listed apart
@@ -104,6 +106,53 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
           <p className="empty">아직 포트폴리오가 없습니다.</p>
         )}
         <p className="sub">하위 포트폴리오의 금액은 할당 비율만큼 상위에 합산됩니다. 같은 포트폴리오가 여러 상위 아래에 보일 수 있습니다.</p>
+      </section>
+
+      <section className="card" id="virtual" aria-label="가상 포트폴리오">
+        <div className="spread">
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>가상 포트폴리오</h2>
+            <p className="sub">갖고 있지 않은 자산을 과거 날짜에 담아 본 연습용 포트폴리오입니다. 따로 저장되어 위 구조·순자산·세금·배당·성과 분석에 들어가지 않습니다.</p>
+          </div>
+          <a className="btn small" href="/portfolios/virtual">+ 가상 포트폴리오</a>
+        </div>
+        {virtual.portfolios.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>가상 포트폴리오</th>
+                  <th className="num">종목</th>
+                  <th className="num">넣은 돈</th>
+                  <th className="num">평가액</th>
+                  <th className="num">수익률</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {virtual.portfolios.map((v) => (
+                  <tr key={v.id}>
+                    <td>
+                      <span className="badge" style={{ marginRight: 6 }}>가상</span>
+                      <a className="strong" href={`/portfolios/virtual?id=${v.id}`}>{v.name}</a>
+                      {v.since && <div className="sub">{v.since}부터</div>}
+                    </td>
+                    <td className="num">{v.positions}</td>
+                    <td className="num money">{krwShort(v.invested)}</td>
+                    <td className="num money strong">{krwShort(v.value)}</td>
+                    <td className={`num ${v.value >= v.invested ? 'up' : 'down'}`}>{v.invested ? pct(v.value / v.invested - 1) : '—'}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                      <a className="btn small" href={`/dashboard?p=v:${v.id}`}>분석</a>{' '}
+                      <a className="btn small" href={`/portfolios/virtual?id=${v.id}`}>편집</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty">아직 가상 포트폴리오가 없습니다.</p>
+        )}
       </section>
 
       <section className="card" id="strategies">

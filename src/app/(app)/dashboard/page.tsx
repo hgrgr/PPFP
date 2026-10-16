@@ -15,6 +15,10 @@ import { assetTraitMap, traitGroups } from '@/server/services/traits';
 import { traitAllocation } from '@/domain/traits';
 import { userGraph } from '@/server/services/portfolios';
 import { AskAiButton } from '@/components/ai/launcher';
+import { VirtualDashboard } from '@/components/virtual-dashboard';
+import { detailView } from '@/server/services/virtual';
+import { resolveRange } from '@/domain/period';
+import { kstDate } from '@/server/db';
 
 export const metadata = { title: '대시보드' };
 export const dynamic = 'force-dynamic';
@@ -33,7 +37,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const home = user.dashboardPortfolioId
     ? await prisma.portfolio.findFirst({ where: { id: user.dashboardPortfolioId, userId: user.id, archived: false }, select: { id: true } })
     : null;
-  const scopeId = raw === 'all' ? null : (raw ?? home?.id ?? null);
+  const virtuals = await prisma.virtualPortfolio.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' }, select: { id: true, name: true } });
+  const virtualOptions = virtuals.map((v) => ({ id: `v:${v.id}`, label: v.name }));
+  // A 가상 포트폴리오 (?p=v:<id>) has its own dashboard from the paper positions; it never reaches the real figures below
+  if (raw?.startsWith('v:')) {
+    const graphV = await userGraph(user.id);
+    const vid = raw.slice(2);
+    const first = await prisma.virtualPosition.findFirst({ where: { portfolio: { id: vid, userId: user.id } }, orderBy: { buyDate: 'asc' }, select: { buyDate: true } });
+    const today = kstDate();
+    const range = resolveRange({ period: one(sp.period), from: one(sp.from), to: one(sp.to) }, today, first ? first.buyDate.toISOString().slice(0, 10) : today);
+    const v = await detailView(user.id, vid, { start: range.start, end: range.end }).catch(() => null);
+    if (v) {
+      return (
+        <VirtualDashboard
+          d={v}
+          range={range}
+          linkParams={{ p: raw, period: one(sp.period), from: one(sp.from), to: one(sp.to) }}
+          scope={<ScopeSelect value={raw} allValue={home ? 'all' : undefined} options={graphV.portfolios.map((p) => ({ id: p.id, label: p.name }))} virtualOptions={virtualOptions} />}
+        />
+      );
+    }
+  }
+  const scopeId = raw === 'all' || raw?.startsWith('v:') ? null : (raw ?? home?.id ?? null);
   const params = { p: scopeId ?? (home ? 'all' : undefined), period: one(sp.period), from: one(sp.from), to: one(sp.to), alloc: one(sp.alloc), g: one(sp.g) };
   const [d, graph, counts, groups, fx] = await Promise.all([dashboard(user.id, scopeId, params), userGraph(user.id), journalCounts(user.id), traitGroups(user.id), fxQuote(user.id, 'USD')]);
   const isHome = (home?.id ?? null) === scopeId;
@@ -118,7 +143,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
           )}
         </div>
         <div className="inline">
-          <ScopeSelect value={scopeId ?? ''} allValue={home ? 'all' : undefined} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
+          <ScopeSelect value={scopeId ?? ''} allValue={home ? 'all' : undefined} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} virtualOptions={virtualOptions} />
           {isHome ? (
             <span className="badge" title="대시보드를 열면 이 범위가 먼저 나옵니다">첫 화면</span>
           ) : (

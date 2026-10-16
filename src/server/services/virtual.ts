@@ -63,6 +63,11 @@ async function krwSeries(userId: string, symbol: string, from: string): Promise<
   return fx ? { closes: toKrw(h.closes, cleanFx(fx.closes)), currency: 'USD' } : null;
 }
 
+/** An index in won for comparisons (dollar indices converted with the day's rate) */
+export async function benchmarkSeries(userId: string, symbol: string, from: string): Promise<Close[] | null> {
+  return (await krwSeries(userId, symbol, from))?.closes ?? null;
+}
+
 /** A region's monthly apartment price index (한국부동산원) */
 async function regionIndex(userId: string, key: string): Promise<Close[] | null> {
   const r = roneRegion(key);
@@ -269,9 +274,12 @@ export interface DetailView {
   byKind: { kind: VKind; label: string; value: number; weight: number }[];
   /** weekly samples for the chart */
   path: { dates: string[]; value: number[]; invested: number[]; bench: (number | null)[]; twr: number[] };
+  /** the asked range (whole history when none): its value change less new money, time-weighted return and drawdown */
+  period: { start: string; end: string; startValue: number; endValue: number; flows: number; pnl: number; twr: number | null; maxDrawdown: number | null };
 }
 
-export async function detailView(userId: string, id: string): Promise<DetailView> {
+/** One paper portfolio; `range` limits the chart and the period figures (the valuation always starts at the first buy) */
+export async function detailView(userId: string, id: string, range?: { start: string; end: string; daily?: boolean }): Promise<DetailView> {
   const p = await owned(userId, id);
   const rows = await prisma.virtualPosition.findMany({ where: { portfolioId: id }, orderBy: { buyDate: 'asc' } });
   const positions = rows.map((r) => ({ row: r, pos: toPos(r) }));
@@ -294,8 +302,27 @@ export async function detailView(userId: string, id: string): Promise<DetailView
   const invested = path.invested[last] ?? 0;
   const byKind = new Map<VKind, number>();
   for (const x of results) if (!x.r.problem) byKind.set(x.p.kind, (byKind.get(x.p.kind) ?? 0) + (x.r.values[last] ?? 0));
-  // Weekly samples (and the last day) keep the chart light
-  const keep = calendar.map((_, i) => i).filter((i) => i % 5 === 0 || i === last);
+  // The range's days; daily up to about two years, then weekly samples (and the last day) keep the chart light
+  const from = range?.start ?? calendar[0] ?? today;
+  const to = range?.end ?? today;
+  const inRange = calendar.map((d, i) => ({ d, i })).filter((x) => x.d >= from && x.d <= to).map((x) => x.i);
+  const step = inRange.length > 520 && !range?.daily ? 5 : 1;
+  const keep = inRange.filter((i, k) => k % step === 0 || k === inRange.length - 1);
+  const a = inRange[0] ?? 0, z = inRange.at(-1) ?? last;
+  // Money put in during the range: costs of positions bought after its first day
+  const flows = results.filter((x) => !x.r.problem && x.r.cost && x.p.buyDate > (calendar[a] ?? from) && x.p.buyDate <= (calendar[z] ?? to)).reduce((s, x) => s + x.r.cost!, 0);
+  const startValue = path.value[a] ?? 0, endValue = path.value[z] ?? 0;
+  const twrSlice = inRange.map((i) => path.twr[i]);
+  const period: DetailView['period'] = {
+    start: calendar[a] ?? from,
+    end: calendar[z] ?? to,
+    startValue,
+    endValue,
+    flows,
+    pnl: endValue - startValue - flows,
+    twr: twrSlice.length > 1 ? twrSlice.at(-1)! / twrSlice[0] - 1 : null,
+    maxDrawdown: twrSlice.length > 1 ? maxDrawdown(twrSlice) : null,
+  };
   return {
     portfolio: { id: p.id, name: p.name, note: p.note, benchmark: p.benchmark, benchmarkName: BENCHMARKS.find((b) => b.symbol === p.benchmark)?.name ?? p.benchmark },
     positions: results.map(({ p: pos, row, r }) => {
@@ -335,6 +362,7 @@ export async function detailView(userId: string, id: string): Promise<DetailView
       bench: path.bench[last] !== null && invested ? path.bench[last]! / invested - 1 : null,
     },
     byKind: [...byKind].map(([kind, v]) => ({ kind, label: KIND_LABEL[kind], value: v, weight: value ? v / value : 0 })).sort((a, b) => b.value - a.value),
+    period,
     path: { dates: keep.map((i) => path.dates[i]), value: keep.map((i) => Math.round(path.value[i])), invested: keep.map((i) => Math.round(path.invested[i])), bench: keep.map((i) => (path.bench[i] === null ? null : Math.round(path.bench[i]!))), twr: keep.map((i) => Number(path.twr[i].toFixed(5))) },
   };
 }

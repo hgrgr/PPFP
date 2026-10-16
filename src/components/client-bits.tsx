@@ -73,7 +73,7 @@ export function NavLink({ href, children }: { href: string; children: React.Reac
 
 /** Portfolio scope selector that keeps the other query params. */
 /** `allValue`: what ?p= carries for 순자산 전체 when the bare page opens on another scope (dashboard home). */
-export function ScopeSelect({ options, value, allValue }: { options: { id: string; label: string }[]; value: string; allValue?: string }) {
+export function ScopeSelect({ options, value, allValue, virtualOptions = [] }: { options: { id: string; label: string }[]; value: string; allValue?: string; virtualOptions?: { id: string; label: string }[] }) {
   const router = useRouter();
   const path = usePathname();
   const params = useSearchParams();
@@ -96,6 +96,15 @@ export function ScopeSelect({ options, value, allValue }: { options: { id: strin
             {o.label}
           </option>
         ))}
+        {virtualOptions.length > 0 && (
+          <optgroup label="가상 포트폴리오 (순자산에 안 들어감)">
+            {virtualOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                [가상] {o.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </label>
   );
