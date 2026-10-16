@@ -6,6 +6,8 @@ import { INCOME_BASES, RANGE_YEARS, readPrefs, REGIONS, toggled, type AnalysisPr
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { saveKosisKey, saveRoneKey } from '@/server/services/indicators';
+import { saveDartKey } from '@/server/services/dart';
+import { saveFredKey } from '@/server/services/fred';
 import { UserError } from '@/server/services/portfolios';
 
 export interface PrefsPatch {
@@ -49,6 +51,32 @@ export async function saveRoneKeyAction(_: ActionState, f: FormData): Promise<Ac
   } catch (e) {
     if (e instanceof UserError) return { error: e.message, at: Date.now() };
     console.error('[analysis]', e);
+    return { error: '처리하지 못했습니다. 잠시 후 다시 시도하세요.', at: Date.now() };
+  }
+}
+
+export async function saveDartKeyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    await saveDartKey(user.id, { key: String(f.get('dartKey') ?? ''), clear: f.get('clearDart') === 'on' });
+    revalidatePath('/settings');
+    return { ok: 'OpenDART 키를 저장했습니다.', at: Date.now() };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message, at: Date.now() };
+    console.error('[dart]', e);
+    return { error: '처리하지 못했습니다. 잠시 후 다시 시도하세요.', at: Date.now() };
+  }
+}
+
+export async function saveFredKeyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    await saveFredKey(user.id, { key: String(f.get('fredKey') ?? ''), clear: f.get('clearFred') === 'on' });
+    revalidatePath('/settings');
+    return { ok: 'FRED 키를 저장했습니다.', at: Date.now() };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message, at: Date.now() };
+    console.error('[fred]', e);
     return { error: '처리하지 못했습니다. 잠시 후 다시 시도하세요.', at: Date.now() };
   }
 }

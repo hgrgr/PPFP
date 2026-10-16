@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/server/auth';
-import { insiderView, peersView, stockView } from '@/server/services/stock-analysis';
+import { insiderView, isKrQuery, krFilingsView, peersView, stockView } from '@/server/services/stock-analysis';
 import { UserError } from '@/server/services/portfolios';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const t = sp.get('t') ?? '';
   try {
     const view = sp.get('view');
-    const body = view === 'peers' ? await peersView(user.id, t) : view === 'insider' ? await insiderView(user.id, t) : await stockView(user.id, t);
+    const body = view === 'peers' ? await peersView(user.id, t) : view === 'insider' ? (isKrQuery(t) ? await krFilingsView(user.id, t) : await insiderView(user.id, t)) : await stockView(user.id, t);
     return NextResponse.json(body, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
     if (e instanceof UserError) return NextResponse.json({ error: e.message }, { status: 400 });

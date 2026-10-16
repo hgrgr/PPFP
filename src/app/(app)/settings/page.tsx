@@ -3,7 +3,7 @@ import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
 import { propertyKindShort, rtmsPortalUrl, TRADE_KINDS } from '@/domain/real-estate';
-import { saveKosisKeyAction, saveRoneKeyAction } from '@/app/analysis-actions';
+import { saveDartKeyAction, saveFredKeyAction, saveKosisKeyAction, saveRoneKeyAction } from '@/app/analysis-actions';
 import { saveEcosKeyAction } from '@/app/benchmark-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
 import { NAV_ITEMS } from '@/domain/nav';
@@ -54,6 +54,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const kosisServer = !kosisHint && !!process.env.KOSIS_API_KEY;
   const roneHint = hints.get('rone');
   const roneServer = !roneHint && !!process.env.RONE_API_KEY;
+  const dartHint = hints.get('dart');
+  const dartServer = !dartHint && !!process.env.DART_API_KEY;
+  const fredHint = hints.get('fred');
+  const fredServer = !fredHint && !!process.env.FRED_API_KEY;
 
   return (
     <>
@@ -348,6 +352,49 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {roneHint && (
             <label className="check">
               <input type="checkbox" name="clearRone" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+
+        <ActionForm action={saveDartKeyAction} className="grid" aria-label="OpenDART 인증키">
+          <label className="field" id="dart">
+            금융감독원 OpenDART 인증키 (종목 분석의 한국 종목)
+            <input name="dartKey" type="password" autoComplete="off" placeholder={dartHint ? `저장됨 ${dartHint}` : dartServer ? '서버 기본 키 사용 중' : '인증키 40자'} />
+            <span className="sub">
+              {dartHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://opendart.fss.or.kr" target="_blank" rel="noreferrer">OpenDART</a>의 인증키 신청에서 발급받아 넣으세요(무료). <a href="/stocks">종목 분석</a>에서 한국 종목의 재무제표·공시·임원 소유 변동을 봅니다.
+                </>
+              )}
+            </span>
+          </label>
+          {dartHint && (
+            <label className="check">
+              <input type="checkbox" name="clearDart" /> 저장한 키 지우기
+            </label>
+          )}
+          <div className="full">
+            <Submit>저장</Submit>
+          </div>
+        </ActionForm>
+        <ActionForm action={saveFredKeyAction} className="grid" aria-label="FRED API 키">
+          <label className="field" id="fred">
+            FRED API 키 (경제 지표 일정 · 내 지표 시트)
+            <input name="fredKey" type="password" autoComplete="off" placeholder={fredHint ? `저장됨 ${fredHint}` : fredServer ? '서버 기본 키 사용 중' : 'API 키 32자'} />
+            <span className="sub">
+              {fredHint ? '바꾸려면 새 키를 넣으세요.' : (
+                <>
+                  <a href="https://fredaccount.stlouisfed.org/apikeys" target="_blank" rel="noreferrer">FRED API Keys</a>에서 발급받아 넣으세요(무료). <a href="/macro?tab=calendar">글로벌 매크로</a>의 경제 지표 일정과 내 지표 시트에 씁니다.
+                </>
+              )}
+            </span>
+          </label>
+          {fredHint && (
+            <label className="check">
+              <input type="checkbox" name="clearFred" /> 저장한 키 지우기
             </label>
           )}
           <div className="full">

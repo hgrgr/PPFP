@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/server/auth';
 import { cotView, countriesView, cycleView, gdpView, rotationView } from '@/server/services/macro';
+import { calendarView, sheetView } from '@/server/services/fred';
 import { UserError } from '@/server/services/portfolios';
 
 export const dynamic = 'force-dynamic';
 
-/** 글로벌 매크로 views: ?view=countries · cycle · rotation · cot · gdp */
+/** 글로벌 매크로 views: ?view=countries · cycle · rotation · cot · gdp · calendar · sheet */
 export async function GET(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -22,7 +23,11 @@ export async function GET(req: Request) {
               ? await cotView(user.id)
               : view === 'gdp'
                 ? await gdpView(user.id)
-                : null;
+                : view === 'calendar'
+                  ? await calendarView(user.id)
+                  : view === 'sheet'
+                    ? await sheetView(user.id)
+                    : null;
     if (!body) return NextResponse.json({ error: '없는 화면입니다.' }, { status: 400 });
     return NextResponse.json(body, { headers: { 'cache-control': 'no-store' } });
   } catch (e) {
