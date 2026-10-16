@@ -149,7 +149,7 @@ export function FunWeather({ ret }: { ret: number | null }) {
   const [icon, word] = ret >= 0.015 ? ['☀️', '맑음'] : ret >= 0.003 ? ['🌤️', '구름 조금'] : ret > -0.003 ? ['☁️', '흐림'] : ret > -0.015 ? ['🌧️', '비'] : ['⛈️', '폭풍우'];
   return (
     <span className="fun-weather" title={`직전 거래일 대비 ${(ret * 100).toFixed(2)}% (시간가중)`}>
-      {icon} 오늘 날씨 {word} <span className="sub">{ret >= 0 ? '+' : ''}{(ret * 100).toFixed(2)}%</span>
+      {icon} 오늘 날씨 {word} <span className="sub">{Math.abs(ret) < 0.00005 ? '0.00' : `${ret > 0 ? '+' : ''}${(ret * 100).toFixed(2)}`}%</span>
     </span>
   );
 }
