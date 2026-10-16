@@ -8,6 +8,8 @@ import type { FinancialTable } from '@/domain/sec';
 import { dcf, ddm, reverseDcf, rim, sensitivity, TRADE_CODE, median, type Fundamentals, type InsiderTrade, type Multiples } from '@/domain/valuation';
 
 interface StockView {
+  market: 'US' | 'KR';
+  currency: 'USD' | 'KRW';
   ticker: string;
   company: string;
   sector: string | null;
@@ -39,13 +41,18 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
+/**
+ * The currency of the stock on screen. Set once per render from the view (US stocks in dollars,
+ * Korean ones in won) so every number on the page follows it.
+ */
+let CCY: 'USD' | 'KRW' = 'USD';
 const usd = (v: number | null | undefined, d = 1) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
   const a = Math.abs(v);
   const s = a >= 1e12 ? `${(a / 1e12).toFixed(d)}조` : a >= 1e8 ? `${(a / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: d })}억` : a >= 1e4 ? `${Math.round(a / 1e4).toLocaleString('ko-KR')}만` : a.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
-  return `${v < 0 ? '−' : ''}$${s}`;
+  return CCY === 'KRW' ? `${v < 0 ? '−' : ''}${s}원` : `${v < 0 ? '−' : ''}$${s}`;
 };
-const px = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `$${v.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`);
+const px = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : CCY === 'KRW' ? `${Math.round(v).toLocaleString('ko-KR')}원` : `$${v.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`);
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
 const signed = (v: number | null | undefined, d = 1) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(d)}%`);
 const x = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v.toFixed(1)}배`);
@@ -84,6 +91,9 @@ export function StockAnalysis({ quick }: { quick: { ticker: string; name: string
     router.replace(`${pathname}?${n.toString()}`, { scroll: false });
   };
   const { data, error } = useView<StockView>(t ? `/api/stocks?view=stock&t=${encodeURIComponent(t)}` : null, bump);
+  if (data) CCY = data.currency;
+  const kr = data?.market === 'KR';
+  const tabs = TABS.map((x) => (x.key === 'insider' && kr ? { ...x, label: '공시 · 내부자' } : x)).filter((x) => !(x.key === 'peers' && kr));
   return (
     <div className="stack" style={{ gap: 16 }}>
       <section className="card stack" style={{ gap: 12 }} aria-label="종목 고르기">
@@ -95,7 +105,7 @@ export function StockAnalysis({ quick }: { quick: { ticker: string; name: string
             if (input.trim()) go({ t: input.trim().toUpperCase() });
           }}
         >
-          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="미국 티커 (예: AAPL, MSFT, BRK.B)" aria-label="티커" style={{ maxWidth: 260 }} />
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="티커·종목코드·회사명 (AAPL, 005930, 삼성전자)" aria-label="티커" style={{ maxWidth: 260 }} />
           <button type="submit" className="btn">보기</button>
           {quick.map((q) => (
             <button key={q.ticker} type="button" className="chip-btn" aria-pressed={q.ticker === t} onClick={() => { setInput(q.ticker); go({ t: q.ticker }); }} title={q.name}>
@@ -105,7 +115,7 @@ export function StockAnalysis({ quick }: { quick: { ticker: string; name: string
         </form>
         {t && (
           <div className="seg" role="tablist" aria-label="화면">
-            {TABS.map((x) => (
+            {tabs.map((x) => (
               <button key={x.key} type="button" role="tab" aria-selected={tab === x.key} aria-pressed={tab === x.key} onClick={() => go({ tab: x.key })}>
                 {x.label}
               </button>
@@ -114,15 +124,15 @@ export function StockAnalysis({ quick }: { quick: { ticker: string; name: string
         )}
       </section>
       {!t ? (
-        <p className="empty">미국에 상장해 SEC에 공시하는 종목(ADR 포함)의 티커를 넣으세요. 한국 종목은 DART 인증키가 있어야 해서 아직 지원하지 않습니다.</p>
+        <p className="empty">미국 종목은 티커(SEC 공시), 한국 종목은 종목코드 6자리나 회사명(OpenDART 공시)을 넣으세요.</p>
       ) : error ? (
         <p className="msg err">{error}</p>
       ) : !data ? (
-        <p className="empty">불러오는 중… SEC 재무 자료(XBRL)를 받느라 처음에는 몇 초 걸립니다.</p>
+        <p className="empty">불러오는 중… 공시 재무 자료를 받느라 처음에는 몇 초(한국 종목은 보고서 열두 개를 받느라 10~20초) 걸립니다.</p>
       ) : (
         <>
           <Header d={data} />
-          {tab === 'fin' ? <Financials d={data} /> : tab === 'peers' ? <Peers ticker={data.ticker} /> : tab === 'insider' ? <Insider ticker={data.ticker} /> : <Valuation d={data} onSaved={() => setBump((b) => b + 1)} />}
+          {tab === 'fin' || (tab === 'peers' && kr) ? <Financials d={data} /> : tab === 'peers' ? <Peers ticker={data.ticker} /> : tab === 'insider' ? (kr ? <KrFilings ticker={data.ticker} /> : <Insider ticker={data.ticker} />) : <Valuation d={data} onSaved={() => setBump((b) => b + 1)} />}
         </>
       )}
     </div>
@@ -139,7 +149,7 @@ function Header({ d }: { d: StockView }) {
             {d.company} <span className="sub" style={{ fontSize: 14 }}>{d.ticker}</span>
           </h2>
           <span className="sub">
-            {[d.sector, d.industry].filter(Boolean).join(' · ') || 'S&P 500 밖'} · 재무 {d.fundamentals.asOf ?? '—'} 기준 · <Link href={`/market?s=${encodeURIComponent(d.ticker)}`}>실시간 시세 ›</Link>
+            {d.market === 'KR' ? '한국 상장 · OpenDART' : [d.sector, d.industry].filter(Boolean).join(' · ') || 'S&P 500 밖'} · 재무 {d.fundamentals.asOf ?? '—'} 기준 · <Link href={`/market?s=${encodeURIComponent(d.ticker)}`}>실시간 시세 ›</Link>
           </span>
         </div>
         <div className="stack" style={{ gap: 2, alignItems: 'flex-end' }}>
@@ -166,7 +176,7 @@ function Header({ d }: { d: StockView }) {
           </div>
         ))}
       </div>
-      <p className="sub" style={{ margin: 0 }}>최근 4분기 합(분기 자료가 없으면 최근 연도) 기준입니다. 주식 수는 희석 가중평균, 순이익이 적자면 PER은 비웁니다.</p>
+      <p className="sub" style={{ margin: 0 }}>최근 4분기 합(분기 자료가 없으면 최근 연도) 기준입니다. 주식 수는 {d.market === 'KR' ? '유통주식수(발행 − 자기주식)' : '희석 가중평균'}, 순이익이 적자면 PER은 비웁니다.</p>
     </section>
   );
 }
@@ -215,7 +225,7 @@ function Financials({ d }: { d: StockView }) {
       <section className="card indicator" aria-label="재무제표">
         <div className="stack" style={{ gap: 4 }}>
           <h3>재무제표 ({period === 'annual' ? '연간' : '분기'})</h3>
-          <span className="sub">SEC XBRL 자료. 괄호는 1년 전 대비 증감. {table.latestFiling ? `최신 반영 보고서: ${table.latestFiling.form} (${table.latestFiling.filed})` : ''}</span>
+          <span className="sub">{d.market === 'KR' ? 'OpenDART 연결재무제표(없으면 별도). 4분기와 분기 현금흐름은 연간·누적에서 앞 분기를 뺀 값' : 'SEC XBRL 자료'}. 괄호는 1년 전 대비 증감. {table.latestFiling ? `최신 반영 보고서: ${table.latestFiling.form} (${table.latestFiling.filed})` : ''}</span>
         </div>
         <div className="table-wrap">
           <table className="rank">
@@ -549,7 +559,7 @@ function Valuation({ d, onSaved }: { d: StockView; onSaved: () => void }) {
           <div className="va-fields">
             {FIELDS[method].map((f) => (
               <label key={f.key} className="stack" style={{ gap: 4 }}>
-                <span className="sub">{f.label}{f.unit && f.unit !== '주' ? ` (${f.unit === '$' ? '달러' : f.unit})` : ''}</span>
+                <span className="sub">{f.label}{f.unit && f.unit !== '주' ? ` (${f.unit === '$' ? (CCY === 'KRW' ? '원' : '달러') : f.unit})` : ''}</span>
                 <input type="number" step="any" value={f.unit === '%' ? round(v[f.key] * 100, 2) : v[f.key]} onChange={(e) => set(f.key, e.target.value, f.unit)} aria-label={f.label} />
                 {f.unit === '$' && <span className="sub" style={{ fontSize: 11 }}>{usd(v[f.key], 2)}{f.about ? ` · ${f.about}` : ''}</span>}
               </label>
@@ -675,6 +685,98 @@ function Valuation({ d, onSaved }: { d: StockView; onSaved: () => void }) {
         )}
       </section>
       <p className="sub">모델 결과는 입력에 따라 크게 달라지는 참고치이며 투자 권유가 아닙니다.</p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Korean filings
+
+interface KrFilingsView {
+  disclosures: { date: string; title: string; filer: string; url: string }[];
+  insiders: { date: string; name: string; role: string; shares: number | null; change: number | null; ratio: number | null; ratioChange: number | null; url: string }[];
+}
+
+function KrFilings({ ticker }: { ticker: string }) {
+  const { data, error } = useView<KrFilingsView>(`/api/stocks?view=insider&t=${encodeURIComponent(ticker)}`);
+  const [kind, setKind] = useState<'all' | 'regular' | 'major'>('all');
+  if (error) return <p className="msg err">{error}</p>;
+  if (!data) return <p className="empty">불러오는 중…</p>;
+  const shown = data.disclosures.filter((d) => kind === 'all' || (kind === 'regular' ? /사업보고서|분기보고서|반기보고서/.test(d.title) : /주요사항|단일판매|유상증자|무상증자|자기주식|합병|분할|최대주주|배당|잠정/.test(d.title)));
+  const moves = data.insiders.filter((r) => r.change);
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <section className="card indicator" aria-label="임원·주요주주 소유">
+        <div className="stack" style={{ gap: 4 }}>
+          <h3>임원 · 주요주주 소유 변동</h3>
+          <span className="sub">임원과 10% 이상 주주가 금융감독원에 낸 소유보고(최근 100건). 늘었으면 빨강, 줄었으면 파랑입니다. 날짜를 누르면 DART 원문을 엽니다.</span>
+        </div>
+        {moves.length ? (
+          <div className="table-wrap">
+            <table className="rank">
+              <thead>
+                <tr>
+                  <th className="l">보고일</th>
+                  <th className="l">이름</th>
+                  <th className="l">직위 · 관계</th>
+                  <th className="num">증감 (주)</th>
+                  <th className="num">보유 (주)</th>
+                  <th className="num">지분율</th>
+                  <th className="num">지분율 증감</th>
+                </tr>
+              </thead>
+              <tbody>
+                {moves.map((r, i) => (
+                  <tr key={`${r.url}-${i}`}>
+                    <td className="l"><a href={r.url} target="_blank" rel="noreferrer">{r.date.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')}</a></td>
+                    <td className="l">{r.name}</td>
+                    <td className="l sub">{r.role}</td>
+                    <td className={`num ${(r.change ?? 0) >= 0 ? 'up' : 'down'}`}>{r.change === null ? '—' : `${r.change > 0 ? '+' : ''}${r.change.toLocaleString('ko-KR')}`}</td>
+                    <td className="num">{r.shares?.toLocaleString('ko-KR') ?? '—'}</td>
+                    <td className="num">{r.ratio === null ? '—' : `${r.ratio.toFixed(2)}%`}</td>
+                    <td className="num">{r.ratioChange === null ? '—' : `${r.ratioChange > 0 ? '+' : ''}${r.ratioChange.toFixed(2)}%p`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty">최근 소유 변동 보고가 없습니다.</p>
+        )}
+      </section>
+      <section className="card indicator" aria-label="공시 목록">
+        <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <div className="stack" style={{ gap: 4 }}>
+            <h3>최근 1년 공시</h3>
+            <span className="sub">최근 순 {data.disclosures.length}건. 제목을 누르면 DART 원문을 엽니다.</span>
+          </div>
+          <div className="seg" role="group" aria-label="공시 종류">
+            <button type="button" aria-current={kind === 'all' ? 'true' : undefined} onClick={() => setKind('all')}>전체</button>
+            <button type="button" aria-current={kind === 'regular' ? 'true' : undefined} onClick={() => setKind('regular')}>정기보고서</button>
+            <button type="button" aria-current={kind === 'major' ? 'true' : undefined} onClick={() => setKind('major')}>주요 공시</button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="rank">
+            <thead>
+              <tr>
+                <th className="l">접수일</th>
+                <th className="l">제목</th>
+                <th className="l">제출인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((d, i) => (
+                <tr key={`${d.url}-${i}`}>
+                  <td className="l sub">{d.date}</td>
+                  <td className="l"><a href={d.url} target="_blank" rel="noreferrer">{d.title}</a></td>
+                  <td className="l sub">{d.filer}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!shown.length && <p className="empty">해당하는 공시가 없습니다.</p>}
+      </section>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { KEY_HELP } from '@/components/analysis-board';
 import { frameLabel, TimelineControl, useTimeline } from '@/components/timeline';
+import { TRANSFORM_LABEL, type Transform } from '@/domain/fred';
 import { PHASE_ABOUT, quadrantOf, WB_INDICATORS, type CliFrame, type CliPhase, type CotSummary, type Quadrant, type RrgPoint } from '@/domain/macro';
 
 interface CountryRow {
@@ -47,6 +48,8 @@ const TABS = [
   { key: 'rotation', label: '섹터 순환' },
   { key: 'cot', label: '선물 포지션' },
   { key: 'gdp', label: 'GDP 기여도' },
+  { key: 'calendar', label: '경제 지표 일정' },
+  { key: 'sheet', label: '내 지표 시트' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -99,7 +102,7 @@ export function Macro() {
           ))}
         </div>
       </section>
-      {tab === 'countries' ? <CountriesTab /> : tab === 'cycle' ? <CycleTab /> : tab === 'rotation' ? <RotationTab /> : tab === 'cot' ? <CotTab /> : <GdpTab />}
+      {tab === 'countries' ? <CountriesTab /> : tab === 'cycle' ? <CycleTab /> : tab === 'rotation' ? <RotationTab /> : tab === 'cot' ? <CotTab /> : tab === 'calendar' ? <CalendarTab /> : tab === 'sheet' ? <SheetTab /> : <GdpTab />}
     </div>
   );
 }
@@ -562,6 +565,186 @@ function GdpTab() {
         {data.kr && <GdpChart title="한국 GDP 성장 기여도" about="실질 GDP 전기 대비 성장률(계절조정, 선은 항목 기여의 합)과 지출항목별 기여(막대, %p). 한국은행 ECOS 200Y125." parts={data.kr.parts} rows={data.kr.rows} />}
       </div>
       <p className="sub">미국은 연율(분기 변화를 1년으로 환산), 한국은 분기 변화 그대로라 크기를 직접 비교하지 않습니다. 통계상 불일치는 빠져 있어 한국 막대의 합은 발표 성장률과 조금 다를 수 있습니다.</p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ release calendar
+
+interface CalendarRow {
+  date: string;
+  id: number;
+  name: string;
+  major: { label: string; about: string; series: string; show: Transform; unit: string; latest: { date: string; value: number; prev: number | null } | null };
+}
+
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+const fmtHeadline = (m: CalendarRow['major']) => {
+  const l = m.latest;
+  if (!l) return '—';
+  const v = m.show === 'yoy' || m.show === 'mom' ? `${l.value > 0 && m.show === 'mom' ? '+' : ''}${l.value.toFixed(1)}%` : m.show === 'diff' ? `${l.value > 0 ? '+' : ''}${Math.round(l.value).toLocaleString('ko-KR')}${m.unit}` : `${l.value.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}${m.unit && m.unit !== '%' ? ` ${m.unit}` : m.unit}`;
+  return `${v} (${l.date.slice(0, 7).replace('-', '.')})`;
+};
+
+function CalendarTab() {
+  const { data, error } = useView<{ rows: CalendarRow[]; today: string }>('/api/macro?view=calendar');
+  if (error) return <p className="msg err">{error}{/FRED API 키/.test(error) && <> <a href="/settings#fred">연동 · 설정에서 넣기 ›</a></>}</p>;
+  if (!data) return <p className="empty">불러오는 중…</p>;
+  const rows = data.rows;
+  const days = [...new Set(rows.map((r) => r.date))];
+  return (
+    <section className="card indicator" aria-label="경제 지표 일정">
+      <div className="inline spread" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h3>미국 경제 지표 발표 일정</h3>
+          <span className="sub">지난 1주와 앞으로 5주. 날짜는 미국 동부 기준(한국은 보통 그날 밤 9시 30분~다음 날 새벽)입니다. 시장이 많이 보는 지표 14개와 FOMC만 골랐고, 직전 발표 값을 함께 보여 줍니다. 예상치(컨센서스)는 없습니다.</span>
+        </div>
+      </div>
+      <div className="stack" style={{ gap: 12 }}>
+        {days.map((d) => {
+          const past = d < data.today;
+          const isToday = d === data.today;
+          const w = WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
+          return (
+            <div key={d} className="cal-day" style={{ opacity: past ? 0.6 : 1 }}>
+              <div className="cal-date">
+                <b>{d.slice(5).replace('-', '.')}</b> <span className="sub">({w}){isToday ? ' · 오늘' : past ? ' · 지남' : ''}</span>
+              </div>
+              <div className="stack" style={{ gap: 6 }}>
+                {rows.filter((r) => r.date === d).map((r) => (
+                  <div key={`${r.id}-${d}`} className="cal-item">
+                    <b>{r.major.label}</b>
+                    <span className="sub">{r.major.about}</span>
+                    <span className="cal-last">직전 {fmtHeadline(r.major)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!days.length && <p className="empty">이 기간에 발표가 없습니다.</p>}
+      <p className="sub">출처: FRED 발표 일정(releases/dates), FOMC는 연준이 공개한 2026년 회의 일정. 직전 값은 FRED 시리즈의 최근 관측치이며, 발표 당일에는 반영까지 몇 시간 걸릴 수 있습니다.</p>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ my indicator sheet
+
+interface SheetItem {
+  id: string;
+  title: string;
+  units: string;
+  frequency: string;
+  transform: Transform;
+}
+interface SheetData {
+  items: (SheetItem & { points: { date: string; value: number }[]; latest: { date: string; value: number; prev: number | null } | null })[];
+}
+
+const SUGGESTED: SheetItem[] = [
+  { id: 'CPIAUCSL', title: 'Consumer Price Index for All Urban Consumers', units: 'Index', frequency: 'M', transform: 'yoy' },
+  { id: 'UNRATE', title: 'Unemployment Rate', units: '%', frequency: 'M', transform: 'level' },
+  { id: 'T10Y2Y', title: '10-Year Treasury Minus 2-Year Treasury', units: '%', frequency: 'D', transform: 'level' },
+  { id: 'M2SL', title: 'M2', units: 'Bil. of $', frequency: 'M', transform: 'yoy' },
+];
+
+function SheetTab() {
+  const [bump, setBump] = useState(0);
+  const { data, error } = useView<SheetData>(`/api/macro?view=sheet&b=${bump}`);
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<(Omit<SheetItem, 'transform'> & { popularity: number })[] | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const items: SheetItem[] = (data?.items ?? []).map(({ id, title, units, frequency, transform }) => ({ id, title, units, frequency, transform }));
+  const save = async (next: SheetItem[]) => {
+    const r = await fetch('/api/fred', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: next }) });
+    if (!r.ok) setMsg((await r.json().catch(() => ({}))).error ?? '저장하지 못했습니다.');
+    setBump((b) => b + 1);
+  };
+  const search = async () => {
+    setMsg(null);
+    const r = await fetch(`/api/fred?q=${encodeURIComponent(q)}`);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setMsg(j.error ?? '검색하지 못했습니다.');
+      setResults(null);
+    } else setResults(j.results);
+  };
+  if (error) return <p className="msg err">{error}</p>;
+  if (!data) return <p className="empty">불러오는 중…</p>;
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <section className="card indicator" aria-label="지표 추가">
+        <div className="stack" style={{ gap: 4 }}>
+          <h3>내 지표 시트</h3>
+          <span className="sub">FRED의 80만 개 넘는 시리즈 가운데 보고 싶은 것을 골라 한 화면에 모읍니다(24개까지). 영어로 검색하세요(예: inflation, housing, oil, Korea). 카드마다 값 그대로·1년 전 대비·직전 대비로 바꿔 볼 수 있습니다.</span>
+        </div>
+        <form className="inline" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (q.trim()) search(); }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="FRED 검색어" aria-label="FRED 검색어" style={{ maxWidth: 320 }} />
+          <button type="submit" className="btn">검색</button>
+          {!items.length && <button type="button" className="btn small" onClick={() => save(SUGGESTED)}>추천 4개로 시작</button>}
+        </form>
+        {msg && <p className="msg err">{msg}{/FRED API 키/.test(msg) && <> <a href="/settings#fred">연동 · 설정에서 넣기 ›</a></>}</p>}
+        {results && (
+          <div className="table-wrap">
+            <table className="rank">
+              <thead>
+                <tr>
+                  <th className="l">시리즈</th>
+                  <th className="l">단위</th>
+                  <th className="l">주기</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r) => (
+                  <tr key={r.id}>
+                    <th scope="row" className="l" style={{ whiteSpace: 'normal' }}>{r.title}<span className="sub" style={{ display: 'block' }}>{r.id}</span></th>
+                    <td className="l sub">{r.units}</td>
+                    <td className="l sub">{r.frequency}</td>
+                    <td className="num">
+                      {items.some((i) => i.id === r.id) ? <span className="sub">담김</span> : <button type="button" className="btn small" disabled={items.length >= 24} onClick={() => save([...items, { id: r.id, title: r.title, units: r.units, frequency: r.frequency, transform: 'level' }])}>담기</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!results.length && <p className="empty">검색 결과가 없습니다.</p>}
+          </div>
+        )}
+      </section>
+      {data.items.length ? (
+        <div className="ind-grid">
+          {data.items.map((it, k) => (
+            <section key={it.id} className="card indicator" aria-label={it.title}>
+              <div className="inline spread" style={{ gap: 8, alignItems: 'flex-start' }}>
+                <div className="stack" style={{ gap: 2, minWidth: 0 }}>
+                  <h3 style={{ fontSize: 15 }}>{it.title}</h3>
+                  <span className="sub">{it.id} · {it.units} · {it.frequency}{it.latest ? ` · 최근 ${it.latest.value.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}${it.transform === 'level' ? '' : '%'} (${it.latest.date})` : ''}</span>
+                </div>
+                <button type="button" className="linklike" aria-label={`${it.title} 빼기`} onClick={() => save(items.filter((i) => i.id !== it.id))}>×</button>
+              </div>
+              <div className="seg" role="group" aria-label="보기">
+                {(Object.keys(TRANSFORM_LABEL) as Transform[]).map((t) => (
+                  <button key={t} type="button" aria-current={it.transform === t ? 'true' : undefined} onClick={() => save(items.map((i) => (i.id === it.id ? { ...i, transform: t } : i)))}>{TRANSFORM_LABEL[t]}</button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={it.points} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
+                  <CartesianGrid stroke="var(--line-soft)" />
+                  <XAxis dataKey="date" tickFormatter={(v: string) => v.slice(0, 4)} minTickGap={40} stroke="var(--muted)" fontSize={11} />
+                  <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => Math.abs(v) >= 1e4 ? `${Math.round(v / 1e3).toLocaleString('ko-KR')}k` : String(Math.round(v * 100) / 100)} stroke="var(--muted)" fontSize={11} width={52} />
+                  <Tooltip formatter={(v) => Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 3 })} contentStyle={{ background: 'var(--surface)', border: '1px solid var(--line)' }} />
+                  {it.transform !== 'level' && <ReferenceLine y={0} stroke="var(--muted)" />}
+                  <Line dataKey="value" name={it.id} stroke={COLORS[k % COLORS.length]} dot={false} strokeWidth={1.8} animationDuration={900} />
+                </LineChart>
+              </ResponsiveContainer>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="empty">아직 담은 지표가 없습니다. 검색해서 담거나 추천 4개로 시작하세요.</p>
+      )}
     </div>
   );
 }

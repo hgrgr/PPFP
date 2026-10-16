@@ -762,3 +762,7 @@ textarea.mono { font-size: 13px; line-height: 1.5; }
 .va-grid td { transition: background-color .3s ease; }
 .ai-suggest { gap: 6px; margin: -4px 0 12px; }
 .ai-suggest .chip-btn { font-size: 12px; padding: 4px 10px; }
+.cal-day { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.cal-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.cal-last { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+@media (max-width: 640px) { .cal-day { grid-template-columns: 1fr; } .cal-last { margin-left: 0; } }
