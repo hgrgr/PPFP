@@ -31,12 +31,13 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
   const price = (sym, k, n) => {
     const a = hash(sym), b = hash(`${sym}b`), c = hash(`${sym}c`);
     const drift = (a - 0.38) * 0.0012;
-    // 데모전자 (fake-dart-fred.cjs) trades near 70,000원
-    const level = sym.startsWith('999990') ? 70000 : 20 + 400 * b;
+    // 데모전자 (fake-dart-fred.cjs) trades near 70,000원; rates and indices near their usual levels
+    const level = sym.startsWith('999990') ? 70000 : sym === 'KRW=X' ? 1300 : sym === '^KS11' ? 2600 : sym.endsWith('.KS') || sym.endsWith('.KQ') ? 30000 + 60000 * b : sym.endsWith('-KRW') ? 40000000 : 20 + 400 * b;
+    const amp = sym === 'KRW=X' ? 0.25 : 1;
     const x = k - n;
     // A little day-to-day noise of its own, so no symbol is an exact mix of the others
     const noise = 0.012 * (hash(`${sym}:${k}`) - 0.5);
-    return level * Math.exp(drift * x + 0.12 * Math.sin(x / (40 + 60 * c) + a * 6.28) + 0.04 * Math.sin(x / 9 + b * 6.28) + 0.015 * Math.sin(x / 2.3 + c * 6.28) + noise);
+    return level * Math.exp(amp * (drift * x + 0.12 * Math.sin(x / (40 + 60 * c) + a * 6.28) + 0.04 * Math.sin(x / 9 + b * 6.28) + 0.015 * Math.sin(x / 2.3 + c * 6.28) + noise));
   };
 
   // ------------------------------------------------------------ S&P 500 sample
@@ -215,6 +216,23 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     return { StatisticSearch: { list_total_count: row.length, row } };
   };
 
+  /** Yahoo chart history (period1, daily or weekly) for 가상 포트폴리오, with the meta it reads */
+  const NAMES = { 'GC=F': 'Gold Futures (demo)', SPY: 'SPDR S&P 500 ETF (demo)', 'BTC-KRW': 'Bitcoin KRW (demo)', '005930.KS': '삼성전자 (demo)', '069500.KS': 'KODEX 200 (demo)', TLT: 'iShares 20+ Year Treasury (demo)' };
+  const chart = (sym, url) => {
+    const p1 = Number(url.searchParams.get('period1') ?? 0) * 1000;
+    const weekly = url.searchParams.get('interval') === '1wk';
+    const all = weekdays(Math.ceil((NOW - Math.max(p1, NOW - 40 * 365 * DAY)) / DAY));
+    const ts = weekly ? all.filter((t) => new Date(t).getUTCDay() === 1) : all;
+    const n = all.length;
+    const krw = /\.(KS|KQ)$|-KRW$|^\^KS11$|^KRW=X$/.test(sym);
+    return {
+      chart: {
+        result: [{ meta: { currency: krw ? 'KRW' : 'USD', symbol: sym, longName: NAMES[sym] ?? `${sym} (demo)`, gmtoffset: 0 }, timestamp: ts.map((t) => t / 1000 + 14.5 * 3600), indicators: { quote: [{ close: ts.map((t) => Number(price(sym, all.indexOf(t), n).toFixed(4))) }] } }],
+        error: null,
+      },
+    };
+  };
+
   const text = (body, type = 'text/csv') => new Response(body, { status: 200, headers: { 'content-type': type } });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async function marketsDemoFetch(input, init) {
@@ -230,6 +248,7 @@ if (process.env.PPFP_FAKE_INDICATORS === '1') {
     if (url.hostname === 'publicreporting.cftc.gov') return text(JSON.stringify(cftc()), 'application/json');
     if (url.hostname === 'fred.stlouisfed.org' && (url.searchParams.get('id') === 'A191RL1Q225SBEA' || GDP_US[url.searchParams.get('id')])) return text(fredGdp(url.searchParams.get('id')));
     if (url.hostname === 'ecos.bok.or.kr' && url.pathname.includes('/200Y125/Q/')) return text(JSON.stringify(ecosGdp(url.pathname.split('/').at(-1))), 'application/json');
+    if (url.hostname === 'query1.finance.yahoo.com' && url.pathname.startsWith('/v8/finance/chart/') && url.searchParams.has('period1') && url.searchParams.get('interval') !== '1mo') return text(JSON.stringify(chart(decodeURIComponent(url.pathname.split('/').pop()), url)), 'application/json');
     if (url.hostname === 'query1.finance.yahoo.com' && url.pathname === '/v8/finance/spark') return text(JSON.stringify(spark(url)), 'application/json');
     if (url.hostname === 'www.ssga.com' && url.pathname.endsWith('holdings-daily-us-en-spy.xlsx')) return new Response(await holdingsXlsx(), { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
     if (url.hostname === 'en.wikipedia.org' && url.pathname === '/wiki/List_of_S%26P_500_companies') return text(wikiHtml(), 'text/html');

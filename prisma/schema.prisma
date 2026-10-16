@@ -111,6 +111,7 @@ model User {
   realEstateAlerts  RealEstateAlert[]
   favoriteComplexes FavoriteComplex[]
   valuations        Valuation[]
+  virtualPortfolios VirtualPortfolio[]
   notifications     Notification[]
   pushSubs          PushSubscription[]
   notes             Note[]
@@ -797,6 +798,47 @@ model FavoriteComplex {
   createdAt  DateTime @default(now())
 
   @@unique([userId, lawdCd, complexKey])
+}
+
+/// A what-if portfolio: things the user does not own, bought on past dates on paper. Kept apart from
+/// Portfolio/Holding/Lot/Transaction so it can never reach net worth, tax, dividends or performance.
+model VirtualPortfolio {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  note      String            @default("")
+  /// Yahoo symbol the same cash flows are compared with
+  benchmark String            @default("^KS11")
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  positions VirtualPosition[]
+
+  @@index([userId])
+}
+
+/// One paper purchase. STOCK/FUND/BOND/COMMODITY/CRYPTO follow a Yahoo symbol, REAL_ESTATE a
+/// 한국부동산원 apartment price index (symbol = 지역 분석 region key), FIXED grows at `rate`, CASH stays.
+model VirtualPosition {
+  id          String           @id @default(cuid())
+  portfolioId String
+  portfolio   VirtualPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  kind        String
+  symbol      String?
+  name        String
+  currency    String           @default("KRW")
+  buyDate     DateTime         @db.Date
+  sellDate    DateTime?        @db.Date
+  /// AMOUNT: `amount` won invested; QTY: `qty` units at the buy-date close
+  mode        String           @default("AMOUNT")
+  amount      Decimal?         @db.Decimal(20, 2)
+  qty         Decimal?         @db.Decimal(28, 10)
+  /// FIXED: annual rate, fraction
+  rate        Decimal?         @db.Decimal(12, 8)
+  note        String           @default("")
+  createdAt   DateTime         @default(now())
+
+  @@index([portfolioId])
 }
 
 /// A fair-value estimate saved on 종목 분석: the model, its inputs and the result at the time.
