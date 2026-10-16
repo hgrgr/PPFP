@@ -2192,7 +2192,7 @@ APK 파일을 휴대폰에 옮겨 설치합니다. 처음 한 번은 휴대폰 �
 | 2026-10-15 | [`ee88dc9`](https://github.com/hgrgr/PPFP/commit/ee88dc98c73e1f64a75a6540e1dfbbe296c2f65c) | [#60](https://github.com/hgrgr/PPFP/pull/60) | 시장 개요·글로벌 매크로·거장 포트폴리오·종목 분석에 AI 추천 질문 칩(✦ 물어보기) | — |
 | 2026-10-15 | [`c996d6c`](https://github.com/hgrgr/PPFP/commit/c996d6c248cac2d5a66f2742c8b2321b1e719b72) | [#61](https://github.com/hgrgr/PPFP/pull/61) | *리스크 분석* 화면: 오늘 비중 기준 변동성·최대 낙폭·VaR·CVaR·샤프(코스피·S&P 500과 비교), 비중 vs 위험 기여, 요인 노출과 R², 6개월 베타 변화, 종목 간 상관관계 | — |
 | 2026-10-16 | [`81bc110`](https://github.com/hgrgr/PPFP/commit/81bc11017ba9bba60d4daf12874c993db599c7f7) | [#62](https://github.com/hgrgr/PPFP/pull/62) | *종목 분석* 한국 종목(OpenDART 재무제표·공시·임원 소유 변동), *글로벌 매크로* 경제 지표 일정(주요 14개 + FOMC)과 내 지표 시트(FRED 검색), 연동 · 설정에 OpenDART·FRED 키 | — |
-| 2026-10-16 | [`7b1a912`](https://github.com/hgrgr/PPFP/commit/7b1a912377ccb555cc58924bca12754f3822567d) | — | *가상 포트폴리오*: 갖고 있지 않은 주식·ETF·채권·원자재·가상자산·부동산(지역 지수)·예금·현금을 과거 날짜에 담아 가치 변화·시간가중 수익률·최대 낙폭·지수 비교. 실제 자산·거래와 별도 저장 | — |
+| 2026-10-16 | [`7b1a912`](https://github.com/hgrgr/PPFP/commit/7b1a912377ccb555cc58924bca12754f3822567d) | [#63](https://github.com/hgrgr/PPFP/pull/63) | *가상 포트폴리오*: 갖고 있지 않은 주식·ETF·채권·원자재·가상자산·부동산(지역 지수)·예금·현금을 과거 날짜에 담아 가치 변화·시간가중 수익률·최대 낙폭·지수 비교. 실제 자산·거래와 별도 저장 | — |
 
 ## 사라진 기능
 
