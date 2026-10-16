@@ -97,40 +97,43 @@ model User {
   /// 분석 지표 screen: indicators switched on/off, region, income basis, years (domain/indicators readPrefs)
   analysisPrefs        Json      @default("{}")
 
-  sessions         Session[]
-  brokers          BrokerConnection[]
-  watchlist        WatchItem[]
-  portfolios       Portfolio[]
-  assets           Asset[]
-  auditLogs        AuditLog[]
-  journals         JournalEntry[]
-  journalTemplates JournalTemplate[]
-  journalImages    JournalImage[]
-  traitGroups      TraitGroup[]
-  priceAlerts      PriceAlert[]
-  realEstateAlerts RealEstateAlert[]
-  notifications    Notification[]
-  pushSubs         PushSubscription[]
-  notes            Note[]
-  books            Book[]
-  sages            Sage[]
-  topics           Topic[]
-  knowledgeLinks   KnowledgeLink[]
-  aiSettings       AiSettings?
-  apiKeys          ApiKey[]
-  aiSkills         AiSkill[]
-  aiConversations  AiConversation[]
-  aiMessages       AiMessage[]
-  aiActions        AiAction[]
-  goals            Goal[]
-  loans            Loan[]
-  financialProfile FinancialProfile?
-  autopilots       AutopilotPolicy[]
-  agentDecisions   AgentDecision[]
-  tradeOrders      TradeOrder[]
-  strategies       Strategy[]
-  strategyRuns     StrategyRun[]
-  invitesMade      Invite[]           @relation("inviteCreator")
+  sessions          Session[]
+  brokers           BrokerConnection[]
+  watchlist         WatchItem[]
+  portfolios        Portfolio[]
+  assets            Asset[]
+  auditLogs         AuditLog[]
+  journals          JournalEntry[]
+  journalTemplates  JournalTemplate[]
+  journalImages     JournalImage[]
+  traitGroups       TraitGroup[]
+  priceAlerts       PriceAlert[]
+  realEstateAlerts  RealEstateAlert[]
+  favoriteComplexes FavoriteComplex[]
+  valuations        Valuation[]
+  virtualPortfolios VirtualPortfolio[]
+  notifications     Notification[]
+  pushSubs          PushSubscription[]
+  notes             Note[]
+  books             Book[]
+  sages             Sage[]
+  topics            Topic[]
+  knowledgeLinks    KnowledgeLink[]
+  aiSettings        AiSettings?
+  apiKeys           ApiKey[]
+  aiSkills          AiSkill[]
+  aiConversations   AiConversation[]
+  aiMessages        AiMessage[]
+  aiActions         AiAction[]
+  goals             Goal[]
+  loans             Loan[]
+  financialProfile  FinancialProfile?
+  autopilots        AutopilotPolicy[]
+  agentDecisions    AgentDecision[]
+  tradeOrders       TradeOrder[]
+  strategies        Strategy[]
+  strategyRuns      StrategyRun[]
+  invitesMade       Invite[]           @relation("inviteCreator")
 }
 
 model Session {
@@ -748,6 +751,112 @@ model Invite {
 model AppSetting {
   key   String @id
   value String
+}
+
+/// 국토부 실거래가 of one 시군구 and month, kept so 지역 분석's 단지 분석 reads years of deals
+/// without asking the API again. Refetched on the same schedule as the in-memory cache
+/// (recent months every few hours, older ones monthly).
+model RtmsMonth {
+  /// TradeKind: apartment, villa, ...
+  kind      String
+  /// 시군구 LAWD_CD (5 digits)
+  lawdCd    String
+  /// YYYYMM
+  ym        String
+  /// AptTrade[] as parsed (domain/real-estate.ts)
+  deals     Json
+  fetchedAt DateTime
+
+  @@id([kind, lawdCd, ym])
+}
+
+/// How many apartment sales of a 시군구's month had been reported by a day: the daily snapshot
+/// the 이달 거래량 예측 is built from (a month keeps filling for about 30 days after it ends).
+model DealSnapshot {
+  lawdCd String
+  /// YYYYMM
+  ym     String
+  /// KST day of the snapshot
+  day    DateTime @db.Date
+  count  Int
+
+  @@id([lawdCd, ym, day])
+}
+
+/// An apartment complex starred on 단지 분석 (관심 단지)
+model FavoriteComplex {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lawdCd     String
+  /// domain/real-estate complexKey: 단지 일련번호, or 법정동|지번|단지명
+  complexKey String
+  name       String
+  umdNm      String
+  /// 지역 분석 region key, to open the complex there again
+  region     String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, lawdCd, complexKey])
+}
+
+/// A what-if portfolio: things the user does not own, bought on past dates on paper. Kept apart from
+/// Portfolio/Holding/Lot/Transaction so it can never reach net worth, tax, dividends or performance.
+model VirtualPortfolio {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  note      String            @default("")
+  /// Yahoo symbol the same cash flows are compared with
+  benchmark String            @default("^KS11")
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  positions VirtualPosition[]
+
+  @@index([userId])
+}
+
+/// One paper purchase. STOCK/FUND/BOND/COMMODITY/CRYPTO follow a Yahoo symbol, REAL_ESTATE a
+/// 한국부동산원 apartment price index (symbol = 지역 분석 region key), FIXED grows at `rate`, CASH stays.
+model VirtualPosition {
+  id          String           @id @default(cuid())
+  portfolioId String
+  portfolio   VirtualPortfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  kind        String
+  symbol      String?
+  name        String
+  currency    String           @default("KRW")
+  buyDate     DateTime         @db.Date
+  sellDate    DateTime?        @db.Date
+  /// AMOUNT: `amount` won invested; QTY: `qty` units at the buy-date close
+  mode        String           @default("AMOUNT")
+  amount      Decimal?         @db.Decimal(20, 2)
+  qty         Decimal?         @db.Decimal(28, 10)
+  /// FIXED: annual rate, fraction
+  rate        Decimal?         @db.Decimal(12, 8)
+  note        String           @default("")
+  createdAt   DateTime         @default(now())
+
+  @@index([portfolioId])
+}
+
+/// A fair-value estimate saved on 종목 분석: the model, its inputs and the result at the time.
+model Valuation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol    String
+  /// DCF, REVERSE_DCF, DDM, RIM
+  method    String
+  inputs    Json
+  /// value per share (or implied growth for REVERSE_DCF)
+  value     Decimal  @db.Decimal(20, 6)
+  price     Decimal? @db.Decimal(20, 6)
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, symbol])
 }
 
 /// A quick note. `#키워드` in the body links the note to that topic.

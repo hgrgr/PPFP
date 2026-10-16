@@ -14,7 +14,7 @@
  * or DOCS_ONLY=market,login to retake only some shots.
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
@@ -24,9 +24,15 @@ const OUT = path.join(ROOT, 'docs/images');
 const PORT = Number(process.env.DOCS_PORT ?? 3100);
 const BASE = `http://localhost:${PORT}`;
 const ONLY = process.env.DOCS_ONLY?.split(',').filter(Boolean);
+/** Chromium that `npx playwright install chromium` puts in ~/.cache (Linux arm64 has no Google Chrome) */
+function playwrightChromium(): string[] {
+  const root = path.join(process.env.HOME ?? '', '.cache/ms-playwright');
+  if (!existsSync(root)) return [];
+  return readdirSync(root).filter((d) => d.startsWith('chromium-')).sort().reverse().map((d) => path.join(root, d, 'chrome-linux/chrome'));
+}
 const CHROME =
   process.env.CHROME_PATH ??
-  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => existsSync(p));
+  ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', ...playwrightChromium()].find((p) => existsSync(p));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,6 +83,8 @@ interface Ids {
   house: string;
   aapl: string;
   nvdaJournal: string;
+  /** The demo 가상 포트폴리오 with positions */
+  virtual: string;
   aaplJournal: string;
   template: string;
   allWeather: string;
@@ -163,6 +171,438 @@ const SHOTS: Shot[] = [
     height: 14000,
     steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('.indicator')].some((c) => c.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
     clip: [{ sel: 'h2', text: '주식 · 위험', closest: 'section' }],
+  },
+  {
+    file: 'regions',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: '.page-head' }, { sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="요약"]' }, { sel: 'section[aria-label="매매 · 전세 4분면"]' }],
+    marks: [{ sel: '[aria-label="화면"]' }, { sel: '[aria-label="기간"]' }, { sel: 'input[list]', closest: 'label' }, { sel: 'section[aria-label="요약"] .ind-latest' }, { sel: 'section[aria-label="요약"] .badge' }],
+  },
+  {
+    file: 'regions-charts',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="벌집순환모형"]' }, { sel: 'section[aria-label="기술적 분석: 보조지표"]' }, { sel: 'section[aria-label="거래 성수기"]' }],
+  },
+  {
+    file: 'regions-compare',
+    path: () => `/regions?tab=compare&c=${encodeURIComponent('서울>강남구')}&c=${encodeURIComponent('경기>성남시>분당구')}&c=${encodeURIComponent('대구>수성구')}&c=${encodeURIComponent('전국')}`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역 비교표"]' }, { sel: 'section[aria-label="상관계수 (월간 매매 변동률)"]' }],
+  },
+  {
+    file: 'regions-cycle',
+    path: () => '/regions?tab=cycle',
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1000 }, { click: { sel: 'th[scope="row"]', text: '서울', closest: 'tr' } }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역별 국면"]' }, { sel: 'section[aria-label="국면별 지역"]' }],
+  },
+  {
+    file: 'regions-corr',
+    path: () => `/regions?tab=corr&r=${encodeURIComponent('서울')}&m=mortgage&years=0`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 90_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="시차별 상관계수"]' }, { sel: 'section[aria-label="두 변화 겹쳐 보기"]' }],
+  },
+  {
+    file: 'regions-buyers',
+    path: () => `/regions?tab=buyers&r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 6000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="매수자 거주지 · 외지인 비율"]' }, { sel: 'section[aria-label="면적대별 매매거래"]' }, { sel: 'section[aria-label="토지거래허가 처리"]' }, { sel: 'section[aria-label="법인 매수 · 매도"]' }, { sel: 'section[aria-label="이웃 지역 외지인 매수"]' }],
+  },
+  {
+    file: 'regions-map',
+    path: () => '/regions?tab=map',
+    width: 1440,
+    height: 4000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))" + " && !!document.querySelector('svg[aria-label$=\"지도\"] path')", timeout: 120_000 }, { wait: 1000 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="지역 지도"]' }, { sel: 'section[aria-label="지도 순위"]' }],
+    marks: [{ sel: '[aria-label="지도 지표"]' }, { sel: 'select[aria-label="시도"]', closest: 'label' }],
+  },
+  {
+    file: 'regions-apply',
+    path: () => `/regions?tab=apply&r=${encodeURIComponent('서울>강남구')}&ay=3`,
+    width: 1440,
+    height: 5000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { click: { sel: 'th[scope="row"]', text: '개포 새솔마을', closest: 'tr' } }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="규제지역"]' }, { sel: 'section[aria-label="입주 예정"]' }, { sel: 'section[aria-label="분양가 흐름"]' }, { sel: 'section[aria-label="분양 공고"]' }],
+    marks: [{ sel: '[aria-label="공고 기간"]' }],
+  },
+  {
+    file: 'regions-location',
+    path: () => `/regions?tab=location&r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="입지 요약"]' }, { sel: 'section[aria-label="입지 순위"]' }],
+    marks: [{ sel: 'select[aria-label="입지 시도"]', closest: 'label' }, { sel: 'button', text: '종합' }],
+  },
+  {
+    file: 'regions-rtpi',
+    path: () => `/regions?r=${encodeURIComponent('서울')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="실거래가격지수 vs 매매가격지수"]' }],
+  },
+  {
+    file: 'markets-sectors',
+    path: () => '/markets?tab=sectors&p=3M',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="시장 개요 설정"]' }, { sel: 'section[aria-label="시점 재생"]' }, { sel: 'section[aria-label="섹터 히트맵"]' }, { sel: 'section[aria-label="섹터 순위"]' }, { sel: 'section[aria-label="스타일 박스"]' }],
+    marks: [{ sel: '[aria-label="기간"]' }, { sel: '.timeline-play' }, { sel: 'section[aria-label="스타일 박스"] .mo-style' }],
+  },
+  {
+    file: 'markets-map',
+    path: () => '/markets?tab=map&p=1M',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('.mo-map rect')", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="S&P 500 지도"]' }, { sel: 'section[aria-label="섹터별 수익률"]' }],
+    marks: [{ sel: '[aria-label="색 범례"]' }],
+  },
+  {
+    file: 'markets-yields',
+    path: () => '/markets?tab=yields',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('.timeline input[type=range]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="국채 금리 표"]' }, { sel: 'section[aria-label="금리 곡선"]' }, { sel: 'section[aria-label="10년물 추이"]' }, { sel: 'section[aria-label="장단기 금리차"]' }],
+    marks: [{ sel: 'section[aria-label="국채 금리 표"] [aria-label="보기"]' }, { sel: '.timeline-play' }],
+  },
+  {
+    file: 'markets-watch',
+    path: () => '/markets?tab=watch',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="기간 수익률"]' }],
+    marks: [],
+  },
+  {
+    file: 'gurus',
+    path: () => '/gurus?tab=list',
+    width: 1440,
+    height: 3600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !document.body.textContent.includes('SEC에서 13F 보고서를 받는 중') && !document.body.textContent.includes('티커로 바꾸는 중') && !document.body.textContent.includes('샤프·소르티노 등을 계산하는 중')", timeout: 400_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="거장 포트폴리오 설정"]' }, { sel: 'section[aria-label="거장 목록"]' }],
+    marks: [{ sel: '[aria-label="화면"]' }, { sel: '[aria-label="정렬"]' }],
+  },
+  {
+    file: 'gurus-trades',
+    path: () => '/gurus?tab=trades',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !document.body.textContent.includes('SEC에서 13F 보고서를 받는 중') && !document.body.textContent.includes('티커로 바꾸는 중')", timeout: 240_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="많이 산 종목"]' }, { sel: 'section[aria-label="많이 판 종목"]' }],
+    marks: [],
+  },
+  {
+    file: 'gurus-similar',
+    path: () => '/gurus?tab=similar',
+    width: 1440,
+    height: 1600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !document.body.textContent.includes('SEC에서 13F 보고서를 받는 중') && !document.body.textContent.includes('티커로 바꾸는 중')", timeout: 240_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="나와 비슷한 거장"]' }],
+    marks: [],
+  },
+  {
+    file: 'gurus-detail',
+    path: () => '/gurus?g=buffett',
+    width: 1440,
+    height: 3600,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"거장 요약\"]') && !!document.querySelector('.race-row')", timeout: 240_000 }, { set: { sel: '.timeline input[type=range]' }, value: '5' }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="거장 요약"]' }, { sel: 'section[aria-label="분기별 보유 변화"]' }, { sel: 'section[aria-label="따라 산 수익률"]' }, { sel: 'section[aria-label="섹터 비중"]' }, { sel: 'section[aria-label="보유 종목"]' }],
+    marks: [{ sel: '.timeline-play' }, { sel: 'section[aria-label="거장 요약"] .gu-kpis' }],
+  },
+  {
+    file: 'macro',
+    path: () => '/macro?tab=countries',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="글로벌 매크로 설정"]' }, { sel: 'section[aria-label="국가 비교 표"]' }, { sel: 'section[aria-label="경기 시계"]' }],
+    marks: [{ sel: '[aria-label="화면"]' }, { sel: '.timeline-play' }],
+  },
+  {
+    file: 'macro-cycle',
+    path: () => '/macro?tab=cycle',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="경기 국면 히트맵"]' }, { sel: 'section[aria-label="좋아지는 지표 비율"]' }],
+    marks: [{ sel: '.timeline-play' }],
+  },
+  {
+    file: 'macro-rotation',
+    path: () => '/macro?tab=rotation',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="섹터 순환 그래프"]' }, { sel: 'section[aria-label="섹터 순환 표"]' }],
+    marks: [{ sel: '[aria-label="꼬리 길이"]' }],
+  },
+  {
+    file: 'macro-cot',
+    path: () => '/macro?tab=cot',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="선물 포지션 표"]' }, { sel: 'section[aria-label="순포지션 추이"]' }],
+    marks: [],
+  },
+  {
+    file: 'macro-gdp',
+    path: () => '/macro?tab=gdp',
+    width: 1440,
+    height: 1600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="미국 GDP 성장 기여도"]' }, { sel: 'section[aria-label="한국 GDP 성장 기여도"]' }],
+    marks: [],
+  },
+  {
+    file: 'stocks',
+    path: () => '/stocks?t=NVDA&tab=fin',
+    width: 1440,
+    height: 3200,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"종목 요약\"]') && document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="종목 고르기"]' }, { sel: 'section[aria-label="종목 요약"]' }, { sel: 'section[aria-label="실적 추이"]' }, { sel: 'section[aria-label="재무제표"]' }],
+    marks: [{ sel: '[aria-label="티커"]' }, { sel: '[aria-label="기간 단위"]' }],
+  },
+  {
+    file: 'stocks-peers',
+    path: () => '/stocks?t=NVDA&tab=peers',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"종목 요약\"]') && document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="동종 비교 표"]' }, { sel: 'section[aria-label="동종 비교 그래프"]' }],
+    marks: [],
+  },
+  {
+    file: 'stocks-insider',
+    path: () => '/stocks?t=NVDA&tab=insider',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"종목 요약\"]') && document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="내부자 순매수"]' }, { sel: 'section[aria-label="내부자 거래"]' }],
+    marks: [{ sel: '[aria-label="거래 종류"]' }],
+  },
+  {
+    file: 'stocks-value',
+    path: () => '/stocks?t=NVDA&tab=value',
+    width: 1440,
+    height: 2800,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"종목 요약\"]') && document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="평가 입력"]' }, { sel: 'section[aria-label="평가 결과"]' }, { sel: 'section[aria-label="저장한 평가"]' }],
+    marks: [{ sel: '[aria-label="평가 방법"]' }],
+  },
+  {
+    file: 'markets-rank',
+    path: () => '/markets?tab=rank',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { click: { sel: 'button', text: '200일선 위' } }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="기술적 순위"]' }],
+    marks: [{ sel: '[aria-label="조건"]' }, { sel: 'select[aria-label="섹터"]', closest: 'label' }],
+  },
+  {
+    file: 'risk',
+    path: () => '/risk?y=3',
+    width: 1440,
+    height: 3600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 2000 }],
+    clip: [{ sel: 'section[aria-label="리스크 분석 설정"]' }, { sel: 'section[aria-label="리스크 요약"]' }, { sel: 'section[aria-label="가치 변화"]' }, { sel: 'section[aria-label="낙폭"]' }, { sel: 'section[aria-label="위험 기여"]' }, { sel: 'section[aria-label="요인 노출"]' }, { sel: 'section[aria-label="베타 변화"]' }, { sel: 'section[aria-label="상관관계"]' }],
+    marks: [{ sel: '[aria-label="기간"]' }],
+  },
+  {
+    file: 'stocks-kr',
+    path: () => '/stocks?t=999990&tab=fin',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('section[aria-label=\"종목 요약\"]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="종목 고르기"]' }, { sel: 'section[aria-label="종목 요약"]' }, { sel: 'section[aria-label="실적 추이"]' }],
+    marks: [{ sel: '[aria-label="티커"]' }],
+  },
+  {
+    file: 'stocks-kr-filings',
+    path: () => '/stocks?t=999990&tab=insider',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('section[aria-label=\"공시 목록\"]')", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="임원·주요주주 소유"]' }, { sel: 'section[aria-label="공시 목록"]' }],
+    marks: [{ sel: '[aria-label="공시 종류"]' }],
+  },
+  {
+    file: 'macro-calendar',
+    path: () => '/macro?tab=calendar',
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="경제 지표 일정"]' }],
+    marks: [],
+  },
+  {
+    file: 'macro-sheet',
+    path: () => '/macro?tab=sheet',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="지표 추가"]' }, { sel: 'section[aria-label="Consumer Price Index for All Urban Consumers"]' }, { sel: 'section[aria-label="Unemployment Rate"]' }, { sel: 'section[aria-label="10-Year Treasury Minus 2-Year Treasury"]' }, { sel: 'section[aria-label="M2"]' }],
+    marks: [{ sel: 'input[aria-label="FRED 검색어"]' }],
+  },
+  {
+    file: 'virtual',
+    path: () => '/portfolios/virtual',
+    width: 1440,
+    height: 1400,
+    steps: [{ until: "document.querySelectorAll('section').length > 1 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중')) && !!document.querySelector('section[aria-label=\"가상 포트폴리오 목록\"]')", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="가상 포트폴리오 만들기"]' }, { sel: 'section[aria-label="가상 포트폴리오 목록"]' }],
+    marks: [{ sel: 'input[aria-label="가상 포트폴리오 이름"]' }],
+  },
+  {
+    file: 'virtual-detail',
+    path: () => '/portfolios/virtual',
+    width: 1440,
+    height: 3200,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"가상 포트폴리오 목록\"] a')", timeout: 120_000 }, { click: { sel: 'section[aria-label="가상 포트폴리오 목록"] a', text: '코로나 저점에 샀다면' } }, { until: "!!document.querySelector('section[aria-label=\"가치 변화\"] .recharts-line')", timeout: 120_000 }, { wait: 1800 }],
+    clip: [{ sel: 'section[aria-label="가상 포트폴리오 요약"]' }, { sel: 'section[aria-label="가치 변화"]' }, { sel: 'section[aria-label="종목 담기"]' }, { sel: 'section[aria-label="담은 종목"]' }],
+    marks: [{ sel: '[aria-label="자산 종류"]' }, { sel: 'select[aria-label="비교 지수"]', closest: 'label' }],
+  },
+  {
+    file: 'portfolios-virtual',
+    path: () => '/portfolios',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"가상 포트폴리오\"] table')", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="가상 포트폴리오"]' }],
+    marks: [{ sel: 'section[aria-label="가상 포트폴리오"] a.btn', text: '분석' }],
+  },
+  {
+    file: 'dashboard-virtual',
+    path: (ids) => `/dashboard?p=v:${ids.virtual}&period=ALL`,
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "!!document.querySelector('.recharts-line, .recharts-area')", timeout: 120_000 }, { wait: 1800 }],
+    marks: [{ sel: 'select', closest: 'label' }],
+  },
+  {
+    file: 'compare',
+    path: () => '/performance/compare?period=3Y',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"누적 수익률\"] .recharts-line')", timeout: 180_000 }, { wait: 1800 }],
+    clip: [{ sel: 'section[aria-label="비교할 포트폴리오"]' }, { sel: 'section[aria-label="누적 수익률"]' }, { sel: 'section[aria-label="성과 지표"]' }, { sel: 'section[aria-label="연도별 수익률"]' }, { sel: 'section[aria-label="상관관계"]' }],
+    marks: [{ sel: 'section[aria-label="비교할 포트폴리오"]' }],
+  },
+  {
+    file: 'basket',
+    path: () => '/portfolios/basket',
+    width: 1440,
+    height: 1800,
+    steps: [
+      { until: "(localStorage.setItem('ppfp:fun','1'), window.dispatchEvent(new CustomEvent('ppfp:fun', { detail: true })), true)", timeout: 20_000 },
+      { until: "!!document.querySelector('.basket .thing')", timeout: 60_000 },
+      { wait: 600 },
+      { until: "(() => { const t = document.querySelector('.basket:not(.virtual) .thing'); const b = document.querySelector('.basket.virtual'); if (!t || !b) return false; b.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(), q = b.getBoundingClientRect(); const o = { bubbles: true, pointerId: 7, pointerType: 'mouse', isPrimary: true }; t.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); t.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: q.left + q.width / 2, clientY: q.top + q.height / 2 })); return true; })()", timeout: 20_000 },
+      { until: "!!document.querySelector('.thing-ghost') && !!document.querySelector('.basket.virtual.over')", timeout: 20_000 },
+      { wait: 500 },
+    ],
+    marks: [{ sel: '.thing-ghost' }, { sel: '.basket.virtual.over' }],
+  },
+  {
+    file: 'basket-drop',
+    path: () => '/portfolios/basket',
+    width: 1440,
+    height: 1800,
+    steps: [
+      { until: "(localStorage.setItem('ppfp:fun','1'), window.dispatchEvent(new CustomEvent('ppfp:fun', { detail: true })), true)", timeout: 20_000 },
+      { until: "!!document.querySelector('.basket .thing')", timeout: 60_000 },
+      { wait: 600 },
+      { until: "(() => { const t = document.querySelector('.basket:not(.virtual) .thing'); const b = document.querySelector('.basket.virtual'); if (!t || !b) return false; b.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(), q = b.getBoundingClientRect(); const o = { bubbles: true, pointerId: 7, pointerType: 'mouse', isPrimary: true }; t.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); t.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: q.left + q.width / 2, clientY: q.top + q.height / 2 })); return true; })()", timeout: 20_000 },
+      { wait: 300 },
+      { until: "(() => { const b = document.querySelector('.basket.virtual'); const t = document.querySelector('.thing.lifted'); if (!b || !t) return false; window.confirm = () => true; const q = b.getBoundingClientRect(); t.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, pointerType: 'mouse', isPrimary: true, clientX: q.left + q.width / 2, clientY: q.top + q.height / 2 })); return true; })()", timeout: 20_000 },
+      { until: "!!document.querySelector('.fun-toast') && /가상 포트폴리오|담았습니다/.test(document.querySelector('.fun-toast').textContent)", timeout: 60_000 },
+      { wait: 400 },
+    ],
+    marks: [{ sel: '.fun-toast' }],
+  },
+  {
+    file: 'fun-dashboard',
+    path: () => '/dashboard',
+    width: 1440,
+    height: 900,
+    steps: [{ until: "(localStorage.setItem('ppfp:fun','1'), window.dispatchEvent(new CustomEvent('ppfp:fun', { detail: true })), true)", timeout: 20_000 }, { until: "!!document.querySelector('.fun-weather')", timeout: 30_000 }, { wait: 800 }],
+    clip: [{ sel: 'header.page-head' }],
+    marks: [{ sel: '.fun-weather' }],
+  },
+  {
+    file: 'regions-map-time',
+    path: () => '/regions?tab=map',
+    width: 1440,
+    height: 4000,
+    steps: [
+      { until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))" + " && !!document.querySelector('svg[aria-label$=\"지도\"] path')", timeout: 120_000 },
+      { click: { sel: 'button', text: '시간 흐름' } },
+      { until: "!!document.querySelector('.timeline input[type=range]') && !!document.querySelector('.race-row')", timeout: 120_000 },
+      { set: { sel: '.timeline input[type=range]' }, value: '30' },
+      { wait: 1500 },
+    ],
+    clip: [{ sel: 'section[aria-label="지역 지도"]' }, { sel: 'section[aria-label="지도 순위"]' }, { sel: 'section[aria-label="증감 히트맵"]' }],
+    marks: [{ sel: '[aria-label="지도 시점"]' }, { sel: '.timeline-play' }, { sel: '.timeline input[type=range]' }, { sel: '[aria-label="재생 속도"]' }, { sel: '.race' }],
+  },
+  {
+    file: 'regions-supply',
+    path: () => `/regions?r=${encodeURIComponent('경기>성남시>분당구')}`,
+    width: 1440,
+    height: 9000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1500 }],
+    clip: [{ sel: 'section[aria-label="인구 · 연령대 · 세대수"]' }, { sel: 'section[aria-label="공급: 인허가 · 미분양"]' }, { sel: 'section[aria-label="주택구입부담"]' }],
+  },
+  {
+    file: 'regions-complex',
+    path: () => `/regions?tab=complex&r=${encodeURIComponent('서울>강남구')}&cy=10`,
+    width: 1440,
+    height: 7000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="단지 · 평형별 시세"]' }],
+    marks: [{ sel: '[aria-label="거래 기간"]' }, { sel: '[aria-label="면적"]' }, { sel: 'span', text: '준공', closest: 'label' }, { sel: 'button[aria-pressed]', text: '★' }, { sel: 'button', text: '최고가 대비' }],
+  },
+  {
+    file: 'regions-complex-cards',
+    path: () => `/regions?tab=complex&r=${encodeURIComponent('서울>강남구')}&cy=10`,
+    width: 1440,
+    height: 7000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 1200 }],
+    clip: [{ sel: 'section[aria-label="최고가 대비 분포"]' }, { sel: 'section[aria-label="이달 거래량 예측"]' }, { sel: 'section[aria-label="급지: 동별 평당가"]' }, { sel: 'section[aria-label="급지: 단지 평당가 순위"]' }],
+  },
+  {
+    file: 'regions-complex-detail',
+    path: () => `/regions?tab=complex&r=${encodeURIComponent('서울>강남구')}&cy=10`,
+    width: 1440,
+    height: 7000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { click: { sel: 'th[scope="row"]', text: '개포숲마을' } }, { until: "!!document.querySelector('#complex-detail')", timeout: 60_000 }, { wait: 1200 }],
+    clip: [{ sel: '#complex-detail' }],
+  },
+  {
+    file: 'regions-fav',
+    path: () => '/regions?tab=fav',
+    width: 1440,
+    height: 4000,
+    steps: [{ until: "document.querySelectorAll('.indicator').length > 0 && ![...document.querySelectorAll('p.empty')].some((p) => p.textContent.includes('불러오는 중'))", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="지역 분석 설정"]' }, { sel: 'section[aria-label="한빛마을래미안"]' }, { sel: 'section[aria-label="개포숲마을"]' }],
   },
   {
     file: 'portfolios',
@@ -1092,10 +1532,14 @@ class Cdp {
   }
 }
 
+// Ubuntu blocks Chrome's user-namespace sandbox for binaries outside /opt (Playwright's Chromium on the VM);
+// the page is our own demo server, so run it unsandboxed there
+const LINUX_FLAGS = process.platform === 'linux' ? ['--no-sandbox'] : [];
+
 async function launchChrome(): Promise<{ proc: ChildProcess; cdp: Cdp; dir: string }> {
   if (!CHROME) throw new Error('Chrome not found: set CHROME_PATH.');
   const dir = mkdtempSync(path.join(tmpdir(), 'ppfp-docs-chrome-'));
-  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--force-color-profile=srgb', '--lang=ko-KR', 'about:blank'], { stdio: 'ignore' });
+  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars', '--force-color-profile=srgb', '--lang=ko-KR', ...LINUX_FLAGS, 'about:blank'], { stdio: 'ignore' });
   const portFile = path.join(dir, 'DevToolsActivePort');
   for (let i = 0; i < 100 && !existsSync(portFile); i++) await sleep(100);
   const [port, wsPath] = readFileSync(portFile, 'utf8').trim().split('\n');
@@ -1125,7 +1569,7 @@ async function capture(cdp: Cdp, shot: Shot, ids: Ids, token: string) {
     await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: shot.dark ? 'dark' : 'light' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     await s('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Seoul' });
     await s('Emulation.setLocaleOverride', { locale: 'ko-KR' });
-    const loaded = cdp.once('Page.loadEventFired', sessionId);
+    const loaded = cdp.once('Page.loadEventFired', sessionId, 90_000);
     await s('Page.navigate', { url: BASE + shot.path(ids) });
     await loaded;
     await sleep(shot.wait ?? 1200);
@@ -1233,6 +1677,9 @@ async function main() {
     ECOS_API_KEY: 'DOCSDEMOECOSKEY0000',
     KOSIS_API_KEY: 'docsDemoKosisKeyNotReal0000',
     RONE_API_KEY: 'docsDemoRoneKeyNotReal0000',
+    // OpenDART and FRED answer from fake-dart-fred.cjs
+    DART_API_KEY: '0000000000000000000000000000000000000000',
+    FRED_API_KEY: '00000000000000000000000000000000',
     // Two-step sign-in, devices and a backup record for the security screens (seed-demo.ts)
     DOCS_CAPTURE: '1',
   };
@@ -1261,6 +1708,7 @@ async function main() {
       us: pid('미국 주식'),
       aapl: aapl.id,
       nvdaJournal: await journal('NVDA'),
+      virtual: (await db.virtualPortfolio.findFirstOrThrow({ where: { positions: { some: {} } } })).id,
       aaplJournal: await journal('AAPL'),
       template: (await db.journalTemplate.findFirstOrThrow()).id,
       allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,

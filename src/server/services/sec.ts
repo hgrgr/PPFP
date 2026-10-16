@@ -147,12 +147,28 @@ export async function readFiling(userId: string, input: { ticker: string; access
   };
 }
 
+/** A company's XBRL facts, six hours in memory */
+export async function companyFacts(userId: string, cik: number): Promise<Parameters<typeof financialTable>[0]> {
+  return getCached(`facts:${cik}`, 6 * HOUR, async () => {
+    const j = (await (await get(`https://data.sec.gov/api/xbrl/companyfacts/CIK${pad(cik)}.json`, userId)).json()) as { facts: Parameters<typeof financialTable>[0] };
+    return j.facts;
+  });
+}
+
 /** Reported numbers by quarter or year from XBRL company facts */
 export async function companyFinancials(userId: string, ticker: string, period: 'quarterly' | 'annual'): Promise<FinancialTable & { company: string; ticker: string }> {
   const c = await lookupCompany(userId, ticker);
-  const facts = await getCached(`facts:${c.cik}`, 6 * HOUR, async () => {
-    const j = (await (await get(`https://data.sec.gov/api/xbrl/companyfacts/CIK${pad(c.cik)}.json`, userId)).json()) as { facts: Parameters<typeof financialTable>[0] };
-    return j.facts;
-  });
+  const facts = await companyFacts(userId, c.cik);
   return { company: c.name, ticker: c.ticker, ...financialTable(facts, period) };
+}
+
+/** A company's filings of the given forms, newest first (for Form 4 insider reports) */
+export async function filingsByForm(userId: string, cik: number, forms: string[], limit: number): Promise<Filing[]> {
+  const { filings } = await filingsOf(userId, cik);
+  return filings.filter((f) => forms.includes(f.form)).slice(0, limit);
+}
+
+/** Any EDGAR file as text, with the SEC's User-Agent */
+export async function secText(userId: string, url: string): Promise<string> {
+  return (await get(url, userId)).text();
 }

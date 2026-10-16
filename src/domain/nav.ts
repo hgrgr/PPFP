@@ -12,7 +12,13 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: '대시보드', locked: true },
   { href: '/performance', label: '성과 분석' },
+  { href: '/risk', label: '리스크 분석' },
   { href: '/analysis', label: '분석 지표' },
+  { href: '/regions', label: '지역 분석' },
+  { href: '/markets', label: '시장 개요' },
+  { href: '/macro', label: '글로벌 매크로' },
+  { href: '/gurus', label: '거장 포트폴리오' },
+  { href: '/stocks', label: '종목 분석' },
   { href: '/market', label: '실시간 시세' },
   { href: '/portfolios', label: '포트폴리오' },
   { href: '/assets', label: '보유 자산' },

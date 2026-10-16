@@ -27,7 +27,7 @@ export interface Point {
 export interface SeriesReq {
   id: string;
   source: IndicatorSource;
-  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID" · LW: column (rstar, gap) */
+  /** FRED: series id · ECOS: "STAT/CYCLE/ITEM1[/ITEM2...]" · KOSIS: "orgId/tblId/itmId/objL1/objL2" · ACM: column (ACMY10, ACMTP10, ACMRNY10) · RONE: "STATBL_ID/CLS_ID/ITM_ID[/GRP_ID]", CLS_ID * for every class at once (stored as one series per class) · LW: column (rstar, gap) */
   code: string;
   freq: Freq;
 }
@@ -245,6 +245,19 @@ export function addMonths(date: string, months: number): string {
 
 /** Every point moved `months` later (a pipeline drawn where it lands) */
 export const shiftMonths = (pts: Point[], months: number): Point[] => pts.map((p) => ({ date: addMonths(p.date, months), value: p.value }));
+
+/**
+ * A year-to-date running total as each month's own amount: January as published, later months
+ * minus the month before (ECOS 901Y105 인허가 and 901Y103 착공 are published as 1월부터 누계).
+ */
+export function fromYearToDate(pts: Point[]): Point[] {
+  const m = new Map(pts.map((p) => [p.date, p.value]));
+  return pts.flatMap((p) => {
+    if (p.date.slice(5, 7) === '01') return [p];
+    const prev = m.get(addMonths(p.date, -1));
+    return prev === undefined ? [] : [{ date: p.date, value: p.value - prev }];
+  });
+}
 
 /** Sum of each month and the `n` − 1 before it; months with a gap in that window are left out */
 export function rollingSum(pts: Point[], n: number): Point[] {
@@ -705,8 +718,8 @@ export const INDICATORS: Indicator[] = [
     },
     build: (get, p) => {
       const r = regionOf(p.region);
-      const permits = get(`IND:ECOS:901Y105/M/${r.permit}`);
-      const sum12 = permits.flatMap((x, i) => (i >= 11 ? [{ date: x.date, value: permits.slice(i - 11, i + 1).reduce((a, b) => a + b.value, 0) / 1000 }] : []));
+      // Published as a running total from January: back to each month's own permits first
+      const sum12 = rollingSum(fromYearToDate(get(`IND:ECOS:901Y105/M/${r.permit}`)), 12).map((x) => ({ ...x, value: x.value / 1000 }));
       const unsold = get(`IND:ECOS:901Y074/M/${r.unsold}`).map((x) => ({ ...x, value: x.value / 1000 }));
       return {
         lines: [
@@ -1249,7 +1262,7 @@ export const INDICATORS: Indicator[] = [
     defaultOn: true,
     needs: () => [ecos('901Y103/M/1/I47ABA'), ecos('901Y074/M/I410A')],
     build: (get) => {
-      const starts = rollingSum(get('IND:ECOS:901Y103/M/1/I47ABA'), 12).map((p) => ({ ...p, value: p.value / 10_000 }));
+      const starts = rollingSum(fromYearToDate(get('IND:ECOS:901Y103/M/1/I47ABA')), 12).map((p) => ({ ...p, value: p.value / 10_000 }));
       const landing = shiftMonths(starts, 30);
       const unsold = get('IND:ECOS:901Y074/M/I410A').map((p) => ({ ...p, value: p.value / 1000 }));
       return {
@@ -2041,7 +2054,10 @@ export function parseYahooMonthly(body: unknown): Point[] {
 }
 
 /** 한국부동산원 R-ONE SttsApiTblData (json): rows with WRTTIME_IDTFR_ID "202607" and DTA_VAL. */
-export function parseRone(body: unknown): { points: Point[]; total: number; error: string | null; code: string | null } {
+/** R-ONE period id to the period's first day: monthly "202608" → 2026-08-01, quarterly "202603" (3rd quarter) → 2026-07-01 */
+export const roneDate = (t: string, quarterly = false) => (quarterly ? `${t.slice(0, 4)}-${String((Number(t.slice(4)) - 1) * 3 + 1).padStart(2, '0')}-01` : `${t.slice(0, 4)}-${t.slice(4)}-01`);
+
+export function parseRone(body: unknown, quarterly = false): { points: Point[]; total: number; error: string | null; code: string | null } {
   const b = body as { SttsApiTblData?: [{ head?: [{ list_total_count?: number }, { RESULT?: { CODE?: string; MESSAGE?: string } }] }, { row?: Record<string, unknown>[] }?]; RESULT?: { CODE?: string; MESSAGE?: string } } | null;
   const result = b?.SttsApiTblData?.[0]?.head?.[1]?.RESULT ?? b?.RESULT;
   const code = result?.CODE ?? null;
@@ -2051,9 +2067,28 @@ export function parseRone(body: unknown): { points: Point[]; total: number; erro
     const t = String(r.WRTTIME_IDTFR_ID ?? '');
     const v = r.DTA_VAL;
     if (!/^\d{6}$/.test(t) || v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) return [];
-    return [{ date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }];
+    // A quarter is "YYYY0Q"
+    if (quarterly && !/^\d{4}0[1-4]$/.test(t)) return [];
+    return [{ date: roneDate(t, quarterly), value: Number(v) }];
   });
   return { points: points.sort((a, b2) => a.date.localeCompare(b2.date)), total, error: null, code };
+}
+
+/** An R-ONE answer asked for every class of a table at once (no CLS_ID): the points of each class (keyed "GRP/CLS" with `byGroup`) */
+export function parseRoneByClass(body: unknown, byGroup = false): { byClass: Map<string, Point[]>; total: number; error: string | null } {
+  const b = body as { SttsApiTblData?: [{ head?: [{ list_total_count?: number }, { RESULT?: { CODE?: string; MESSAGE?: string } }] }, { row?: Record<string, unknown>[] }?]; RESULT?: { CODE?: string; MESSAGE?: string } } | null;
+  const result = b?.SttsApiTblData?.[0]?.head?.[1]?.RESULT ?? b?.RESULT;
+  if (!b?.SttsApiTblData) return { byClass: new Map(), total: 0, error: result?.CODE === 'INFO-200' ? null : (result?.MESSAGE ?? 'R-ONE 응답을 읽지 못했습니다') };
+  const byClass = new Map<string, Point[]>();
+  for (const r of b.SttsApiTblData[1]?.row ?? []) {
+    const t = String(r.WRTTIME_IDTFR_ID ?? '');
+    const v = r.DTA_VAL;
+    if (!/^\d{6}$/.test(t) || v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) continue;
+    const cls = byGroup ? `${r.GRP_ID ?? ''}/${r.CLS_ID ?? ''}` : String(r.CLS_ID ?? '');
+    byClass.set(cls, [...(byClass.get(cls) ?? []), { date: `${t.slice(0, 4)}-${t.slice(4)}-01`, value: Number(v) }]);
+  }
+  for (const pts of byClass.values()) pts.sort((a, b2) => a.date.localeCompare(b2.date));
+  return { byClass, total: Number(b.SttsApiTblData[0]?.head?.[0]?.list_total_count ?? 0), error: null };
 }
 
 /**

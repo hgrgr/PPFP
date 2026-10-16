@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addMonths, affordability, changeOver, clip, combine, cyclePhase, honeycombPhase, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, readPrefs, regionOf, rollingSum, shiftMonths, shiftYears, splice, toggled, watchFor, WATCH, parseYahooMonthly, yearlyMean, yoy, type Point } from '../indicators';
+import { addMonths, affordability, fromYearToDate, changeOver, clip, combine, cyclePhase, honeycombPhase, indicatorById, INDICATORS, isOn, joinSeries, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, popCodes, readPrefs, regionOf, rollingSum, shiftMonths, shiftYears, splice, toggled, watchFor, WATCH, parseYahooMonthly, yearlyMean, yoy, type Point } from '../indicators';
 import { excelDate } from '../xls';
 
 const pts = (...v: [string, number][]): Point[] => v.map(([date, value]) => ({ date, value }));
@@ -318,5 +318,12 @@ describe('watch points', () => {
     const t = (iso: string) => Date.parse(iso) / 1000;
     const body = { chart: { result: [{ meta: { gmtoffset: -14400 }, timestamp: [t('2026-09-01T04:00:00Z'), t('2026-10-01T04:00:00Z'), t('2026-10-13T20:00:00Z')], indicators: { quote: [{ close: [101.45, 102.21, 102.26] }] } }] } };
     assert.deepEqual(parseYahooMonthly(body), pts(['2026-09-01', 101.45], ['2026-10-01', 102.26]));
+  });
+});
+
+describe('year-to-date totals', () => {
+  it('turns a running total from January into each month’s amount', () => {
+    const ytd = pts(['2025-11-01', 279884], ['2025-12-01', 388362], ['2026-01-01', 16531], ['2026-02-01', 30799], ['2026-04-01', 70000]);
+    assert.deepEqual(fromYearToDate(ytd), pts(['2025-12-01', 108478], ['2026-01-01', 16531], ['2026-02-01', 14268]));
   });
 });

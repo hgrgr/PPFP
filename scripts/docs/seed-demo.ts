@@ -173,12 +173,46 @@ async function main() {
     ],
   });
 
+  // A fair value saved on 종목 분석 a month ago
+  await prisma.valuation.create({
+    data: { userId: uid, symbol: 'NVDA', method: 'DCF', inputs: { fcf: 150e9, growth: 0.2, years: 10, terminal: 0.025, discount: 0.1, netCash: 40e9, shares: 24.4e9 }, value: 182.5, price: 168.2, note: '데이터센터 성장 20% 가정', createdAt: new Date(Date.now() - 30 * D) },
+  });
+
+  // 가상 포트폴리오: paper purchases on past dates, apart from the real book
+  const vp = await prisma.virtualPortfolio.create({ data: { userId: uid, name: '코로나 저점에 샀다면', note: '2020년 3월 전후로 나눠 담은 연습용', benchmark: '^KS11' } });
+  const vd = (d: string) => new Date(`${d}T00:00:00Z`);
+  await prisma.virtualPosition.createMany({
+    data: [
+      { portfolioId: vp.id, kind: 'STOCK', symbol: '005930.KS', name: '삼성전자', currency: 'KRW', buyDate: vd('2020-03-19'), mode: 'AMOUNT', amount: 10_000_000 },
+      { portfolioId: vp.id, kind: 'FUND', symbol: 'SPY', name: 'SPDR S&P 500 ETF', currency: 'USD', buyDate: vd('2020-03-23'), mode: 'QTY', qty: 30 },
+      { portfolioId: vp.id, kind: 'COMMODITY', symbol: 'GC=F', name: '금 선물', currency: 'USD', buyDate: vd('2019-06-03'), mode: 'AMOUNT', amount: 5_000_000 },
+      { portfolioId: vp.id, kind: 'CRYPTO', symbol: 'BTC-KRW', name: '비트코인 (원화)', currency: 'KRW', buyDate: vd('2021-11-10'), sellDate: vd('2022-06-15'), mode: 'AMOUNT', amount: 3_000_000 },
+      { portfolioId: vp.id, kind: 'REAL_ESTATE', symbol: '서울>강남구', name: '서울 강남구 아파트', currency: 'KRW', buyDate: vd('2018-01-02'), mode: 'AMOUNT', amount: 300_000_000 },
+      { portfolioId: vp.id, kind: 'FIXED', symbol: null, name: '예금 연 3.50%', currency: 'KRW', buyDate: vd('2022-01-03'), mode: 'AMOUNT', amount: 20_000_000, rate: 0.035 },
+    ],
+  });
+  await prisma.virtualPortfolio.create({ data: { userId: uid, name: '배당주 모음 (검토 중)', benchmark: '^GSPC' } });
+
+  // 내 지표 시트 on 글로벌 매크로
+  await prisma.appSetting.create({
+    data: {
+      key: `sheet:${uid}`,
+      value: JSON.stringify([
+        { id: 'CPIAUCSL', title: 'Consumer Price Index for All Urban Consumers', units: 'Index', frequency: 'M', transform: 'yoy' },
+        { id: 'UNRATE', title: 'Unemployment Rate', units: '%', frequency: 'M', transform: 'level' },
+        { id: 'T10Y2Y', title: '10-Year Treasury Minus 2-Year Treasury', units: '%', frequency: 'D', transform: 'level' },
+        { id: 'M2SL', title: 'M2', units: 'Bil. of $', frequency: 'M', transform: 'yoy' },
+      ]),
+    },
+  });
+
   await runDailyForUser(uid, { fullRebuild: true });
   await seedStrategies(uid);
   await seedJournals(uid);
   await seedTraits(uid);
   await seedAlerts(uid, { root: root.id, us: us.id });
   await seedKnowledge(uid);
+  await seedComplexes(uid);
 
   const token = newToken();
   await prisma.session.create({ data: { id: sha256(token), userId: uid, expiresAt: new Date(Date.now() + D), userAgent: MAC_CHROME, ip: '192.168.0.12', lastSeenAt: new Date() } });
@@ -187,6 +221,34 @@ async function main() {
   const cashLeft = await prisma.cashBalance.findMany({ where: { portfolio: { userId: uid } }, include: { portfolio: { select: { name: true } } } });
   console.error('[seed] cash', cashLeft.map((c) => `${c.portfolio.name} ${c.currency} ${c.amount}`).join(' | '));
   console.log(token);
+}
+
+// ---------------------------------------------------------------- 지역 분석: 단지
+
+/**
+ * Two starred complexes and two months of daily 신고 snapshots for 강남구, so 관심 단지 and the
+ * 이달 거래량 예측 have something to show. A month's deals are reported over about 45 days.
+ */
+async function seedComplexes(uid: string) {
+  const re = require('./fake-realestate.cjs') as { LAWD: string; monthDeals: (ym: string) => { cancelled: boolean; day: number }[] };
+  for (const [complexKey, name, umdNm] of [['11680-9001', '한빛마을래미안', '대치동'], ['11680-9102', '개포숲마을', '개포동']]) {
+    await prisma.favoriteComplex.create({ data: { userId: uid, lawdCd: re.LAWD, complexKey, name, umdNm, region: '서울>강남구' } });
+  }
+  const kst = new Date(Date.now() + 9 * 3_600_000);
+  const today = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
+  const share = (run: number) => Math.min(1, Math.pow(Math.max(0, run) / 45, 0.75));
+  for (let back = 3; back >= 0; back--) {
+    const first = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth() - back, 1);
+    const ym = new Date(first).toISOString().slice(0, 7).replace('-', '');
+    const deals = re.monthDeals(ym).filter((d) => !d.cancelled);
+    for (let t = first; t <= today && t < first + 62 * D; t += D) {
+      const run = Math.round((t - first) / D) + 1;
+      // Only from about eleven weeks ago, as if the daily snapshot started then
+      if (today - t > 80 * D) continue;
+      const known = deals.filter((d) => d.day <= run).length;
+      await prisma.dealSnapshot.create({ data: { lawdCd: re.LAWD, ym, day: new Date(t), count: Math.round(known * share(run)) } });
+    }
+  }
 }
 
 // ---------------------------------------------------------------- strategies

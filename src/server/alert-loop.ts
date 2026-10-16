@@ -2,7 +2,8 @@
  * Background checks, started once per server process from instrumentation.ts:
  * price alerts every ALERT_POLL_SECONDS (default 60), target-weight drift every
  * DRIFT_POLL_SECONDS (default 600), 부동산 알림 every REALESTATE_POLL_MINUTES (default 180),
- * AI morning briefings every 5 minutes. Set ALERTS=off to disable and use
+ * AI morning briefings every 5 minutes, the 단지 분석 deal-count snapshot and a day's share of the
+ * nationwide 실거래 crawl (지도 신고가 비율) once a day after 06:00 KST. Set ALERTS=off to disable and use
  * POST /api/cron/alerts from a scheduler instead.
  */
 import { checkDrift, checkPriceAlerts } from './services/alerts';
@@ -13,6 +14,26 @@ let lastBriefing = 0;
 let lastRealEstate = 0;
 let realEstateRunning = false;
 const BRIEFING_EVERY = 5 * 60_000;
+let snapshotDay = '';
+let snapshotRunning = false;
+
+/** The daily 실거래 신고 건수 snapshot (domain/complex-analysis forecast), once per KST day after 06:00 */
+export async function runDealSnapshotsIfDue(): Promise<number | null> {
+  const now = new Date(Date.now() + 9 * 3_600_000);
+  const day = now.toISOString().slice(0, 10);
+  if (snapshotRunning || snapshotDay === day || now.getUTCHours() < 6) return null;
+  snapshotRunning = true;
+  try {
+    const { crawlDrawdowns, runDealSnapshots } = await import('./services/complex-analysis');
+    const n = await runDealSnapshots();
+    snapshotDay = day;
+    // Then a day's share of the nationwide sales behind the map's 신고가 비율
+    await crawlDrawdowns().catch((e) => console.error('[drawdown] failed', e));
+    return n;
+  } finally {
+    snapshotRunning = false;
+  }
+}
 
 /** 부동산 알림, at most one run at a time (a run reads 실거래가 for every watched district). */
 export async function runRealEstateChecks(): Promise<number | null> {
@@ -58,6 +79,7 @@ export function startAlertLoop() {
     void runAlertChecks({ drift: Date.now() - lastDrift >= driftEvery });
     if (Date.now() - lastBriefing >= BRIEFING_EVERY) void runBriefings().catch((e) => console.error('[ai] briefing check failed', e));
     if (Date.now() - lastRealEstate >= realEstateEvery) void runRealEstateChecks().catch((e) => console.error('[alerts] real estate check failed', e));
+    void runDealSnapshotsIfDue().catch((e) => console.error('[complexes] snapshot failed', e));
   };
   g.ppfpAlertTimer = setInterval(tick, every);
   g.ppfpAlertTimer.unref?.();

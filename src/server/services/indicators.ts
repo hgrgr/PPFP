@@ -4,7 +4,7 @@
  * PriceDaily under their series id. A series is fetched again after FRESH_MS; when a source
  * fails, the stored copy is used.
  */
-import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, parseYahooMonthly, popCodes, watchFor, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
+import { clip, indicatorById, parseAcm, parseEcosAny, parseKosis, parseLw, parseRone, parseRoneByClass, parseYahooMonthly, popCodes, watchFor, type AnalysisParams, type ChartData, type Point, type SeriesReq } from '@/domain/indicators';
 import { parseFredCsv } from '@/domain/benchmark';
 import ExcelJS from 'exceljs';
 import { excelDate, readXls } from '@/domain/xls';
@@ -157,18 +157,88 @@ async function loadYahoo(userId: string, r: SeriesReq) {
   await store(r.id, 'YAHOO', pts);
 }
 
-/** One R-ONE table, region and item, every month since 2003, a thousand rows a page. */
+/** R-ONE calls in flight at once (the 지역 분석 board asks for dozens of series together) */
+const RONE_PARALLEL = 4;
+let roneRunning = 0;
+const roneQueue: (() => void)[] = [];
+async function roneSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (roneRunning >= RONE_PARALLEL) await new Promise<void>((go) => roneQueue.push(go));
+  roneRunning++;
+  try {
+    return await job();
+  } finally {
+    roneRunning--;
+    roneQueue.shift()?.();
+  }
+}
+
+/** One R-ONE table, region (and group, for tables split by one) and item, every month since 2003, a thousand rows a page. */
 async function loadRone(userId: string, r: SeriesReq, key: string) {
-  const [table, cls, item] = r.code.split('/');
+  await roneSlot(() => loadRoneNow(userId, r, key));
+}
+async function loadRoneNow(userId: string, r: SeriesReq, key: string) {
+  const [table, cls, item, grp] = r.code.split('/');
+  if (cls === '*') return loadRoneClasses(userId, table, item, grp, key);
   const points: Point[] = [];
   for (let page = 1; page <= 20; page++) {
-    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301' });
-    const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
+    const quarterly = r.freq === 'Q';
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: quarterly ? 'QY' : 'MM', CLS_ID: cls, ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
+    const res = parseRone(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')), quarterly);
     if (res.error) throw new Error(`R-ONE: ${res.error}`);
     points.push(...res.points);
     if (page * 1000 >= res.total) break;
   }
   await store(r.id, 'RONE', points.sort((a, b) => a.date.localeCompare(b.date)));
+}
+
+/**
+ * Every class of an R-ONE table for one group (e.g. each buyer's residence of one region's
+ * apartment sales), in one run of pages; each class is stored as `table/cls/item/grp`.
+ */
+async function loadRoneClasses(userId: string, table: string, item: string, grp: string, key: string) {
+  const byClass = new Map<string, Point[]>();
+  for (let page = 1; page <= 20; page++) {
+    const q = new URLSearchParams({ KEY: key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', ITM_ID: item, START_WRTTIME: '200301', ...(grp ? { GRP_ID: grp } : {}) });
+    const res = parseRoneByClass(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')));
+    if (res.error) throw new Error(`R-ONE: ${res.error}`);
+    for (const [cls, pts] of res.byClass) byClass.set(cls, [...(byClass.get(cls) ?? []), ...pts]);
+    if (page * 1000 >= res.total) break;
+  }
+  for (const [cls, pts] of byClass) await store(`IND:RONE:${table}/${cls}/${item}${grp ? `/${grp}` : ''}`, 'RONE', pts.sort((a, b) => a.date.localeCompare(b.date)));
+}
+
+/**
+ * A whole R-ONE table (every region and class) from `start` (YYYYMM), not stored: for views over
+ * every region at once, such as the map. Keys are "GRP/CLS" ("/CLS" for tables without groups).
+ */
+export async function roneTable(userId: string, table: string, start: string, item = '100001'): Promise<Map<string, Point[]>> {
+  const k = await serviceKey(userId, 'rone', 'RONE_API_KEY');
+  if (!k) throw new UserError('한국부동산원 R-ONE 인증키가 필요합니다. 연동 · 설정에서 넣으세요.');
+  return roneSlot(async () => {
+    const out = new Map<string, Point[]>();
+    for (let page = 1; page <= 60; page++) {
+      const q = new URLSearchParams({ KEY: k.key, Type: 'json', pIndex: String(page), pSize: '1000', STATBL_ID: table, DTACYCLE_CD: 'MM', ITM_ID: item, START_WRTTIME: start });
+      const res = parseRoneByClass(JSON.parse(await getText(`${RONE_URL}?${q}`, userId, 'rone')), true);
+      if (res.error) throw new Error(`R-ONE: ${res.error}`);
+      for (const [key, pts] of res.byClass) out.set(key, [...(out.get(key) ?? []), ...pts]);
+      if (page * 1000 >= res.total) break;
+    }
+    for (const pts of out.values()) pts.sort((a, b) => a.date.localeCompare(b.date));
+    return out;
+  });
+}
+
+/** A whole KOSIS table query (statisticsParameterData) as its rows, with the user's key */
+export async function kosisTable(userId: string, params: Record<string, string>): Promise<Record<string, string>[]> {
+  const k = await serviceKey(userId, 'kosis', 'KOSIS_API_KEY');
+  if (!k) throw new UserError('통계청 KOSIS 인증키가 필요합니다. 연동 · 설정에서 넣으세요.');
+  const q = new URLSearchParams({ method: 'getList', apiKey: k.key, format: 'json', jsonVD: 'Y', ...params });
+  const body = JSON.parse(await getText(`https://kosis.kr/openapi/Param/statisticsParameterData.do?${q}`, userId, 'kosis')) as unknown;
+  if (!Array.isArray(body)) {
+    const e = body as { err?: unknown; errMsg?: unknown } | null;
+    throw new Error(`KOSIS ${params.tblId}: ${typeof e?.errMsg === 'string' ? e.errMsg : (e?.err ?? '응답을 읽지 못했습니다')}`);
+  }
+  return body as Record<string, string>[];
 }
 
 /** The New York Fed's Laubach-Williams estimates (.xlsx): one-sided r* and output gap, quarterly. */
@@ -218,7 +288,9 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
   const guard = (label: string, job: () => Promise<void>) =>
     job().catch((e) => {
       console.error('[indicators]', label, e instanceof Error ? e.message : e);
-      errors.push(`${label}: ${e instanceof Error ? e.message : '받지 못했습니다'}`);
+      // Database errors can quote whole rows: keep the screen's note short
+      const msg = e instanceof Error ? e.message.replace(/\s+/g, ' ') : '받지 못했습니다';
+      errors.push(`${label}: ${msg.length > 160 ? `${msg.slice(0, 160)}…` : msg}`);
     });
   for (const r of stale) {
     if (r.source === 'YAHOO') tasks.push(guard(r.code, () => once(r.id, async () => { await loadYahoo(userId, r); await markFetched([r.id]); })));
@@ -243,7 +315,7 @@ export async function refreshSeries(userId: string, reqs: SeriesReq[]): Promise<
   return { missing: [...missing], errors };
 }
 
-async function readSeries(ids: string[]): Promise<Map<string, Point[]>> {
+export async function readSeries(ids: string[]): Promise<Map<string, Point[]>> {
   const rows = await prisma.priceDaily.findMany({ where: { symbol: { in: ids } }, orderBy: { date: 'asc' }, select: { symbol: true, date: true, close: true } });
   const out = new Map<string, Point[]>(ids.map((id) => [id, []]));
   for (const r of rows) out.get(r.symbol)!.push({ date: r.date.toISOString().slice(0, 10), value: Number(r.close) });

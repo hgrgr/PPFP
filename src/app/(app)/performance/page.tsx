@@ -72,6 +72,7 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
           </p>
         </div>
         <div className="inline">
+          <a className="btn" href="/performance/compare">포트폴리오 비교 ›</a>
           <ScopeSelect value={params.p ?? ''} options={graph.portfolios.map((p) => ({ id: p.id, label: p.name }))} />
           <CurrencyToggle on={local} />
           <AskAiButton label="AI 성과 해석" prompt={`${r.scope.name}의 ${r.range.start}~${r.range.end} 성과를 ${benchNames}과(와) 비교해서 해석해 줘. 수익에 가장 크게 기여한 종목과 깎아 먹은 종목, 앞으로 고려할 점을 알려 줘.`} />

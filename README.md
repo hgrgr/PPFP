@@ -60,7 +60,7 @@ docker compose down           # 멈추기 (DB 데이터는 볼륨에 남음, 지
 
 ### DB 백업
 
-`docker compose up -d`를 하면 앱·DB와 함께 `backup` 서비스가 뜹니다. 시작하자마자 한 번, 그 뒤 24시간마다 `pg_dump`로 저장소의 `backups/` 폴더에 `ppfp-YYYYMMDD-HHMMSS.dump`를 만들고 최근 14개만 남깁니다([scripts/backup/backup.sh](scripts/backup/backup.sh)). 마지막 백업 시각과 결과는 앱의 **가져오기 · 내보내기** 화면 맨 위에 나옵니다.
+`docker compose up -d`를 하면 앱·DB와 함께 `backup` 서비스가 뜹니다. 시작하자마자 한 번, 그 뒤 24시간마다 `pg_dump`로 저장소의 `backups/` 폴더에 `ppfp-YYYYMMDD-HHMMSS.dump`를 만들고 최근 30개만 남깁니다([scripts/backup/backup.sh](scripts/backup/backup.sh)). 마지막 백업 시각과 결과는 앱의 **가져오기 · 내보내기** 화면 맨 위에 나옵니다.
 
 ```bash
 npm run db:backup                                   # 지금 한 번 (backup 서비스가 떠 있을 때)
@@ -68,7 +68,7 @@ docker compose logs backup                          # 백업 기록
 npm run db:restore -- backups/ppfp-20261010-030000.dump   # 되살리기
 ```
 
-- **간격·보관 개수**: `.env`의 `BACKUP_INTERVAL_HOURS`(기본 24), `BACKUP_KEEP`(기본 14).
+- **간격·보관 개수**: `.env`의 `BACKUP_INTERVAL_HOURS`(기본 24), `BACKUP_KEEP`(기본 30).
 - **암호화**: `BACKUP_GPG_PASSPHRASE`를 넣으면 파일마다 gpg(AES-256)로 잠가 `.dump.gpg`로 저장합니다. 백업에는 모든 자산·거래 내역이 들어 있으므로 다른 곳으로 복사할 거라면 켜 두세요. 되살릴 때도 같은 변수를 셸에 넣고 실행합니다.
 - **되살리기**([scripts/backup/restore.sh](scripts/backup/restore.sh)): 지금 데이터를 `backups/before-restore-*.dump`로 먼저 떠 둔 뒤, 앱을 멈추고 모든 표를 백업의 것으로 바꾸고 앱을 다시 띄웁니다. 백업보다 새로운 마이그레이션은 앱이 시작하면서 적용합니다.
 - **다른 곳에 복사**: `backups/`는 이 컴퓨터 안에 있으므로 디스크가 고장 나면 같이 사라집니다. 외장 디스크나 클라우드(rclone 등)로 정기적으로 복사하세요.

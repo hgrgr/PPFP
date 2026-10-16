@@ -25,6 +25,26 @@ const COMPLEXES = [
   ['대치은하수', '660', '11680-9006', 1985, 37.4962, 127.0655, [[101.6, 248000, 8]], [20, 180]],
 ];
 
+/**
+ * More complexes for 지역 분석's 단지 분석, in other 동 of 강남구 and ten years back, with the
+ * 2021 peak and the 2022–23 fall (only read by the month deals, not by place search):
+ * [name, 지번, serial, build year, umdCd, umdNm, areas]
+ */
+const DISTRICT_COMPLEXES = [
+  ['도곡하늘채', '467', '11680-9101', 2004, '11800', '도곡동', [[84.99, 298000, 8], [114.8, 372000, 3]]],
+  ['개포숲마을', '1220', '11680-9102', 2019, '10300', '개포동', [[59.99, 241000, 9], [84.98, 305000, 10]]],
+  ['개포한마음', '660', '11680-9103', 1983, '10300', '개포동', [[49.5, 198000, 6], [76.5, 262000, 4]]],
+  ['역삼센트럴', '735', '11680-9104', 2010, '10100', '역삼동', [[84.9, 251000, 7], [59.9, 196000, 6]]],
+  ['삼성리버파크', '91', '11680-9105', 1999, '10500', '삼성동', [[84.5, 276000, 5], [101.9, 318000, 3]]],
+];
+/** The market path for the district complexes: −20% from the 2021 peak to 2023, back since */
+const cycle = (back) => {
+  const k = back / 12; // years ago
+  if (k < 3) return 1 - 0.04 * k; // recovering
+  if (k < 5) return 0.88 - 0.09 * (k - 3) + 0.27 * Math.max(0, k - 4); // the fall, deepest 3–4 years ago
+  return 1.06 * Math.pow(0.93, k - 5); // the run-up to the peak
+};
+
 /** Villas and officetels: name, 지번, build year, lat, lng, [area ㎡, price now in 만원, deals per year] */
 const VILLAS = [
   ['대치 그린빌', '903-12', 2016, 37.4982, 127.0601, [[49.52, 52000, 5], [59.84, 63500, 4]]],
@@ -75,6 +95,26 @@ function monthDeals(ym) {
           direct: rnd(`${seq}:${area}:${ym}:${i}:g`) > 0.9,
           corp: rnd(`${seq}:${area}:${ym}:${i}:b`) > 0.92,
           // Registered 35–75 days after the contract, once that day has passed
+          rgstAfter: 35 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:r`) * 40),
+          dong: 101 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:dong`) * 8),
+        });
+      }
+    }
+  }
+  for (const [name, jibun, seq, built, umdCd, umdNm, areas] of DISTRICT_COMPLEXES) {
+    if (back > 120) continue;
+    for (const [area, now, perYear] of areas) {
+      const n = Math.floor((perYear / 12) * 2 * rnd(`${seq}:${area}:${ym}:n`) + 0.35);
+      for (let i = 0; i < n; i++) {
+        const day = 1 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:d`) * 27);
+        if (back === 0 && day > t.d) continue;
+        const price = Math.round((now * cycle(back) * (0.97 + 0.06 * rnd(`${seq}:${area}:${ym}:${i}:p`))) / 100) * 100;
+        out.push({
+          aptNm: name, jibun, aptSeq: seq, buildYear: built, area, price, day, umdCd, umdNm,
+          floor: 2 + Math.floor(rnd(`${seq}:${ym}:${i}:f`) * 22),
+          cancelled: rnd(`${seq}:${area}:${ym}:${i}:c`) > 0.95,
+          direct: rnd(`${seq}:${area}:${ym}:${i}:g`) > 0.9,
+          corp: rnd(`${seq}:${area}:${ym}:${i}:b`) > 0.92,
           rgstAfter: 35 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:r`) * 40),
           dong: 101 + Math.floor(rnd(`${seq}:${area}:${ym}:${i}:dong`) * 8),
         });
@@ -171,7 +211,7 @@ function molit(url) {
       ({ d, rgst }) =>
         `<item><aptDong>${rgst ? d.dong : ''}</aptDong><rgstDate>${rgst}</rgstDate><buyerGbn>${d.corp ? '법인' : '개인'}</buyerGbn><slerGbn>개인</slerGbn><aptNm>${d.aptNm}</aptNm><aptSeq>${d.aptSeq}</aptSeq><buildYear>${d.buildYear}</buildYear><cdealDay></cdealDay><cdealType>${d.cancelled ? 'O' : ''}</cdealType>` +
         `<dealAmount>${d.price.toLocaleString('en-US')}</dealAmount><dealDay>${d.day}</dealDay><dealMonth>${Number(ym.slice(4))}</dealMonth><dealYear>${ym.slice(0, 4)}</dealYear>` +
-        `<dealingGbn>${d.direct ? '직거래' : '중개거래'}</dealingGbn><excluUseAr>${d.area}</excluUseAr><floor>${d.floor}</floor><jibun>${d.jibun}</jibun><sggCd>${LAWD}</sggCd><umdCd>${UMD}</umdCd><umdNm>${DONG}</umdNm></item>`,
+        `<dealingGbn>${d.direct ? '직거래' : '중개거래'}</dealingGbn><excluUseAr>${d.area}</excluUseAr><floor>${d.floor}</floor><jibun>${d.jibun}</jibun><sggCd>${LAWD}</sggCd><umdCd>${d.umdCd ?? UMD}</umdCd><umdNm>${d.umdNm ?? DONG}</umdNm></item>`,
     )
     .join('');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><response><header><resultCode>000</resultCode><resultMsg>OK</resultMsg></header><body><items>${items}</items><numOfRows>1000</numOfRows><pageNo>1</pageNo><totalCount>${deals.length}</totalCount></body></response>`;
@@ -254,4 +294,4 @@ globalThis.fetch = async function realEstateDemoFetch(input, init) {
   return prevFetch(input, init);
 };
 
-module.exports = { COMPLEXES, VILLAS, OFFICETELS, LOTS, LAWD, UMD, DONG };
+module.exports = { COMPLEXES, VILLAS, OFFICETELS, LOTS, LAWD, UMD, DONG, monthDeals };
