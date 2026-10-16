@@ -23,8 +23,11 @@ const ICON: Record<string, string> = { KR_STOCK: '📈', US_STOCK: '🗽', FUND:
 const face = (r: number | null) => (r === null ? '🙂' : r >= 0.2 ? '😄' : r >= 0.03 ? '😊' : r > -0.03 ? '😐' : r > -0.2 ? '😟' : '😱');
 const won = (v: number) => (v >= 1e8 ? `${(v / 1e8).toFixed(v >= 1e9 ? 1 : 2)}억` : v >= 1e4 ? `${Math.round(v / 1e4).toLocaleString('ko-KR')}만` : `${Math.round(v).toLocaleString('ko-KR')}`);
 
-/** Item diameter from its value: area ∝ value, between 44 and 132 px */
-const sizeOf = (v: number, max: number) => Math.round(44 + 88 * Math.sqrt(Math.max(0, v) / (max || 1)));
+/**
+ * Item diameter from its value, 48 to 136 px. A power below ½ keeps small holdings recognizable
+ * next to a house worth a hundred times more; bigger is still always bigger.
+ */
+const sizeOf = (v: number, max: number) => Math.round(48 + 88 * (Math.max(0, v) / (max || 1)) ** 0.35);
 
 interface Drag {
   item: BasketItem;
