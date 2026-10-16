@@ -83,6 +83,8 @@ interface Ids {
   house: string;
   aapl: string;
   nvdaJournal: string;
+  /** The demo 가상 포트폴리오 with positions */
+  virtual: string;
   aaplJournal: string;
   template: string;
   allWeather: string;
@@ -478,6 +480,32 @@ const SHOTS: Shot[] = [
     steps: [{ until: "!!document.querySelector('section[aria-label=\"가상 포트폴리오 목록\"] a')", timeout: 120_000 }, { click: { sel: 'section[aria-label="가상 포트폴리오 목록"] a', text: '코로나 저점에 샀다면' } }, { until: "!!document.querySelector('section[aria-label=\"가치 변화\"] .recharts-line')", timeout: 120_000 }, { wait: 1800 }],
     clip: [{ sel: 'section[aria-label="가상 포트폴리오 요약"]' }, { sel: 'section[aria-label="가치 변화"]' }, { sel: 'section[aria-label="종목 담기"]' }, { sel: 'section[aria-label="담은 종목"]' }],
     marks: [{ sel: '[aria-label="자산 종류"]' }, { sel: 'select[aria-label="비교 지수"]', closest: 'label' }],
+  },
+  {
+    file: 'portfolios-virtual',
+    path: () => '/portfolios',
+    width: 1440,
+    height: 2400,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"가상 포트폴리오\"] table')", timeout: 120_000 }, { wait: 800 }],
+    clip: [{ sel: 'section[aria-label="가상 포트폴리오"]' }],
+    marks: [{ sel: 'section[aria-label="가상 포트폴리오"] a.btn', text: '분석' }],
+  },
+  {
+    file: 'dashboard-virtual',
+    path: (ids) => `/dashboard?p=v:${ids.virtual}&period=ALL`,
+    width: 1440,
+    height: 2600,
+    steps: [{ until: "!!document.querySelector('.recharts-line, .recharts-area')", timeout: 120_000 }, { wait: 1800 }],
+    marks: [{ sel: 'select', closest: 'label' }],
+  },
+  {
+    file: 'compare',
+    path: () => '/performance/compare?period=3Y',
+    width: 1440,
+    height: 3000,
+    steps: [{ until: "!!document.querySelector('section[aria-label=\"누적 수익률\"] .recharts-line')", timeout: 180_000 }, { wait: 1800 }],
+    clip: [{ sel: 'section[aria-label="비교할 포트폴리오"]' }, { sel: 'section[aria-label="누적 수익률"]' }, { sel: 'section[aria-label="성과 지표"]' }, { sel: 'section[aria-label="연도별 수익률"]' }, { sel: 'section[aria-label="상관관계"]' }],
+    marks: [{ sel: 'section[aria-label="비교할 포트폴리오"]' }],
   },
   {
     file: 'regions-map-time',
@@ -1639,6 +1667,7 @@ async function main() {
       us: pid('미국 주식'),
       aapl: aapl.id,
       nvdaJournal: await journal('NVDA'),
+      virtual: (await db.virtualPortfolio.findFirstOrThrow({ where: { positions: { some: {} } } })).id,
       aaplJournal: await journal('AAPL'),
       template: (await db.journalTemplate.findFirstOrThrow()).id,
       allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,
