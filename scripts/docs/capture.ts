@@ -83,6 +83,8 @@ interface Ids {
   house: string;
   aapl: string;
   nvdaJournal: string;
+  /** The demo 가상 포트폴리오 with positions */
+  virtual: string;
   aaplJournal: string;
   template: string;
   allWeather: string;
@@ -490,15 +492,10 @@ const SHOTS: Shot[] = [
   },
   {
     file: 'dashboard-virtual',
-    path: () => '/portfolios',
+    path: (ids) => `/dashboard?p=v:${ids.virtual}&period=ALL`,
     width: 1440,
     height: 2600,
-    steps: [
-      { until: "!!document.querySelector('section[aria-label=\"가상 포트폴리오\"] a.btn')", timeout: 120_000 },
-      { click: { sel: 'section[aria-label="가상 포트폴리오"] a.btn', text: '분석' } },
-      { until: "location.pathname === '/dashboard' && !!document.querySelector('.recharts-line, .recharts-area')", timeout: 120_000 },
-      { wait: 1800 },
-    ],
+    steps: [{ until: "!!document.querySelector('.recharts-line, .recharts-area')", timeout: 120_000 }, { wait: 1800 }],
     marks: [{ sel: 'select', closest: 'label' }],
   },
   {
@@ -1670,6 +1667,7 @@ async function main() {
       us: pid('미국 주식'),
       aapl: aapl.id,
       nvdaJournal: await journal('NVDA'),
+      virtual: (await db.virtualPortfolio.findFirstOrThrow({ where: { positions: { some: {} } } })).id,
       aaplJournal: await journal('AAPL'),
       template: (await db.journalTemplate.findFirstOrThrow()).id,
       allWeather: (await db.traitGroup.findFirstOrThrow({ where: { preset: 'allWeather' } })).id,

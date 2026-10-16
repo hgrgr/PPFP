@@ -138,8 +138,8 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
                       {v.since && <div className="sub">{v.since}부터</div>}
                     </td>
                     <td className="num">{v.positions}</td>
-                    <td className="num money">{krwShort(v.invested)}</td>
-                    <td className="num money strong">{krwShort(v.value)}</td>
+                    <td className="num money">{v.positions ? krwShort(v.invested) : '—'}</td>
+                    <td className="num money strong">{v.positions ? krwShort(v.value) : '—'}</td>
                     <td className={`num ${v.value >= v.invested ? 'up' : 'down'}`}>{v.invested ? pct(v.value / v.invested - 1) : '—'}</td>
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>
                       <a className="btn small" href={`/dashboard?p=v:${v.id}`}>분석</a>{' '}
