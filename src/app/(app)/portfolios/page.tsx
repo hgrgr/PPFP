@@ -81,6 +81,9 @@ export default async function PortfoliosPage({ searchParams }: { searchParams: P
           <h1>포트폴리오</h1>
           <p className="sub">포트폴리오 안에 다른 포트폴리오를 원하는 비율만큼 넣을 수 있습니다. 한 포트폴리오를 여러 곳에 나눠 넣어도 합계는 100%를 넘지 않습니다.</p>
         </div>
+        <div className="inline">
+          <a className="btn" href="/portfolios/virtual">가상 포트폴리오 ›</a>
+        </div>
       </header>
 
       {welcome && (
