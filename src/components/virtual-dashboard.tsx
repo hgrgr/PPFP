@@ -5,6 +5,7 @@ import type { ResolvedRange } from '@/domain/period';
 import type { DetailView } from '@/server/services/virtual';
 import type { Evaluation } from '@/server/services/compare';
 import { MetricsTable } from '@/components/metrics';
+import { NewHighCelebration } from '@/components/fun';
 
 const KIND_COLOR: Record<string, string> = {
   STOCK: 'var(--series-1)',
@@ -48,6 +49,7 @@ export function VirtualDashboard({ d, range, linkParams, scope, evaluation }: { 
       </header>
 
       <PeriodBar base="/dashboard" params={linkParams} range={range} />
+      <NewHighCelebration scope={`v:${d.portfolio.id}`} values={d.path.value} />
 
       <section className="row" aria-label="요약">
         <div className="card kpi">

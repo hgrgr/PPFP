@@ -3,6 +3,7 @@ import { saveBookSearchKeyAction } from '@/app/knowledge-actions';
 import { saveRealEstateKeyAction } from '@/app/real-estate-actions';
 import { saveVworldKeyAction } from '@/app/alert-actions';
 import { propertyKindShort, rtmsPortalUrl, TRADE_KINDS } from '@/domain/real-estate';
+import { FunToggle } from '@/components/fun';
 import { saveDartKeyAction, saveFredKeyAction, saveKosisKeyAction, saveRoneKeyAction } from '@/app/analysis-actions';
 import { saveEcosKeyAction } from '@/app/benchmark-actions';
 import { refreshDataAction, removeBrokerAction, saveBrokerAction, saveMenuAction, testBrokerAction, updatePrefsAction } from '@/app/actions';
@@ -455,6 +456,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             )}
           </div>
         </div>
+      </section>
+
+      <section className="card" id="fun" aria-label="놀이 모드">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2>놀이 모드 🎈</h2>
+          <p className="sub">재미 기능을 켭니다: 종목을 끌어다 포트폴리오 바구니에 담는 <a href="/portfolios/basket">바구니 담기</a>, 대시보드 평가액이 기간 최고일 때 꽃가루. 이 브라우저(기기)에만 저장되고 서버 데이터는 바꾸지 않습니다.</p>
+        </div>
+        <FunToggle label="놀이 모드 켜기" />
       </section>
 
       <section className="card" id="menu">
