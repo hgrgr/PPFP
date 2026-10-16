@@ -21,6 +21,7 @@ import { resolveRange } from '@/domain/period';
 import { kstDate } from '@/server/db';
 import { evaluate } from '@/server/services/compare';
 import { MetricsTable } from '@/components/metrics';
+import { FunWeather, NewHighCelebration } from '@/components/fun';
 
 export const metadata = { title: '대시보드' };
 export const dynamic = 'force-dynamic';
@@ -137,7 +138,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
               </span>
             ))}
           </nav>
-          <h1>{d.scope.name}</h1>
+          <h1>
+            {d.scope.name}
+            <FunWeather ret={d.twrDaily.length > 1 ? (1 + d.twrDaily.at(-1)!.twr) / (1 + d.twrDaily.at(-2)!.twr) - 1 : null} />
+          </h1>
           <p className="sub">
             {kstDateTime(new Date())} 기준 · USD/KRW {d.usdkrw.toFixed(2)} ({fx.label})
             {d.stale && <span className="badge warn" style={{ marginLeft: 8 }}>일부 시세 지연</span>}
@@ -177,6 +181,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
       </header>
 
       <PeriodBar base="/dashboard" params={linkParams} range={d.range} />
+      <NewHighCelebration scope={scopeId ?? 'all'} values={d.chart.map((c) => c.value)} />
 
       {!d.hasSnapshots && (
         <div className="callout inline spread">
