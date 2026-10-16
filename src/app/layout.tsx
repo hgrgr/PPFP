@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import { IBM_Plex_Sans_KR } from 'next/font/google';
+import { IBM_Plex_Sans_KR, Jua } from 'next/font/google';
 import { currentUser } from '@/server/auth';
 import './globals.css';
 
 const sans = IBM_Plex_Sans_KR({ weight: ['400', '500', '600', '700'], subsets: ['latin'], variable: '--font-sans', display: 'swap' });
+// Rounded hand-lettered face for 놀이 모드 only; loaded when a page first uses it
+const cute = Jua({ weight: '400', subsets: ['latin'], variable: '--font-jua', display: 'swap', preload: false });
 
 export const metadata: Metadata = {
   title: { default: 'PPFP', template: '%s · PPFP' },
@@ -23,7 +25,7 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser();
   return (
-    <html lang="ko" className={sans.variable} data-redup={user ? String(user.redUp) : 'true'} suppressHydrationWarning>
+    <html lang="ko" className={`${sans.variable} ${cute.variable}`} data-redup={user ? String(user.redUp) : 'true'} suppressHydrationWarning>
       <head>
         {/* restore privacy mode before paint */}
         <script
