@@ -47,7 +47,6 @@ export function Basket({ data }: { data: BasketData }) {
   const [party, setParty] = useState(false);
   const max = Math.max(...data.items.map((i) => i.value), 1);
   const dragRef = useRef<Drag | null>(null);
-  dragRef.current = drag;
 
   // A short message that fades on its own
   useEffect(() => {
@@ -69,15 +68,21 @@ export function Basket({ data }: { data: BasketData }) {
     } catch {
       // Some pointers cannot be captured; moves still reach the wrapper by bubbling
     }
-    setDrag({ item, x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, size: r.width, over: null });
+    const d = { item, x: e.clientX, y: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, size: r.width, over: null };
+    // The ref goes first: a move or drop can arrive before React renders
+    dragRef.current = d;
+    setDrag(d);
   };
   const move = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
-    setDrag({ ...d, x: e.clientX, y: e.clientY, over: basketAt(e.clientX, e.clientY) });
+    const next = { ...d, x: e.clientX, y: e.clientY, over: basketAt(e.clientX, e.clientY) };
+    dragRef.current = next;
+    setDrag(next);
   };
   const end = async (e: React.PointerEvent) => {
     const d = dragRef.current;
+    dragRef.current = null;
     setDrag(null);
     if (!d) return;
     const to = basketAt(e.clientX, e.clientY);
